@@ -43,15 +43,34 @@ _ensure_database()
 from fastapi.testclient import TestClient  # noqa: E402
 
 from backend.app.api import app  # noqa: E402
-from backend.app.db import Base, SessionLocal, engine, init_db  # noqa: E402
+from backend.app.db import Base, SessionLocal, engine  # noqa: E402
 
 ORIGIN = "http://localhost:3000"
 STRONG = "Str0ngPassw0rd!x"
 
 
+ALEMBIC_INI = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "alembic.ini")
+
+
+def alembic_config():
+    from alembic.config import Config
+
+    return Config(ALEMBIC_INI)
+
+
+def reset_schema():
+    """Blank database, then build the schema exactly as production does: via migrations."""
+    from alembic import command
+
+    with engine.begin() as conn:
+        conn.exec_driver_sql("DROP SCHEMA public CASCADE")
+        conn.exec_driver_sql("CREATE SCHEMA public")
+    command.upgrade(alembic_config(), "head")
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _schema():
-    init_db()
+    reset_schema()
     yield
 
 

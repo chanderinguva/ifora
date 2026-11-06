@@ -50,7 +50,7 @@ class AuditEvent(Base):
     __tablename__ = "audit_events"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    timestamp = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    timestamp = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False, index=True)
 
     # Actor information (never include raw credentials)
     actor_id = Column(String(255), nullable=True)
@@ -58,7 +58,7 @@ class AuditEvent(Base):
     actor_ip_address = Column(String(45), nullable=True)  # IPv6 compatible
 
     # Action details
-    action = Column(String(50), nullable=False)
+    action = Column(String(50), nullable=False, index=True)
     event_type = Column(String(50), nullable=False)
 
     # Target (user, group, etc.)
