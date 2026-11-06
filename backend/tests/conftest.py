@@ -10,10 +10,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 TEST_DB = "identityforge_test"
-_base = os.environ.get(
-    "DATABASE_URL",
-    "postgresql+psycopg2://identityforge:identityforge_local_password_change_after_first_login@localhost:5432/identityforge",
-)
+_base = os.environ["DATABASE_URL"]  # run inside the api container (or export DATABASE_URL)
 _u = urlparse(_base)
 _test_url = urlunparse(_u._replace(path=f"/{TEST_DB}"))
 _async_url = _test_url.replace("+psycopg2", "+asyncpg")
@@ -24,6 +21,9 @@ os.environ["DATABASE_URL_ASYNC"] = _async_url
 os.environ.setdefault("SECRET_KEY", "test_secret_key_value_with_at_least_32_chars")
 os.environ.setdefault("ADMIN_SECRET_KEY", "test_admin_bootstrap_key_with_32_chars_min")
 os.environ["ENVIRONMENT"] = "test"
+# Isolated Redis database for rate-limit state (never the dev db 0)
+_redis_base = os.environ.get("REDIS_URL", "redis://localhost:6379/0").rsplit("/", 1)[0]
+os.environ["REDIS_URL"] = f"{_redis_base}/15"
 
 
 def _ensure_database():
@@ -43,16 +43,45 @@ _ensure_database()
 from fastapi.testclient import TestClient  # noqa: E402
 
 from backend.app.api import app  # noqa: E402
-from backend.app.db import Base, SessionLocal, engine, init_db  # noqa: E402
+from backend.app.db import Base, SessionLocal, engine  # noqa: E402
 
 ORIGIN = "http://localhost:3000"
 STRONG = "Str0ngPassw0rd!x"
 
 
+ALEMBIC_INI = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "alembic.ini")
+
+
+def alembic_config():
+    from alembic.config import Config
+
+    return Config(ALEMBIC_INI)
+
+
+def reset_schema():
+    """Blank database, then build the schema exactly as production does: via migrations."""
+    from alembic import command
+
+    with engine.begin() as conn:
+        conn.exec_driver_sql("DROP SCHEMA public CASCADE")
+        conn.exec_driver_sql("CREATE SCHEMA public")
+    command.upgrade(alembic_config(), "head")
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _schema():
-    init_db()
+    reset_schema()
     yield
+
+
+@pytest.fixture(autouse=True)
+def _clean_redis():
+    import redis
+
+    r = redis.Redis.from_url(os.environ["REDIS_URL"])
+    r.flushdb()
+    yield
+    r.flushdb()
 
 
 @pytest.fixture(autouse=True)

@@ -7,7 +7,7 @@ _Last updated: 2026-11-05_
 | Item | Status | Notes |
 |---|---|---|
 | Docker Compose stack | Done | postgres, redis, backend-api, frontend (health-checked, named volumes) |
-| Database migrations | **Partial** | Tables are created with `create_all` at startup. Alembic is a dependency but `backend/migrations/` is empty. |
+| Database migrations | Done | Alembic (`backend/migrations/`), applied by the container entrypoint; legacy databases are adopted at baseline 0001. A test fails if models and migrations drift. |
 | Admin bootstrap & login | Done | `POST /api/v1/admin/bootstrap` (secret key, once) |
 | End-user login & logout | Done | Session cookie + CSRF, see ADR 003 |
 | Session management | Done | Hashed opaque tokens, revocation, "my sessions" |
@@ -21,14 +21,19 @@ _Last updated: 2026-11-05_
 | Browser & API tests | Done | 46 API integration tests (real Postgres test DB) + 5 Playwright browser tests |
 | Security review | **Partial** | Self-review recorded in ADR 003; no independent review yet |
 
+## Hardening done after Phase 1
+- Per-IP login throttling and bootstrap-key throttling (Redis), idle session timeout (30 min).
+- Secrets live in gitignored `docker/.env`; compose refuses to start without them. Postgres/Redis bind to 127.0.0.1 only.
+
 ## Not done / known gaps
-- Alembic migrations (see above).
-- Rate limiting per IP, idle session timeout, MFA, email-based password reset.
-- `SESSION_COOKIE_SECURE`, `SECRET_KEY`, `ADMIN_SECRET_KEY` in `docker/docker-compose.yml` are development placeholders.
+- MFA, email-based password reset.
+- `SESSION_COOKIE_SECURE` is off (plain HTTP in dev); turn it on behind TLS. Behind a reverse proxy, configure uvicorn `--proxy-headers`/`--forwarded-allow-ips` so rate limiting sees real client IPs.
 - Frontend runs `next dev` inside Docker (development mode).
+- No independent security review yet.
 
 ## Running
 ```bash
+cp docker/.env.example docker/.env   # then fill in the three secrets (generation commands inside)
 docker compose -f docker/docker-compose.yml up -d --build
 # UI  http://localhost:3000    API docs  http://localhost:8000/docs
 ```

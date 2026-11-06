@@ -9,15 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql+psycopg2://identityforge:identityforge_local_password_change_after_first_login@localhost:5432/identityforge",
-)
+DATABASE_URL = os.environ["DATABASE_URL"]  # required; no credential defaults
 
-DATABASE_URL_ASYNC = os.environ.get(
-    "DATABASE_URL_ASYNC",
-    "postgresql+asyncpg://identityforge:identityforge_local_password_change_after_first_login@localhost:5432/identityforge",
-)
+DATABASE_URL_ASYNC = os.environ["DATABASE_URL_ASYNC"]
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 AsyncEngine = create_async_engine(DATABASE_URL_ASYNC, pool_pre_ping=True)

@@ -20,7 +20,10 @@ Accepted
 Every `/admin/*` route depends on `require_admin`; there is no route that is open by omission.
 Rules enforced server-side: no self-delete/self-deactivate, mass-assignment ignored (`is_super_admin`, `password_hash` are not accepted), users cannot edit admin-managed attributes (e.g. `department`) because attributes may later drive authorization.
 
+## Abuse controls
+- Per-account lockout (5 failures, 15 min) plus per-IP throttle of failed logins (10 / 5 min, Redis, HTTP 429 + Retry-After) and of bootstrap-key guesses. A successful login does not reset the IP counter, so a valid account cannot be used to reset guessing against others. The limiter fails open if Redis is down (logged).
+- Sessions: 8 h absolute lifetime and 30 min idle timeout.
+
 ## Known gaps (not yet implemented)
-- No per-IP rate limiting (lockout is per existing account only).
-- No idle timeout (fixed 8h lifetime).
 - No MFA / password reset by email.
+- Client IP is the direct peer address; configure the ASGI server's proxy-header handling when deployed behind a proxy.

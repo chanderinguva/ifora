@@ -5,12 +5,12 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: identityforge
-      POSTGRES_PASSWORD: identityforge_local_password_change_after_first_login
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in docker/.env}
       POSTGRES_DB: identityforge
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U identityforge"]
       interval: 10s
@@ -22,7 +22,7 @@ services:
     container_name: identityforge-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -43,11 +43,11 @@ services:
       redis:
         condition: service_healthy
     environment:
-      - DATABASE_URL=postgresql+psycopg2://identityforge:identityforge_local_password_change_after_first_login@postgres:5432/identityforge
-      - DATABASE_URL_ASYNC=postgresql+asyncpg://identityforge:identityforge_local_password_change_after_first_login@postgres:5432/identityforge
+      - DATABASE_URL=postgresql+psycopg2://identityforge:${POSTGRES_PASSWORD}@postgres:5432/identityforge
+      - DATABASE_URL_ASYNC=postgresql+asyncpg://identityforge:${POSTGRES_PASSWORD}@postgres:5432/identityforge
       - REDIS_URL=redis://redis:6379/0
-      - SECRET_KEY=change_this_in_production_uses_strong_random_value_32chars_min
-      - ADMIN_SECRET_KEY=change_this_after_first_bootstrap_use_env_var
+      - SECRET_KEY=${SECRET_KEY:?set SECRET_KEY in docker/.env}
+      - ADMIN_SECRET_KEY=${ADMIN_SECRET_KEY:?set ADMIN_SECRET_KEY in docker/.env}
       - ENVIRONMENT=development
     ports:
       - "8000:8000"

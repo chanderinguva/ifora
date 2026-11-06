@@ -1,8 +1,6 @@
 """Main entry point for the IdentityForge backend application."""
 
 import logging
-import sys
-from contextlib import asynccontextmanager
 
 import structlog
 from fastapi import FastAPI
@@ -31,27 +29,8 @@ structlog.configure(
 logger = structlog.get_logger(__name__)
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Application lifespan events."""
-    logger.info("application.starting", app="identityforge-api")
-
-    # Initialize database
-    try:
-        from backend.app.db import init_db
-        init_db()
-        logger.info("database.initialized")
-    except Exception as e:
-        logger.error("database.initialization.failed", error=str(e))
-        sys.exit(1)
-
-    yield
-
-    logger.info("application.stopped", app="identityforge-api")
-
-
 def create_app() -> FastAPI:
-    """Create the application with lifespan management."""
+    """Return the application."""
     # The API module already creates and exports the app
     return api.app
 
@@ -62,4 +41,4 @@ app = create_app()
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("backend.app.main:app", host="0.0.0.0", port=8000, reload=True)

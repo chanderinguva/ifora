@@ -36,7 +36,7 @@ class Session(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
 
     # User relationship
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
 
     # SHA-256 hash of the opaque token (the raw token only lives in the cookie,
     # so a database leak does not yield usable sessions)
