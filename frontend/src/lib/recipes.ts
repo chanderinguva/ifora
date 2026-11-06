@@ -1,0 +1,152 @@
+/** Types and helpers for the recipe builder (ADR 008). */
+
+export type Comparison = { left: string; operator: string; value: string };
+
+export type StepNode = {
+  id: string;
+  type: string;
+  name?: string | null;
+  config: Record<string, any>;
+  on_error?: "fail" | "continue";
+  max_attempts?: number;
+  then?: StepNode[];
+  else?: StepNode[];
+};
+
+export type Definition = {
+  trigger: { type: string; config: Record<string, any>; filter: Comparison[] };
+  steps: StepNode[];
+};
+
+export type RecipeSummary = {
+  id: number;
+  name: string;
+  description: string | null;
+  enabled: boolean;
+  trigger_type: string;
+  published_version: number | null;
+  published_trigger_type: string | null;
+  has_unpublished_changes: boolean;
+  webhook_path: string | null;
+  webhook_secret_set: boolean;
+  last_job: { id: number; status: string; created_at: string } | null;
+  created_at: string;
+  updated_at: string;
+  draft?: Definition;
+  webhook_secret?: string;
+};
+
+export type Pill = { path: string; label: string };
+export type RecipeMeta = {
+  triggers: { type: string; label: string; description: string; fields: Pill[]; payload_pills: boolean }[];
+  steps: { type: string; label: string; kind: "action" | "control"; outputs: string[] }[];
+  operators: string[];
+  managed_attributes: { key: string; display_name: string; data_type: string; enum_options: string[] | null }[];
+  safe_user_fields: string[];
+  limits: { max_steps: number; max_nesting: number };
+};
+
+export type JobStep = {
+  seq: number;
+  step_id: string;
+  name: string | null;
+  type: string;
+  status: string;
+  attempt: number;
+  input: unknown;
+  output: unknown;
+  error: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+};
+export type Job = {
+  id: number;
+  recipe_id: number;
+  recipe_name: string | null;
+  version: number | null;
+  mode: string;
+  status: string;
+  trigger_type: string;
+  error: string | null;
+  executed_steps: number;
+  created_at: string;
+  finished_at: string | null;
+  trigger?: unknown;
+  steps?: JobStep[];
+};
+export type Connection = {
+  id: number;
+  name: string;
+  kind: "bearer" | "header";
+  header_name: string | null;
+  allowed_host: string;
+  has_secret: boolean;
+};
+
+export const OPERATOR_LABELS: Record<string, string> = {
+  equals: "equals", not_equals: "does not equal", contains: "contains", starts_with: "starts with",
+  ends_with: "ends with", is_set: "is set", is_not_set: "is not set", greater_than: "is greater than", less_than: "is less than",
+};
+
+export const blankDefinition = (): Definition => ({ trigger: { type: "user.created", config: {}, filter: [] }, steps: [] });
+
+export function allSteps(steps: StepNode[]): StepNode[] {
+  const out: StepNode[] = [];
+  for (const s of steps) {
+    out.push(s);
+    out.push(...allSteps(s.then ?? []), ...allSteps(s.else ?? []));
+  }
+  return out;
+}
+
+export function nextStepId(steps: StepNode[]): string {
+  const used = new Set(allSteps(steps).map((s) => s.id));
+  let n = used.size + 1;
+  while (used.has(`s${n}`)) n++;
+  return `s${n}`;
+}
+
+/** Steps that run before `targetId` (same order as the server uses to validate datapills). */
+export function stepsBefore(steps: StepNode[], targetId: string | null): StepNode[] {
+  const out: StepNode[] = [];
+  let done = false;
+  const walk = (list: StepNode[]) => {
+    for (const s of list) {
+      if (done) return;
+      if (s.id === targetId) { done = true; return; }
+      out.push(s);
+      walk(s.then ?? []);
+      walk(s.else ?? []);
+    }
+  };
+  walk(steps);
+  return out;
+}
+
+export function stepPills(meta: RecipeMeta, before: StepNode[]): Pill[] {
+  const pills: Pill[] = [];
+  for (const s of before) {
+    const info = meta.steps.find((m) => m.type === s.type);
+    const label = s.name || info?.label || s.type;
+    for (const o of info?.outputs ?? []) pills.push({ path: `steps.${s.id}.output.${o}`, label: `${label} (${s.id}): ${o}` });
+    if (info?.kind === "action") pills.push({ path: `steps.${s.id}.output.error`, label: `${label} (${s.id}): error (when set to continue)` });
+  }
+  return pills;
+}
+
+/** Datapills that are safe to base a decision on: not editable by the user themselves (mirrors the server rule). */
+export function decisionPills(meta: RecipeMeta, triggerType: string, before: StepNode[]): Pill[] {
+  const managed = new Set(meta.managed_attributes.map((a) => a.key));
+  const safe = new Set(meta.safe_user_fields.map((f) => `trigger.user.${f}`));
+  const trig = meta.triggers.find((t) => t.type === triggerType)?.fields ?? [];
+  const ok = trig.filter((p) => {
+    if (!p.path.startsWith("trigger.user.")) return true;
+    if (p.path.startsWith("trigger.user.attributes.")) return managed.has(p.path.slice("trigger.user.attributes.".length));
+    return safe.has(p.path);
+  });
+  return [...ok, ...stepPills(meta, before)];
+}
+
+export function statusTone(s: string): "good" | "bad" | "info" | "neutral" {
+  return s === "succeeded" ? "good" : s === "failed" ? "bad" : s === "running" || s === "queued" || s === "retrying" ? "info" : "neutral";
+}

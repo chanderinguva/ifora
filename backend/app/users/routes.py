@@ -20,6 +20,7 @@ from backend.app.db import get_db
 from backend.app.groups import rules as group_rules
 from backend.app.groups.model import Group, user_group_association
 from backend.app.profiles import catalog as profile_catalog
+from backend.app.recipes import events as recipe_events
 from backend.app.profiles.schemas import validate_attributes, validate_password
 from backend.app.users.model import User
 
@@ -248,8 +249,10 @@ def update_user(
         user.last_name = body.last_name
         changed["last_name"] = True
     if body.profile_attributes is not None:
+        old_attrs = dict(user.get_profile_attributes())
         user.set_profile_attributes(_clean_attrs(db, body.profile_attributes, user.get_profile_attributes()))
         changed["profile_attributes"] = True
+        recipe_events.emit_attribute_changes(db, user, old_attrs, user.get_profile_attributes(), actor)
 
     if body.is_admin is not None and body.is_admin != user.is_admin:
         if not actor.is_super_admin:

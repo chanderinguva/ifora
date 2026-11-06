@@ -37,6 +37,23 @@ class Settings(BaseSettings):
     OIDC_JWKS_CACHE_SECONDS: int = Field(default=300)
     # Edition feature flag: attribute-based group rules (Okta-style).
     GROUP_RULES_ENABLED: bool = Field(default=True)
+    # Recipe engine (ADR 008). Kill switch + limits. RECIPE_ENCRYPTION_KEY is a third, separate Fernet key;
+    # empty = connections (stored secrets) and webhook triggers are unavailable.
+    RECIPES_ENABLED: bool = Field(default=True)
+    RECIPE_ENCRYPTION_KEY: str = Field(default="")
+    RECIPES_MAX_STEPS_PER_JOB: int = Field(default=50)
+    RECIPES_MAX_RUNTIME_SECONDS: int = Field(default=900)
+    RECIPES_MAX_EVENT_DEPTH: int = Field(default=3)
+    RECIPES_MAX_CONCURRENT_PER_RECIPE: int = Field(default=5)
+    RECIPES_LEASE_SECONDS: int = Field(default=120)
+    RECIPES_RETRY_BASE_SECONDS: int = Field(default=5)
+    RECIPES_WORKER_BATCH: int = Field(default=20)
+    RECIPES_HTTP_TIMEOUT_SECONDS: int = Field(default=10)
+    RECIPES_HTTP_MAX_RESPONSE_BYTES: int = Field(default=1_000_000)
+    RECIPES_HTTP_ALLOWED_HOSTS: str = Field(default="")  # comma separated; empty = any public host
+    RECIPES_WEBHOOK_MAX_BODY_BYTES: int = Field(default=65536)
+    RECIPES_WEBHOOK_REPLAY_SECONDS: int = Field(default=300)
+    RECIPES_MAX_RECIPES: int = Field(default=100)
     MFA_CHALLENGE_MINUTES: int = Field(default=5)
     MFA_CHALLENGE_MAX_ATTEMPTS: int = Field(default=5)
 

@@ -33,3 +33,7 @@ def record(
             metadata=safe or None,
         )
     )
+    # Transactional outbox for the recipe engine (ADR 008): same session, so same commit/rollback as the change.
+    from backend.app.recipes.events import emit_from_audit
+
+    emit_from_audit(db, action, actor, target_id, target_type, safe)
