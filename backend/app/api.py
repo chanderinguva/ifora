@@ -1,9 +1,9 @@
 """FastAPI application and API router configuration."""
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from fastapi.routing import APIRoute
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend.app.config import settings
@@ -14,7 +14,7 @@ async def health_check():
     return {"status": "healthy", "environment": settings.ENVIRONMENT}
 
 
-def get_app() -> FastAPI:
+def create_app() -> FastAPI:
     """Create and configure FastAPI application."""
     app = FastAPI(
         title="IdentityForge API",
@@ -25,14 +25,14 @@ def get_app() -> FastAPI:
         openapi_url="/openapi.json",
     )
 
-    # Custom route class to handle trailing slashes
-    class TrailingSlashRoute(APIRoute):
-        def get_route_path(self) -> str:
-            if self.path.endswith("/") and not self.path == "/":
-                return self.path[:-1]
-            return self.path
-
-    app.router.route_class = TrailingSlashRoute
+    # CORS: explicit origins only (credentials are allowed, so never "*")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.CORS_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type", "Authorization", "X-CSRF-Token"],
+    )
 
     # Health check endpoint
     @app.get("/health", include_in_schema=False)
@@ -62,7 +62,13 @@ def get_app() -> FastAPI:
         """Handle validation errors."""
         return JSONResponse(
             status_code=422,
-            content={"detail": exc.errors()},
+            # Drop ctx (may hold non-serialisable exceptions) and input (may echo passwords)
+            content={
+                "detail": [
+                    {k: v for k, v in e.items() if k not in ("ctx", "input")}
+                    for e in exc.errors()
+                ]
+            },
         )
 
     @app.exception_handler(Exception)
@@ -77,7 +83,16 @@ def get_app() -> FastAPI:
     from backend.app.auth.routes import router as auth_router
     app.include_router(auth_router, prefix="/api/v1")
 
+    from backend.app.audit.routes import router as audit_router
+    from backend.app.groups.routes import router as groups_router
+    from backend.app.profiles.routes import router as profiles_router
+    from backend.app.users.routes import router as users_router
+
+    for r in (users_router, groups_router, profiles_router, audit_router):
+        app.include_router(r, prefix="/api/v1")
+
     return app
 
 
-app = get_app()
+# Create and export the app
+app = create_app()

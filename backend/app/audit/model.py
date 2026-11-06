@@ -19,6 +19,8 @@ class AuditAction(str, Enum):
     USER_DEACTIVATED = "USER_DEACTIVATED"
     USER_ACTIVATED = "USER_ACTIVATED"
     USER_PASSWORD_CHANGED = "USER_PASSWORD_CHANGED"
+    USER_DELETED = "USER_DELETED"
+    PROFILE_UPDATED = "PROFILE_UPDATED"
     GROUP_CREATED = "GROUP_CREATED"
     GROUP_UPDATED = "GROUP_UPDATED"
     GROUP_DELETED = "GROUP_DELETED"
@@ -63,8 +65,9 @@ class AuditEvent(Base):
     target_id = Column(String(255), nullable=True)
     target_type = Column(String(50), nullable=True)
 
-    # Metadata - sanitized, no secrets
-    metadata = Column(JSONB, nullable=True)
+    # Metadata - sanitized, no secrets. Named event_metadata because
+    # 'metadata' is reserved by SQLAlchemy's Declarative API.
+    event_metadata = Column("metadata", JSONB, nullable=True)
 
     # Additional details as text
     details = Column(Text, nullable=True)
@@ -87,7 +90,7 @@ class AuditEvent(Base):
         self.actor_ip_address = actor_ip_address
         self.target_id = target_id
         self.target_type = target_type
-        self.metadata = metadata
+        self.event_metadata = metadata
         self.details = details
 
     @staticmethod
@@ -106,6 +109,8 @@ class AuditEvent(Base):
             AuditAction.USER_DEACTIVATED,
             AuditAction.USER_ACTIVATED,
             AuditAction.USER_PASSWORD_CHANGED,
+            AuditAction.USER_DELETED,
+            AuditAction.PROFILE_UPDATED,
         }
         group_actions = {
             AuditAction.GROUP_CREATED,
@@ -136,5 +141,5 @@ class AuditEvent(Base):
             "event_type": self.event_type,
             "target_id": self.target_id,
             "target_type": self.target_type,
-            "metadata": self.metadata,
+            "metadata": self.event_metadata,
         }

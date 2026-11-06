@@ -57,6 +57,8 @@ class Group(Base):
     members = relationship(
         "User",
         secondary=user_group_association,
+        primaryjoin=lambda: Group.id == user_group_association.c.group_id,
+        secondaryjoin=lambda: user_group_association.c.user_id == __import__("backend.app.users.model", fromlist=["User"]).User.id,
         backref="groups",
         lazy="selectin",
     )
@@ -101,7 +103,7 @@ class Group(Base):
             "is_system_group": self.is_system_group,
             "type": self.type,
             "attributes": self.get_attributes(),
-            "member_count": self.member_count,
+            "member_count": len(self.members),
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

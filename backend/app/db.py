@@ -1,7 +1,7 @@
 """Database configuration and SQLAlchemy setup."""
 
 import os
-from contextlib import contextmanager
+from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 from sqlalchemy import create_engine
@@ -27,21 +27,31 @@ AsyncSessionLocal = sessionmaker(
     class_=AsyncSession, expire_on_commit=False, bind=AsyncEngine
 )
 
+# Shared declarative base for all models
 Base = declarative_base()
 
 
 def init_db():
-    """Initialize database tables."""
+    """Initialize database tables.
+
+    This function imports all models to register them with the Base metadata
+    before creating the tables.
+    """
+    # Import all models to register them with Base
     from backend.app.users.model import User
     from backend.app.groups.model import Group
     from backend.app.audit.model import AuditEvent
+    from backend.app.auth.session import Session
 
+    # Now create all tables
     Base.metadata.create_all(bind=engine)
 
 
-@contextmanager
 def get_db():
-    """Get database session context manager."""
+    """Get database session (FastAPI dependency).
+
+    Returns a SQLAlchemy session that is automatically closed after the request.
+    """
     db = SessionLocal()
     try:
         yield db

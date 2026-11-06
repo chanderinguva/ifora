@@ -74,3 +74,9 @@ Thumbs.db
 
 # Docker
 docker-compose.override.yml
+# Playwright
+.playwright-mcp/
+frontend/test-results/
+frontend/playwright-report/
+.next/
+*.tsbuildinfo

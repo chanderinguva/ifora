@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { login } from "@/lib/auth-client";
+import { getCurrentUser, login } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -48,7 +48,8 @@ export default function LoginPage() {
 
     try {
       await login(data.email, data.password);
-      router.push("/admin/dashboard");
+      const u = await getCurrentUser();
+      router.push(u?.is_admin ? "/admin/dashboard" : "/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {

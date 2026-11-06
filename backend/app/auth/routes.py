@@ -4,19 +4,27 @@ Implements secure login, logout, and bootstrap endpoints.
 Follows security best practices for session management.
 """
 
-from datetime import datetime, timedelta
+import hmac
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
+from passlib.hash import argon2
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 
 from backend.app.config import settings
 from backend.app.db import get_db
 from backend.app.users.model import User
-from backend.app.auth.session import Session
+from backend.app.auth.session import Session as AuthSession
+from backend.app.auth.deps import (
+    check_origin,
+    clear_session_cookie,
+    get_session_and_user,
+    set_session_cookie,
+)
 from backend.app.audit.model import AuditEvent, AuditAction
 
 logger = structlog.get_logger(__name__)
@@ -56,20 +64,8 @@ class LogoutResponse(BaseModel):
     message: str = "Logged out successfully"
 
 
-class AuditLog(BaseModel):
-    """Audit event schema."""
-
-    id: int
-    timestamp: datetime
-    action: str
-    event_type: str
-    actor_id: Optional[int] = None
-    target_id: Optional[int] = None
-    ip_address: Optional[str] = None
-
-
 async def log_audit(
-    db: Session,
+    db,
     action: AuditAction,
     actor_id: Optional[int] = None,
     target_id: Optional[int] = None,
@@ -88,82 +84,94 @@ async def log_audit(
     db.commit()
 
 
+# Verified against when the account does not exist, so response time does not
+# reveal whether an email is registered (account enumeration resistance).
+_DUMMY_HASH = argon2.hash("dummy-password-for-timing-equalisation")
+
+
 @router.post("/login", response_model=dict)
 async def login_endpoint(
     request: Request,
+    response: Response,
     login_data: LoginRequest,
     db: Session = Depends(get_db),
-    response: JSONResponse = None,
 ):
-    """Authenticate user and create session.
+    """Authenticate user, create a session and set the session cookie.
 
     Security measures:
-    - Rate limiting via failed attempt tracking
-    - Account lockout after multiple failures
-    - Secure session token generation
-    - Session tracking for audit
+    - Origin check (login CSRF)
+    - Uniform 401 for unknown user / bad password / locked / inactive account
+    - Constant-ish timing for unknown users
+    - Account lockout after repeated failures
+    - Fresh opaque token per login (no session fixation); only its hash is stored
     """
-    # Check if email format is valid
-    if not login_data.email:
-        raise HTTPException(status_code=400, detail="Email is required")
+    check_origin(request)
+    now = datetime.now(timezone.utc)
+    invalid = HTTPException(status_code=401, detail="Invalid credentials")
 
-    # Find user
     user = db.query(User).filter(User.email == login_data.email.lower()).first()
 
     if not user:
-        # Don't reveal whether user exists
-        logger.warning("login.attempt_failed", reason="user_not_found", email=login_data.email)
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        try:
+            argon2.verify(login_data.password, _DUMMY_HASH)
+        except Exception:
+            pass
+        logger.warning("login.attempt_failed", reason="user_not_found")
+        raise invalid
 
-    # Check if account is locked
     if user.is_locked_out():
+        try:
+            argon2.verify(login_data.password, _DUMMY_HASH)  # equalise timing
+        except Exception:
+            pass
         logger.warning("login.attempt_failed", reason="account_locked", user_id=user.id)
-        raise HTTPException(status_code=423, detail="Account is temporarily locked")
+        raise invalid
 
-    # Verify password
     if not user.verify_password(login_data.password):
-        # Increment failed attempts
         user.failed_login_attempts += 1
         if user.failed_login_attempts >= settings.MAX_LOGIN_ATTEMPTS:
-            user.locked_out_at = datetime.utcnow() + timedelta(
-                minutes=settings.LOGIN_LOCKOUT_MINUTES
-            )
+            user.lockout_until = now + timedelta(minutes=settings.LOGIN_LOCKOUT_MINUTES)
+            user.failed_login_attempts = 0
         db.commit()
-
+        await log_audit(
+            db, AuditAction.LOGIN_FAILURE, actor_id=str(user.id), request=request
+        )
         logger.warning("login.attempt_failed", reason="invalid_password", user_id=user.id)
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        raise invalid
 
-    # Reset failed attempts on successful login
+    if user.status != "active":
+        logger.warning("login.attempt_failed", reason="inactive", user_id=user.id)
+        raise invalid
+
     user.failed_login_attempts = 0
-    user.locked_out_at = None
-    user.last_login_at = datetime.utcnow()
+    user.lockout_until = None
+    user.last_login_at = now
 
-    # Create session
-    session = Session.create(
+    session = AuthSession.create(
         user_id=user.id,
         session_lifetime_hours=settings.SESSION_LIFETIME_HOURS,
         ip_address=request.client.host if request.client else None,
-        user_agent=request.headers.get("user-agent"),
+        user_agent=(request.headers.get("user-agent") or "")[:500],
         is_admin_session=user.is_admin,
     )
-
     db.add(session)
     db.commit()
 
-    # Log audit event
+    set_session_cookie(response, session.raw_token)
+
     await log_audit(
         db,
         AuditAction.LOGIN_SUCCESS,
-        actor_id=user.id,
+        actor_id=str(user.id),
         metadata={"method": "password"},
         request=request,
     )
-
     logger.info("login.success", user_id=user.id)
 
     return {
         "success": True,
         "user": user.to_dict(),
+        "csrf_token": AuthSession.csrf_token_for(session.raw_token),
         "session": {"expires_at": session.expires_at.isoformat()},
     }
 
@@ -171,47 +179,37 @@ async def login_endpoint(
 @router.post("/logout", response_model=LogoutResponse)
 async def logout_endpoint(
     request: Request,
+    response: Response,
+    ctx=Depends(get_session_and_user),
     db: Session = Depends(get_db),
-    session_token: Optional[str] = None,
 ):
-    """Logout user and invalidate session.
-
-    Security:
-    - Invalidates server-side session
-    - Clears via cookie in actual client
-    - Logs audit event
-    """
-    # In a real implementation, we'd get the session from the cookie
-    # and invalidate it server-side
-    # For now, we'll just log the logout
-
-    logger.info("logout.executed", ip=request.client.host if request.client else None)
-
-    await log_audit(
-        db,
-        AuditAction.LOGOUT,
-        ip_address=request.client.host if request.client else None,
-    )
-
+    """Revoke the server-side session and clear the cookie (CSRF-protected)."""
+    session, user, _ = ctx
+    session.revoke()
+    db.commit()
+    clear_session_cookie(response)
+    await log_audit(db, AuditAction.LOGOUT, actor_id=str(user.id), request=request)
+    logger.info("logout.executed", user_id=user.id)
     return {"success": True, "message": "Logged out successfully"}
 
 
-@router.get("/me", response_model=dict)
-async def get_current_user_endpoint(
-    request: Request,
-    db: Session = Depends(get_db),
-):
-    """Get current authenticated user info."""
-    # In a real implementation, we'd validate the session cookie
-    # and return the user info
-    return {"authenticated": False, "message": "Not authenticated"}
+@router.get("/me")
+async def get_current_user_endpoint(ctx=Depends(get_session_and_user)):
+    """Return the authenticated user plus the CSRF token for this session."""
+    session, user, raw_token = ctx
+    return {
+        "authenticated": True,
+        "user": user.to_dict(),
+        "csrf_token": AuthSession.csrf_token_for(raw_token),
+        "session": {"expires_at": session.expires_at.isoformat()},
+    }
 
 
 @router.post("/admin/bootstrap", response_model=BootstrapResponse)
 async def bootstrap_admin_endpoint(
     bootstrap_data: BootstrapAdminRequest,
     db: Session = Depends(get_db),
-    request: Optional[Request] = None,
+    request: Request = None,
 ):
     """Bootstrap first administrator account.
 
@@ -222,14 +220,14 @@ async def bootstrap_admin_endpoint(
     - Logs all bootstrap attempts
     """
     # Verify secret key
-    if bootstrap_data.secret_key != settings.ADMIN_SECRET_KEY:
+    if not hmac.compare_digest(
+        bootstrap_data.secret_key.encode(), settings.ADMIN_SECRET_KEY.encode()
+    ):
         logger.warning("bootstrap.attempt_failed", reason="invalid_secret_key")
         raise HTTPException(status_code=403, detail="Invalid bootstrap key")
 
     # Check if admin already exists
-    existing_admin = (
-        db.query(User).filter(User.is_super_admin == True).first()
-    )
+    existing_admin = db.query(User).filter(User.is_super_admin == True).first()
     if existing_admin:
         logger.warning("bootstrap.attempt_failed", reason="admin_already_exists")
         raise HTTPException(status_code=409, detail="Administrator already exists")
