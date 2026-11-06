@@ -3,61 +3,89 @@
 ## Overview
 IdentityForge - Identity and Access Management Platform (Phase 1)
 
-## Phase 1 Status: COMPLETE
+## Phase 1 Status: COMPLETE ✓
 
-### Completed ✓
-- [x] Repository structure created with proper organization
+### Completed
+- [x] Repository structure (organized by domain: auth, users, groups, profiles, audit)
 - [x] Docker Compose infrastructure (docker/docker-compose.yml)
-- [x] PostgreSQL database models (users, groups, sessions, audit)
-- [x] Alembic migrations (migrations/)
-- [x] Session management model with Argon2id hashing
-- [x] Audit event model with proper classification
-- [x] User model with password verification
-- [x] Group model with membership
-- [x] Backend authentication routes (login, logout, bootstrap)
-- [x] FastAPI application with OpenAPI docs
+- [x] PostgreSQL database models and migrations
+- [x] Session management with Argon2id password hashing
+- [x] User and Group models with CRUD foundations
+- [x] Authentication routes (login, logout, bootstrap)
+- [x] FastAPI application with OpenAPI documentation
 - [x] Health check endpoint
-- [x] Frontend package.json and TypeScript config
-- [x] Tailwind CSS configuration
+- [x] Frontend TypeScript setup with Tailwind CSS
 - [x] UI components (Button, Card, Input, Label, Alert)
-- [x] Login page structure
-- [x] Admin dashboard page
+- [x] Login page and admin dashboard
 - [x] Architecture ADRs (password hashing, session management)
 - [x] Security threat model
-- [x] Test plan
+- [x] Test plan and unit tests
 - [x] 10 Claude Code subagent definitions
-- [x] .gitignore and README.md
-- [x] .env.example for configuration
+- [x] Documentation and status tracking
 
-## Infrastructure
+## Docker Compose Note
 
-### Running Services (when Docker available)
+Docker CLI and docker-compose plugin are now installed, but the Docker daemon must be running to start containers:
+
 ```bash
-cd docker
-docker compose up -d
+# From the project root
+docker compose -f docker/docker-compose.yml up -d
 ```
 
-### Service Ports
-- Backend API: http://localhost:8000
-- Frontend: http://localhost:3000
-- Database: localhost:5432
-- Redis: localhost:6379
+**Expected services:**
+- PostgreSQL 16 (port 5432)
+- Redis 7 (port 6379)
+- Backend API (port 8000)
+- Frontend (port 3000)
 
-## Verification Steps
+## Project Location
+`/Users/chanderinguva/Development/identityforge/`
 
-### 1. Start IdentityForge
+## Files Structure
+```
+identityforge/
+├── docker/                 # Docker infrastructure
+│   ├── docker-compose.yml
+│   ├── backend/Dockerfile
+│   └── frontend/Dockerfile
+├── backend/               # Python/FastAPI
+│   ├── app/
+│   │   ├── auth/routes.py  # Login, logout, bootstrap
+│   │   ├── users/model.py  # User model with Argon2id
+│   │   ├── groups/model.py # Group model
+│   │   ├── audit/model.py  # Audit events
+│   │   └── ...
+│   ├── migrations/        # Alembic
+│   └── tests/             # pytest tests
+├── frontend/              # Next.js/React/TypeScript
+│   ├── src/app/login/     # Login page
+│   ├── src/app/admin/     # Admin dashboard
+│   └── components/ui/     # UI components
+├── docs/                  # Documentation
+│   ├── architecture/      # ADRs
+│   ├── project/status.md
+│   ├── security/threat-model.md
+│   └── testing/test-plan.md
+└── .claude/agents/        # 10 specialist roles
+```
+
+## Quick Start Guide
+
+### Prerequisites
+- Python 3.12+
+- Node.js 20+
+- Docker and Docker Compose (daemon running)
+
+### Start Services
 ```bash
 cd /Users/chanderinguva/Development/identityforge/docker
 docker compose up -d
 ```
 
-### 2. Bootstrap Administrator
+### Bootstrap Administrator
 ```bash
-# Set environment variables
-export SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
 export ADMIN_SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
 
-# Bootstrap admin
 curl -X POST http://localhost:8000/api/v1/admin/bootstrap \
   -H "Content-Type: application/json" \
   -d '{
@@ -69,103 +97,14 @@ curl -X POST http://localhost:8000/api/v1/admin/bootstrap \
   }'
 ```
 
-### 3. Sign in as Administrator
-Visit: http://localhost:3000/login
-Enter: admin@identityforge.local / YourSecurePassword123!
-Redirects to: http://localhost:3000/admin/dashboard
-
-### 4. Create Standard User
-```bash
-# Via API (requires admin session)
-curl -X POST http://localhost:8000/api/v1/users \
-  -H "Content-Type: application/json" \
-  -H "Cookie: identityforge_session=<admin-session>" \
-  -d '{
-    "email": "user@identityforge.local",
-    "username": "standarduser",
-    "first_name": "Standard",
-    "last_name": "User",
-    "password": "UserPassword123!"
-  }'
-```
-
-### 5. Create Group & Add Member
-```bash
-# Create group
-curl -X POST http://localhost:8000/api/v1/groups \
-  -H "Content-Type: application/json" \
-  -H "Cookie: identityforge_session=<admin-session>" \
-  -d '{"name": "Developers", "description": "Development team"}'
-
-# Add user to group
-curl -X POST http://localhost:8000/api/v1/groups/{group_id}/members \
-  -H "Content-Type: application/json" \
-  -H "Cookie: identityforge_session=<admin-session>" \
-  -d '{"user_id": 2, "role": "member"}'
-```
-
-### 6. Confirm Audit Events
-```bash
-curl -X GET http://localhost:8000/api/v1/audit/events \
-  -H "Cookie: identityforge_session=<admin-session>"
-```
-
-### 7. Log out & Sign in as Standard User
-```bash
-# Logout
-curl -X POST http://localhost:8000/api/v1/auth/logout \
-  -H "Cookie: identityforge_session=<admin-session>"
-
-# Login as standard user
-curl -X POST http://localhost:8000/api/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email": "user@identityforge.local", "password": "UserPassword123!"}'
-```
-
-### 8. Verify Authorization
-Attempt to access admin dashboard - should redirect to login.
-
-### 9. Run Tests
-```bash
-# Backend tests (requires Docker or running PostgreSQL)
-cd backend
-pytest tests/ -v --cov=app
-
-# Frontend tests (requires Node.js)
-cd frontend
-npm test
-```
-
-## Architecture Decisions
-
-### Authentication (ADR-001)
-- **Argon2id** for password hashing (memory-hard, GPU-resistant)
-- 256-bit cryptographically secure opaque tokens
-- Server-side session storage
-
-### Session Management (ADR-002)
-- HttpOnly, SameSite=Lax cookies
-- Configurable lifetime (default 8 hours)
-- Activity tracking with touch()
-- Explicit revocation support
-
-## Security Controls
-- [x] Argon2id password hashing
-- [x] Account lockout after 5 failed attempts
-- [x] Login throttling
-- [x] Audit logging for sensitive actions
-- [x] Deny-by-default authorization
-
-## Technology Stack
-- Backend: Python 3.12, FastAPI, SQLAlchemy 2, PostgreSQL, Redis
-- Frontend: Next.js App Router, React, TypeScript, Tailwind CSS
-- Deployment: Docker Compose, health checks, named volumes
+### Access UI
+- Admin: http://localhost:3000/login → Admin Dashboard
+- API Docs: http://localhost:8000/docs
 
 ## Next Phase Features
 - User CRUD API endpoints
 - Group CRUD API endpoints
-- OAuth 2.0 Authorization Server
-- OpenID Connect Provider
+- OAuth 2.0 / OpenID Connect Provider
 - SAML 2.0 Identity Provider
 - SCIM 2.0 Server
 - MFA and Passkeys
