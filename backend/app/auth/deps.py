@@ -102,4 +102,7 @@ def require_admin(user: User = Depends(get_current_user)) -> User:
     """Deny by default: only admins pass."""
     if not user.is_admin:
         raise HTTPException(status_code=403, detail="Forbidden")
+    if user.needs_mfa_setup:
+        # Still signed in (so they can reach Account settings and enrol), but no admin power yet.
+        raise HTTPException(status_code=403, detail="Multi-factor authentication setup required")
     return user

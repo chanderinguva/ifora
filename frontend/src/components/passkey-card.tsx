@@ -32,7 +32,10 @@ export function PasskeyCard() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
-  const load = () => http<Data>("/me/passkeys").then(setData).catch(() => {});
+  const load = () =>
+    http<Data>("/me/passkeys")
+      .then((d) => { setData(d); window.dispatchEvent(new Event("factors-changed")); })
+      .catch(() => {});
   useEffect(() => {
     setSupported(browserSupportsWebAuthn());
     load();

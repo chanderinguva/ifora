@@ -51,7 +51,7 @@ export default function LoginPage() {
 
   const finish = async () => {
     const u = await getCurrentUser();
-    router.push(u?.is_admin ? "/admin/dashboard" : "/dashboard");
+    router.push(u?.mfa_setup_required ? "/settings#security" : u?.is_admin ? "/admin/dashboard" : "/dashboard");
   };
 
   const onPasskey = async () => {

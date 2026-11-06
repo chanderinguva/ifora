@@ -23,7 +23,10 @@ export function MfaCard() {
   const [recovery, setRecovery] = useState<string[] | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
-  const load = () => http<Status>("/me/mfa").then(setStatus).catch(() => {});
+  const load = () =>
+    http<Status>("/me/mfa")
+      .then((d) => { setStatus(d); window.dispatchEvent(new Event("factors-changed")); })
+      .catch(() => {});
   useEffect(() => {
     load();
   }, []);

@@ -33,6 +33,10 @@ export default function AccountSettings() {
   useEffect(() => {
     http<User>("/me/profile").then(apply).catch((e) => setMsg({ ok: false, text: e.message }));
     loadSessions();
+    // the factor cards announce changes so the "setup required" banner clears right after enrolling
+    const refresh = () => http<User>("/me/profile").then((u) => setMe((m) => (m ? { ...m, mfa_setup_required: u.mfa_setup_required, mfa_enabled: u.mfa_enabled, passkey_count: u.passkey_count } : u))).catch(() => {});
+    window.addEventListener("factors-changed", refresh);
+    return () => window.removeEventListener("factors-changed", refresh);
   }, []);
 
   async function run(fn: () => Promise<unknown>, ok: string) {
@@ -61,6 +65,17 @@ export default function AccountSettings() {
       <PageHeader title="Account settings">
         {me.is_admin && <Link href="/admin/dashboard" className="text-sm underline-offset-4 hover:underline">Go to administration →</Link>}
       </PageHeader>
+
+      {me.mfa_setup_required && (
+        <Alert variant="warning" className="mb-4" data-testid="mfa-required-banner">
+          <AlertDescription>
+            <strong>Action required:</strong> administrators must protect their account with a passkey or an authenticator app. Set one up under Security below to unlock the admin area.
+          </AlertDescription>
+        </Alert>
+      )}
+      {!me.mfa_setup_required && me.is_admin && (
+        <p className="mb-4 text-sm"><Link href="/admin/dashboard" className="underline underline-offset-4">Continue to administration →</Link></p>
+      )}
 
       {msg && <Alert variant={msg.ok ? "default" : "destructive"} className="mb-4" role="status"><AlertDescription>{msg.text}</AlertDescription></Alert>}
 

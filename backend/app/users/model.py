@@ -133,6 +133,18 @@ class User(Base):
 
         self.profile_attributes = json.dumps(attributes)
 
+    @property
+    def has_second_factor(self) -> bool:
+        """An enabled authenticator app, or any passkey (registered with user verification)."""
+        return bool((self.mfa and self.mfa.enabled) or self.passkeys)
+
+    @property
+    def needs_mfa_setup(self) -> bool:
+        """Admin policy: admins without a second factor may only manage their own account."""
+        from backend.app.config import settings
+
+        return bool(settings.ADMIN_MFA_REQUIRED and self.is_admin and not self.has_second_factor)
+
     def to_dict(self, include_sensitive: bool = False) -> Dict[str, Any]:
         """Convert to dictionary."""
         result = {
@@ -151,5 +163,6 @@ class User(Base):
             "mfa_enabled": bool(self.mfa and self.mfa.enabled),
             "passkey_count": len(self.passkeys),
             "passkey_required": self.passkey_required,
+            "mfa_setup_required": self.needs_mfa_setup,
         }
         return result

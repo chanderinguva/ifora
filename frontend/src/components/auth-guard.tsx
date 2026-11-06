@@ -24,6 +24,7 @@ export function AuthGuard({
     getCurrentUser().then((u: User | null) => {
       if (!alive) return;
       if (!u) router.replace("/login");
+      else if (requireAdmin && u.mfa_setup_required) router.replace("/settings#security");
       else if (requireAdmin && !u.is_admin) router.replace("/dashboard");
       else setUser(u);
     });

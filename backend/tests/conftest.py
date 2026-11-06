@@ -21,6 +21,8 @@ os.environ["DATABASE_URL_ASYNC"] = _async_url
 os.environ.setdefault("SECRET_KEY", "test_secret_key_value_with_at_least_32_chars")
 os.environ.setdefault("ADMIN_SECRET_KEY", "test_admin_bootstrap_key_with_32_chars_min")
 os.environ["ENVIRONMENT"] = "test"
+# Off for the general suite (its admins have no second factor); test_admin_mfa_policy turns it on.
+os.environ["ADMIN_MFA_REQUIRED"] = "false"
 if "MFA_ENCRYPTION_KEY" not in os.environ:
     from cryptography.fernet import Fernet
 
