@@ -45,3 +45,17 @@ What we already have that lines up: opaque server-side sessions, TOTP/passkey fa
 - Step-up/max_age: auth0.com/docs/authenticate/login/max-age-reauthentication, ssojet, logto docs
 - Okta phishing-resistant sign-in policies: help.okta.com (pr-set-up-policies, pr-overview)
 - Earlier-session searches (Hydra login/consent, Keycloak concepts, Entra app registration/Conditional Access, Auth0 refresh rotation/Actions, Okta System Log, SCIM, JWKS rotation, OpenID conformance, ZITADEL): findings summarised in §1 at confidence M or L; re-verify specifics before relying on them in implementation.
+
+## 5. End-user account settings (added 2026-11-06)
+What the competitors expose to the signed-in user (conf. M unless noted; Okta's help page did not confirm which profile fields are editable, and Entra's menu names vary by tenant and portal version):
+
+| Area | Okta End-User Settings | Entra My Account | IdentityForge now |
+|---|---|---|---|
+| Personal info | Editable per admin config; editing requires re-verification with two enrolled authenticators | Profile + photo | Names + self-editable attributes (re-verification **not** done) |
+| Language / region | Display language separate from the profile `locale`; user's saved choice wins | "Language & Region": display language, time zone (admin may lock language) | Time zone and locale dropdowns (this PR); interface still English only |
+| Security methods | Authenticators list | Security info (add/remove methods, default method) | Authenticator app, passkeys, recovery codes |
+| Devices / sessions | — | Devices | Active sessions (no per-session revoke yet) |
+| Recent activity | Recent activity | My sign-ins, with "this wasn't me" on unusual ones | Recent activity card (this PR); no "report unusual" |
+| Privacy | — | "View how your organization uses your data" | none |
+
+Gaps worth building next, in rough priority: revoke individual sessions; step-up re-verification before editing sensitive profile data or removing factors; "this wasn't me" on activity; admin-lockable profile fields (per-attribute self-service policy); profile photo; preferred/display name; default MFA method; privacy/data-use page.

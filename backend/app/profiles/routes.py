@@ -13,7 +13,7 @@ from backend.app.auth.session import Session as AuthSession
 from backend.app.auth.session import SessionStatus
 from backend.app.auth.sessions_util import revoke_user_sessions
 from backend.app.db import get_db
-from backend.app.profiles.schemas import SELF_EDITABLE, PasswordChange, validate_attributes
+from backend.app.profiles.schemas import SELF_EDITABLE, PasswordChange, check_self_service_values, validate_attributes
 from backend.app.users.model import User
 
 router = APIRouter(prefix="/me", tags=["profile"])
@@ -59,6 +59,10 @@ def update_profile(
         changed["last_name"] = True
     if body.profile_attributes is not None:
         current = user.get_profile_attributes()
+        try:
+            check_self_service_values(body.profile_attributes, current)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
         # Admin-managed keys stay as they are; users only control SELF_EDITABLE keys.
         merged = {k: v for k, v in current.items() if k not in SELF_EDITABLE}
         for k, v in body.profile_attributes.items():
@@ -90,6 +94,40 @@ def change_password(
     record(db, AuditAction.USER_PASSWORD_CHANGED, request, user, user.id, "user", {"by": "self", "sessions_revoked": revoked})
     db.commit()
     return {"success": True, "other_sessions_revoked": revoked}
+
+
+# Own recent security-relevant events (Okta "recent activity", Entra "My sign-ins"). Only the user's own
+# rows, only these actions, and only fields that are safe to show them.
+_ACTIVITY = (
+    "LOGIN_SUCCESS", "LOGIN_FAILURE", "LOGOUT", "USER_PASSWORD_CHANGED", "MFA_ENABLED", "MFA_DISABLED",
+    "MFA_RESET", "MFA_RECOVERY_USED", "MFA_CHALLENGE_FAILED", "PASSKEY_REGISTERED", "PASSKEY_REMOVED",
+    "PASSKEY_LOGIN_FAILED", "ROLE_SWITCHED",
+)
+
+
+@router.get("/activity")
+def my_activity(limit: int = 20, ctx=Depends(get_session_and_user), db: Session = Depends(get_db)):
+    from backend.app.audit.model import AuditEvent
+
+    _, user, _ = ctx
+    rows = (
+        db.query(AuditEvent)
+        .filter(AuditEvent.actor_id == str(user.id), AuditEvent.action.in_(_ACTIVITY))
+        .order_by(AuditEvent.timestamp.desc(), AuditEvent.id.desc())
+        .limit(max(1, min(limit, 50)))
+        .all()
+    )
+    return {
+        "items": [
+            {
+                "timestamp": r.timestamp.isoformat(),
+                "action": r.action,
+                "ip_address": r.actor_ip_address,
+                "method": (r.event_metadata or {}).get("method"),
+            }
+            for r in rows
+        ]
+    }
 
 
 @router.get("/sessions")

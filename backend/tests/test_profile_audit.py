@@ -68,3 +68,35 @@ def test_stats_are_real(admin, db):
     s = admin.get("/admin/stats").json()
     assert s["users_total"] == 2 and s["groups"] == 1 and s["memberships"] == 1
     assert s["active_sessions"] == 1 and s["admins"] == 1 and s["recent_events"]
+
+
+# ---- timezone / locale / activity --------------------------------------------------
+
+def test_timezone_must_be_an_iana_zone(member):
+    assert member.patch("/me/profile", {"profile_attributes": {"timezone": "Not/AZone"}}).status_code == 422
+    assert member.patch("/me/profile", {"profile_attributes": {"timezone": "UTC+5"}}).status_code == 422
+    r = member.patch("/me/profile", {"profile_attributes": {"timezone": "America/Chicago"}})
+    assert r.status_code == 200 and r.json()["profile_attributes"]["timezone"] == "America/Chicago"
+
+
+def test_locale_validation(member):
+    assert member.patch("/me/profile", {"profile_attributes": {"locale": "english"}}).status_code == 422
+    assert member.patch("/me/profile", {"profile_attributes": {"locale": "en-GB"}}).status_code == 200
+
+
+def test_legacy_free_text_timezone_does_not_block_other_edits(db, member):
+    member.user.set_profile_attributes({"timezone": "Central time"})
+    db.add(member.user)
+    db.commit()
+    r = member.patch("/me/profile", {"profile_attributes": {"timezone": "Central time", "title": "Eng"}})
+    assert r.status_code == 200
+    assert member.patch("/me/profile", {"profile_attributes": {"timezone": "Other"}}).status_code == 422
+
+
+def test_my_activity_shows_only_my_events(db, member, admin):
+    r = member.get("/me/activity").json()["items"]
+    assert r and r[0]["action"] == "LOGIN_SUCCESS" and r[0]["method"] == "password"
+    assert set(r[0]) == {"timestamp", "action", "ip_address", "method"}
+    mine = len(r)
+    assert len(admin.get("/me/activity").json()["items"]) >= 1
+    assert len(member.get("/me/activity").json()["items"]) == mine  # admin's events never appear

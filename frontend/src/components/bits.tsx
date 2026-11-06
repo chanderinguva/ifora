@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { formatDateTime } from "@/lib/display";
 
 export const fieldClass =
   "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -66,5 +67,5 @@ export const th = "px-4 py-2 text-left text-xs font-medium uppercase tracking-wi
 export const td = "px-4 py-3 text-sm";
 
 export function fmt(ts: string | null | undefined) {
-  return ts ? new Date(ts).toLocaleString() : "—";
+  return ts ? formatDateTime(ts) : "—";
 }
