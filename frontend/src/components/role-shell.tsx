@@ -1,21 +1,26 @@
 "use client";
 
 import { LayoutDashboard, Users, Shield, ScrollText, Home, Settings } from "lucide-react";
-import { AppShell, type NavItem } from "./app-shell";
+import { AppShell, type NavGroup } from "./app-shell";
 import { useCurrentUser } from "./auth-guard";
 import { inAdminView } from "@/lib/roles";
 
-export const ADMIN_NAV: NavItem[] = [
-  { href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/admin/users", label: "Users", icon: Users },
-  { href: "/admin/groups", label: "Groups", icon: Shield },
-  { href: "/admin/audit", label: "Audit log", icon: ScrollText },
-  { href: "/settings", label: "Account settings", icon: Settings },
+export const ADMIN_NAV: NavGroup[] = [
+  { items: [{ href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard }] },
+  {
+    label: "Directory",
+    items: [
+      { href: "/admin/users", label: "Users", icon: Users },
+      { href: "/admin/groups", label: "Groups", icon: Shield },
+    ],
+  },
+  { label: "Security", items: [{ href: "/admin/audit", label: "Audit log", icon: ScrollText }] },
+  { label: "Account", items: [{ href: "/settings", label: "Account settings", icon: Settings }] },
 ];
 
-export const USER_NAV: NavItem[] = [
-  { href: "/dashboard", label: "Home", icon: Home },
-  { href: "/settings", label: "Account settings", icon: Settings },
+export const USER_NAV: NavGroup[] = [
+  { items: [{ href: "/dashboard", label: "Home", icon: Home }] },
+  { label: "Account", items: [{ href: "/settings", label: "Account settings", icon: Settings }] },
 ];
 
 /** Picks the navigation for the signed-in user's role. */

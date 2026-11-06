@@ -18,13 +18,14 @@ _Last updated: 2026-11-05_
 | System audit events | Done | Recorded in the same transaction; viewer with filter |
 | Admin dashboard | Done | Real counts from the database, recent activity |
 | User dashboard | Done | Profile, groups, change password, active sessions |
-| Browser & API tests | Done | 148 API integration tests (real Postgres test DB) + 11 Playwright browser tests (the policy spec needs a throwaway admin, see below) (incl. a Chrome virtual authenticator) |
+| Browser & API tests | Done | 148 API integration tests (real Postgres test DB) + 15 Playwright browser tests (the policy spec needs a throwaway admin, see below) (incl. a Chrome virtual authenticator) |
 | Security review | **Partial** | Self-review recorded in ADR 003; no independent review yet |
 
 ## Hardening done after Phase 1
 - TOTP multi-factor authentication with recovery codes (ADR 003).
 - Passkeys (WebAuthn): usernameless sign-in, optional "require a passkey" policy, admin reset (ADR 003).
 - Admin MFA policy (`ADMIN_MFA_REQUIRED`, on by default) with one-time enrolment codes for first enrolment (ADR 003).
+- Navigation shell: grouped, collapsible sidebar, breadcrumbs, mobile drawer, skip link (ADR 004).
 - Role view: admins can work as a normal user per session; switching back needs the password (ADR 003).
 - Brand identity (forge-fold mark, Lora wordmark, theme-aware logo, favicon/app icons; `docs/brand/guidelines.md`).
 - Dark theme (Light / System / Dark switch in the header and on the login page).
