@@ -26,9 +26,9 @@ def reset_replay(db, email):
     db.commit()
 
 
-def enrol(api, db, email):
+def enrol(api, db, email, enrollment_code=None):
     """Run the full setup+enable flow; returns recovery codes."""
-    r = api.post("/me/mfa/setup", {"password": STRONG})
+    r = api.post("/me/mfa/setup", {"password": STRONG, "enrollment_code": enrollment_code})
     assert r.status_code == 200, r.text
     secret = r.json()["secret"]
     code = pyotp.TOTP(secret).now()

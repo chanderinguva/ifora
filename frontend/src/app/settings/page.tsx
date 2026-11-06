@@ -69,7 +69,7 @@ export default function AccountSettings() {
       {me.mfa_setup_required && (
         <Alert variant="warning" className="mb-4" data-testid="mfa-required-banner">
           <AlertDescription>
-            <strong>Action required:</strong> administrators must protect their account with a passkey or an authenticator app. Set one up under Security below to unlock the admin area.
+            <strong>Action required:</strong> administrators must protect their account with a passkey or an authenticator app. You need a one-time enrolment code for this: ask a super admin, or the operator (<code>python -m backend.cli issue-enrollment-code &lt;email&gt;</code>). Then set one up under Security below to unlock the admin area.
           </AlertDescription>
         </Alert>
       )}
@@ -125,8 +125,8 @@ export default function AccountSettings() {
       </Card>
 
       <h2 className="mb-3 mt-8 text-lg font-semibold" id="security">Security</h2>
-      <PasskeyCard />
-      <MfaCard />
+      <PasskeyCard needsCode={!!me.mfa_setup_required} />
+      <MfaCard needsCode={!!me.mfa_setup_required} />
 
       <Card className="mb-6">
         <CardHeader><CardTitle>Change password</CardTitle></CardHeader>

@@ -22,7 +22,8 @@ function friendly(e: unknown): string {
 }
 
 /** Passkeys (WebAuthn): phishing-resistant sign-in. Manage, add, remove, and require them. */
-export function PasskeyCard() {
+export function PasskeyCard({ needsCode = false }: { needsCode?: boolean }) {
+  const [enrolCode, setEnrolCode] = useState("");
   const [data, setData] = useState<Data | null>(null);
   const [supported, setSupported] = useState(true);
   const [mode, setMode] = useState<Mode>("idle");
@@ -64,7 +65,7 @@ export function PasskeyCard() {
     run(async () => {
       const { ceremony_id, options } = await http<{ ceremony_id: string; options: any }>("/me/passkeys/register/options", {
         method: "POST",
-        body: { password },
+        body: { password, enrollment_code: needsCode ? enrolCode : undefined },
       });
       const credential = await startRegistration(options);
       await http("/me/passkeys/register/verify", {
@@ -169,8 +170,14 @@ export function PasskeyCard() {
             <Input id="pk-name" placeholder="e.g. MacBook Touch ID" maxLength={100} value={name} onChange={(e) => setName(e.target.value)} />
             <Label htmlFor="pk-pw">Confirm your password</Label>
             <Input id="pk-pw" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            {needsCode && (
+              <>
+                <Label htmlFor="pk-code">Enrolment code</Label>
+                <Input id="pk-code" autoComplete="off" placeholder="XXXX-XXXX-XXXX" value={enrolCode} onChange={(e) => setEnrolCode(e.target.value)} />
+              </>
+            )}
             <div className="flex gap-2">
-              <Button type="submit" disabled={!password || busy}>Continue</Button>
+              <Button type="submit" disabled={!password || (needsCode && !enrolCode) || busy}>Continue</Button>
               <Button type="button" variant="ghost" onClick={reset}>Cancel</Button>
             </div>
           </form>

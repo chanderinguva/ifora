@@ -2,6 +2,7 @@
 boundary: it is how a super admin who lost every sign-in factor gets back in.
 
     python -m backend.cli reset-factors admin@example.com [--yes]
+    python -m backend.cli issue-enrollment-code admin@example.com
 
 Removes the user's authenticator app, recovery codes and passkeys, lifts the passkey-required
 policy, clears any lockout, and ends all their sessions. The password is NOT changed or shown.
@@ -44,13 +45,40 @@ def reset_factors(email: str, assume_yes: bool = False, confirm=input, out=print
         db.close()
 
 
+def issue_enrollment_code(email: str, out=print) -> int:
+    """One-time code that lets an admin with no second factor enrol their first one."""
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.email == email.strip().lower()).first()
+        if user is None:
+            out(f"error: no user with email {email!r}")
+            return 1
+        if not user.is_admin:
+            out("error: enrolment codes are for administrators")
+            return 1
+        code = mfa_service.issue_enrollment_code(user)
+        record(db, AuditAction.ENROLLMENT_CODE_ISSUED, None, None, user.id, "user",
+               {"via": "cli", "expires_in_hours": mfa_service.ENROLLMENT_CODE_HOURS})
+        db.commit()
+        out(f"Enrolment code for {user.email} (single use, valid {mfa_service.ENROLLMENT_CODE_HOURS}h):")
+        out(f"  {code}")
+        out("Give it to them out of band. It replaces any earlier code and is not stored in clear.")
+        return 0
+    finally:
+        db.close()
+
+
 def main(argv: Optional[list] = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m backend.cli", description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("reset-factors", help="remove a user's MFA and passkeys (lost devices)")
     p.add_argument("email")
     p.add_argument("--yes", "-y", action="store_true", help="do not prompt")
+    e = sub.add_parser("issue-enrollment-code", help="one-time code for an admin to enrol their first factor")
+    e.add_argument("email")
     args = parser.parse_args(argv)
+    if args.cmd == "issue-enrollment-code":
+        return issue_enrollment_code(args.email)
     return reset_factors(args.email, args.yes)
 
 

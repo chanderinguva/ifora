@@ -126,3 +126,36 @@ def reset_all_factors(db: Session, user) -> dict:
         db.delete(p)
     user.passkey_required = False
     return {"sessions_revoked": revoke_user_sessions(db, user.id), "passkeys_removed": passkeys_removed}
+
+
+# ---- admin first-factor enrolment code --------------------------------------
+# A password alone must not be enough for an admin to attach the first factor: whoever holds the
+# password could otherwise enrol their own authenticator and satisfy ADMIN_MFA_REQUIRED.
+
+ENROLLMENT_CODE_HOURS = 24
+_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # no look-alikes
+
+
+def _norm_code(raw: str) -> str:
+    return "".join(ch for ch in (raw or "").upper() if ch.isalnum())
+
+
+def issue_enrollment_code(user: User) -> str:
+    """Create a new single-use code (replacing any older one). Returns it once; only a hash is kept."""
+    raw = "".join(secrets.choice(_ALPHABET) for _ in range(12))
+    user.enrollment_code_hash = _h(raw)
+    user.enrollment_code_expires_at = _now() + timedelta(hours=ENROLLMENT_CODE_HOURS)
+    return f"{raw[:4]}-{raw[4:8]}-{raw[8:]}"
+
+
+def enrollment_code_ok(user: User, supplied: Optional[str]) -> bool:
+    if not user.enrollment_code_hash or not user.enrollment_code_expires_at or not supplied:
+        return False
+    if user.enrollment_code_expires_at <= _now():
+        return False
+    return secrets.compare_digest(user.enrollment_code_hash, _h(_norm_code(supplied)))
+
+
+def clear_enrollment_code(user: User) -> None:
+    user.enrollment_code_hash = None
+    user.enrollment_code_expires_at = None
