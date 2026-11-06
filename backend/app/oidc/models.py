@@ -88,3 +88,62 @@ class OIDCClientSecret(TenantOwned, Base):
     expires_at = Column(DateTime(timezone=True), nullable=True)
     last_used_at = Column(DateTime(timezone=True), nullable=True)
     revoked_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class PendingAuthRequest(TenantOwned, Base):
+    """A validated /oauth/authorize request parked server-side while the user logs in / consents (ADR 005 §3).
+
+    The browser only ever holds the opaque request id; every parameter used to mint the code comes from this row,
+    so nothing can be altered between login and consent. Only a hash of the id is stored.
+    """
+
+    __tablename__ = "oidc_pending_requests"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    request_hash = Column(String(64), nullable=False, unique=True)
+    client_pk = Column(Integer, ForeignKey("oidc_clients.id", ondelete="CASCADE"), nullable=False, index=True)
+    redirect_uri = Column(String(2000), nullable=False)
+    scopes = Column(JSONB, nullable=False)
+    state = Column(String(512), nullable=True)
+    nonce = Column(String(512), nullable=True)
+    code_challenge = Column(String(128), nullable=False)
+    prompt = Column(String(32), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    decided_at = Column(DateTime(timezone=True), nullable=True)  # single use: set atomically on the first decision
+
+
+class OIDCConsent(TenantOwned, Base):
+    """What a user allowed a client to do. First-party clients get an implicit row (granted_via='first_party')."""
+
+    __tablename__ = "oidc_consents"
+    __table_args__ = (UniqueConstraint("user_id", "client_pk", name="uq_oidc_consents_user_client"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    client_pk = Column(Integer, ForeignKey("oidc_clients.id", ondelete="CASCADE"), nullable=False, index=True)
+    scopes = Column(JSONB, nullable=False)
+    granted_via = Column(String(16), nullable=False)  # user | first_party
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=_now)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class AuthorizationCode(TenantOwned, Base):
+    """Single-use code minted from a decided request: hashed at rest, ≤60 s, bound to client, redirect URI and PKCE."""
+
+    __tablename__ = "oidc_codes"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code_hash = Column(String(64), nullable=False, unique=True)
+    client_pk = Column(Integer, ForeignKey("oidc_clients.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    redirect_uri = Column(String(2000), nullable=False)
+    scopes = Column(JSONB, nullable=False)
+    nonce = Column(String(512), nullable=True)
+    code_challenge = Column(String(128), nullable=False)
+    auth_time = Column(DateTime(timezone=True), nullable=False)
+    amr = Column(JSONB, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    used_at = Column(DateTime(timezone=True), nullable=True)

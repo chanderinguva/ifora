@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     # OIDC provider (ADR 005). The signing-key encryption key must be a *different* Fernet key from MFA_ENCRYPTION_KEY.
     OIDC_ISSUER: str = Field(default="http://localhost:8000")
     OIDC_KEY_ENCRYPTION_KEY: str = Field(default="")
+    # Where /oauth/authorize sends the browser for login / consent (a page of the web UI).
+    OIDC_LOGIN_UI_URL: str = Field(default="http://localhost:3000/oauth/authorize")
+    OIDC_PENDING_REQUEST_TTL_SECONDS: int = Field(default=600)
+    OIDC_CODE_TTL_SECONDS: int = Field(default=60)
     OIDC_RSA_KEY_BITS: int = Field(default=3072)
     OIDC_ID_TOKEN_TTL_SECONDS: int = Field(default=600)
     OIDC_ACCESS_TOKEN_TTL_SECONDS: int = Field(default=600)
