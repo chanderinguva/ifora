@@ -1,195 +1,141 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
-import { ChevronDown, LogOut, Settings, UserRound, ShieldCheck, type LucideIcon } from "lucide-react";
-import { logout } from "@/lib/auth-client";
-import { http } from "@/lib/http";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
+import { Menu, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCurrentUser } from "./auth-guard";
-import { Logo, LogoMark } from "./logo";
+import { Breadcrumbs } from "./breadcrumbs";
+import { Logo, LogoLink } from "./logo";
+import { SidebarNav, type NavGroup } from "./sidebar-nav";
 import { ThemeToggle } from "./theme-toggle";
+import { UserMenu } from "./user-menu";
 
-export type NavItem = { href: string; label: string; icon: LucideIcon };
+export type { NavGroup, NavItem } from "./sidebar-nav";
 
-export function AppShell({
-  title,
-  nav,
-  children,
-}: {
-  title: string;
-  nav: NavItem[];
-  children: React.ReactNode;
-}) {
+const COLLAPSE_KEY = "identityforge.sidebar";
+const iconButton =
+  "inline-flex h-9 w-9 items-center justify-center rounded-md border text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
+
+/** Overlay navigation for small screens: Escape and backdrop close it, focus is trapped and restored. */
+function MobileDrawer({ open, onClose, groups, home, title }: { open: boolean; onClose: () => void; groups: NavGroup[]; home: string; title: string }) {
+  const panel = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const previous = document.activeElement as HTMLElement | null;
+    panel.current?.querySelector<HTMLElement>("a[href]")?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") return onClose();
+      if (e.key !== "Tab" || !panel.current) return;
+      const f = [...panel.current.querySelectorAll<HTMLElement>("a[href],button:not([disabled])")];
+      if (!f.length) return;
+      if (e.shiftKey && document.activeElement === f[0]) (e.preventDefault(), f[f.length - 1].focus());
+      else if (!e.shiftKey && document.activeElement === f[f.length - 1]) (e.preventDefault(), f[0].focus());
+    };
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+      previous?.focus();
+    };
+  }, [open, onClose]);
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-40 md:hidden">
+      <div className="absolute inset-0 bg-black/50" aria-hidden="true" onClick={onClose} />
+      <div ref={panel} role="dialog" aria-modal="true" aria-label="Navigation" data-testid="mobile-drawer" className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col bg-background shadow-xl">
+        <div className="flex h-14 items-center justify-between border-b px-5">
+          <Logo href={home} />
+          <button className={iconButton} aria-label="Close navigation" onClick={onClose}>
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+        <SidebarNav groups={groups} onNavigate={onClose} />
+      </div>
+    </div>
+  );
+}
+
+export function AppShell({ title, nav, children }: { title: string; nav: NavGroup[]; children: React.ReactNode }) {
   const user = useCurrentUser();
   const pathname = usePathname();
-  const router = useRouter();
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const [stepUp, setStepUp] = useState(false);
-  const [pw, setPw] = useState("");
-  const [roleError, setRoleError] = useState<string | null>(null);
-  const [switching, setSwitching] = useState(false);
+  const home = nav[0].items[0].href;
 
-  // A full navigation, so every page re-reads /me and shows the right shell for the new view.
-  async function switchToUser() {
-    setSwitching(true);
-    try {
-      await http("/me/role/user", { method: "POST" });
-      window.location.assign("/dashboard");
-    } catch (e) {
-      setRoleError(e instanceof Error ? e.message : "Could not switch");
-      setSwitching(false);
-    }
-  }
-  async function switchToAdmin(e: React.FormEvent) {
-    e.preventDefault();
-    setSwitching(true);
-    setRoleError(null);
-    try {
-      await http("/me/role/admin", { method: "POST", body: { password: pw } });
-      window.location.assign("/admin/dashboard");
-    } catch (err) {
-      setRoleError(err instanceof Error ? err.message : "Could not switch");
-      setSwitching(false);
-    }
-  }
+  const [collapsed, setCollapsed] = useState(false);
+  const [ready, setReady] = useState(false); // no width animation on first paint
+  const [drawer, setDrawer] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [stepUp, setStepUp] = useState(false);
 
   useEffect(() => {
-    const close = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
-    };
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && setMenuOpen(false);
-    document.addEventListener("mousedown", close);
-    document.addEventListener("keydown", esc);
-    return () => {
-      document.removeEventListener("mousedown", close);
-      document.removeEventListener("keydown", esc);
-    };
+    try {
+      setCollapsed(localStorage.getItem(COLLAPSE_KEY) === "1");
+    } catch {
+      /* storage unavailable: stay expanded */
+    }
+    setReady(true);
   }, []);
+  useEffect(() => setDrawer(false), [pathname]);
+
+  const toggleCollapsed = () =>
+    setCollapsed((c) => {
+      try {
+        localStorage.setItem(COLLAPSE_KEY, c ? "0" : "1");
+      } catch {
+        /* ignore */
+      }
+      return !c;
+    });
+  const closeDrawer = useCallback(() => setDrawer(false), []);
 
   return (
     <div className="flex min-h-screen bg-muted/30">
-      <aside className="hidden w-60 shrink-0 flex-col border-r bg-background md:flex">
-        <div className="border-b px-5 py-4">
-          <Logo />
-          <div className="text-xs text-muted-foreground">{title}</div>
+      <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:border focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:shadow">
+        Skip to main content
+      </a>
+
+      <aside
+        id="sidebar"
+        aria-label={title}
+        data-collapsed={collapsed}
+        className={cn(
+          "hidden shrink-0 flex-col border-r bg-background md:flex",
+          collapsed ? "w-16" : "w-60",
+          ready && "transition-[width] duration-200 ease-in-out motion-reduce:transition-none",
+        )}
+      >
+        <div className={cn("flex h-14 shrink-0 items-center border-b", collapsed ? "justify-center" : "px-5")}>
+          {collapsed ? <LogoLink href={home} /> : <Logo href={home} />}
         </div>
-        <nav className="flex-1 space-y-1 p-3" aria-label="Main">
-          {nav.map(({ href, label, icon: Icon }) => {
-            const active = pathname === href || pathname.startsWith(href + "/");
-            return (
-              <Link
-                key={href}
-                href={href}
-                aria-current={active ? "page" : undefined}
-                className={cn(
-                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium",
-                  active ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/60",
-                )}
-              >
-                <Icon className="h-4 w-4" />
-                {label}
-              </Link>
-            );
-          })}
-        </nav>
+        <SidebarNav groups={nav} collapsed={collapsed} />
       </aside>
 
+      <MobileDrawer open={drawer} onClose={closeDrawer} groups={nav} home={home} title={title} />
+
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between border-b bg-background px-6 py-3">
-          <LogoMark className="mr-3 md:hidden" title="IdentityForge" />
-          <nav className="flex gap-3 md:hidden" aria-label="Mobile">
-            {nav.map(({ href, label }) => (
-              <Link key={href} href={href} className="text-sm underline-offset-4 hover:underline">
-                {label}
-              </Link>
-            ))}
-          </nav>
+        <header className="flex h-14 items-center gap-3 border-b bg-background px-4 md:px-6">
+          <button className={cn(iconButton, "md:hidden")} aria-label="Open navigation" aria-expanded={drawer} data-testid="open-nav" onClick={() => setDrawer(true)}>
+            <Menu className="h-4 w-4" aria-hidden="true" />
+          </button>
+          <button
+            className={cn(iconButton, "hidden md:inline-flex")}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-expanded={!collapsed}
+            aria-controls="sidebar"
+            data-testid="toggle-sidebar"
+            onClick={toggleCollapsed}
+          >
+            {collapsed ? <PanelLeftOpen className="h-4 w-4" aria-hidden="true" /> : <PanelLeftClose className="h-4 w-4" aria-hidden="true" />}
+          </button>
+          <LogoLink href={home} className="md:hidden" />
+          <Breadcrumbs groups={nav} className="hidden sm:block" />
           <div className="ml-auto flex items-center gap-3">
-          <ThemeToggle />
-          <div className="relative text-sm" ref={menuRef}>
-            <button
-              data-testid="user-menu"
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-              className="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 hover:bg-accent"
-              onClick={() => setMenuOpen((v) => !v)}
-            >
-              <span data-testid="current-user">{user.email}</span>
-              <span className="text-xs text-muted-foreground">
-                {user.acting_as_user ? "user view" : user.is_super_admin ? "super admin" : user.is_admin ? "admin" : ""}
-              </span>
-              <ChevronDown className="h-4 w-4" />
-            </button>
-            {menuOpen && (
-              <div role="menu" className="absolute right-0 z-20 mt-2 w-56 rounded-md border bg-background p-1 shadow-md">
-                <Link
-                  role="menuitem"
-                  href="/settings"
-                  className="flex items-center gap-2 rounded px-3 py-2 hover:bg-accent"
-                  onClick={() => setMenuOpen(false)}
-                >
-                  <Settings className="h-4 w-4" /> Account settings
-                </Link>
-                {user.is_admin && !user.acting_as_user && (
-                  <button
-                    role="menuitem"
-                    data-testid="switch-to-user"
-                    disabled={switching}
-                    className="flex w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-accent"
-                    onClick={switchToUser}
-                  >
-                    <UserRound className="h-4 w-4" /> Switch to user view
-                  </button>
-                )}
-                {user.is_admin && user.acting_as_user && !stepUp && (
-                  <button
-                    role="menuitem"
-                    data-testid="switch-to-admin"
-                    className="flex w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-accent"
-                    onClick={() => setStepUp(true)}
-                  >
-                    <ShieldCheck className="h-4 w-4" /> Switch to admin view
-                  </button>
-                )}
-                {user.is_admin && user.acting_as_user && stepUp && (
-                  <form onSubmit={switchToAdmin} className="space-y-2 px-3 py-2" aria-label="Confirm your password">
-                    <label htmlFor="role-pw" className="text-xs text-muted-foreground">Confirm your password</label>
-                    <input
-                      id="role-pw"
-                      type="password"
-                      autoComplete="current-password"
-                      autoFocus
-                      className="flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      value={pw}
-                      onChange={(e) => setPw(e.target.value)}
-                    />
-                    <button type="submit" disabled={!pw || switching} className="h-8 w-full rounded-md bg-primary px-3 text-sm text-primary-foreground disabled:opacity-50">
-                      Switch to admin view
-                    </button>
-                  </form>
-                )}
-                {roleError && <p role="alert" data-testid="role-error" className="px-3 py-1 text-xs text-destructive">{roleError}</p>}
-                <button
-                  role="menuitem"
-                  className="flex w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-accent"
-                  onClick={async () => {
-                    try {
-                      await logout();
-                    } finally {
-                      router.replace("/login");
-                    }
-                  }}
-                >
-                  <LogOut className="h-4 w-4" /> Log out
-                </button>
-              </div>
-            )}
-          </div>
+            <ThemeToggle />
+            <UserMenu open={menuOpen} onOpenChange={setMenuOpen} stepUp={stepUp} onStepUpChange={setStepUp} />
           </div>
         </header>
+
         {user.is_admin && user.acting_as_user && (
           <div role="status" data-testid="user-view-banner" className="flex flex-wrap items-center justify-between gap-2 border-b bg-amber-50 px-6 py-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
             <span>You are in <strong>user view</strong>. Administrator functions are switched off for this session.</span>
@@ -204,7 +150,9 @@ export function AppShell({
             </button>
           </div>
         )}
-        <main className="flex-1 p-6">{children}</main>
+        <main id="main" tabIndex={-1} className="flex-1 p-4 outline-none md:p-6">
+          {children}
+        </main>
       </div>
     </div>
   );

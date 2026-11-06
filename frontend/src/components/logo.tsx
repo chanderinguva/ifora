@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 /**
@@ -25,13 +26,39 @@ export function LogoMark({ className, title }: { className?: string; title?: str
 }
 
 /** Mark + wordmark. The wordmark is live text so it stays in Lora (the app font) and follows the theme. */
-export function Logo({ className, markClassName, size = "md" }: { className?: string; markClassName?: string; size?: "md" | "lg" }) {
-  return (
+export function Logo({
+  className,
+  markClassName,
+  size = "md",
+  href,
+}: {
+  className?: string;
+  markClassName?: string;
+  size?: "md" | "lg";
+  /** When set, the whole lockup links home (the web convention for a top-left logo). */
+  href?: string;
+}) {
+  const lockup = (
     <span className={cn("inline-flex items-center gap-2.5 text-foreground", className)} data-testid="logo">
       <LogoMark className={cn(size === "lg" ? "h-10 w-10" : "h-7 w-7", markClassName)} />
       <span data-testid="logo-wordmark" className={cn("font-semibold tracking-tight", size === "lg" ? "text-2xl" : "text-lg")}>
         IdentityForge
       </span>
     </span>
+  );
+  if (!href) return lockup;
+  return (
+    <Link href={href} aria-label="IdentityForge home" className="rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      {lockup}
+    </Link>
+  );
+}
+
+/** Mark-only link home, for the collapsed rail and the mobile header. */
+export function LogoLink({ href, className }: { href: string; className?: string }) {
+  return (
+    <Link href={href} aria-label="IdentityForge home" className={cn("rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring", className)}>
+      <LogoMark />
+    </Link>
   );
 }
