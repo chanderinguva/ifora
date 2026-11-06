@@ -16,12 +16,12 @@ from typing import Optional
 from backend.app.audit.model import AuditAction
 from backend.app.audit.service import record
 from backend.app.auth import mfa_service
-from backend.app.db import SessionLocal
+from backend.app.tenancy import tenant_session
 from backend.app.users.model import User
 
 
 def reset_factors(email: str, assume_yes: bool = False, confirm=input, out=print) -> int:
-    db = SessionLocal()
+    db = tenant_session()
     try:
         user = db.query(User).filter(User.email == email.strip().lower()).first()
         if user is None:
@@ -47,7 +47,7 @@ def reset_factors(email: str, assume_yes: bool = False, confirm=input, out=print
 
 def issue_enrollment_code(email: str, out=print) -> int:
     """One-time code that lets an admin with no second factor enrol their first one."""
-    db = SessionLocal()
+    db = tenant_session()
     try:
         user = db.query(User).filter(User.email == email.strip().lower()).first()
         if user is None:

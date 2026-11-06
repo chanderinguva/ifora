@@ -22,6 +22,9 @@ def test_downgrade_and_upgrade_roundtrip():
         tables = set(__import__("sqlalchemy").inspect(conn).get_table_names())
     assert tables <= {"alembic_version"}
     command.upgrade(cfg, "head")
+    from backend.app.tenancy import reset_tenant_cache
+
+    reset_tenant_cache()
     with engine.connect() as conn:
         tables = set(__import__("sqlalchemy").inspect(conn).get_table_names())
     assert {"users", "groups", "sessions", "audit_events", "user_group_membership"} <= tables

@@ -9,6 +9,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
 from backend.app.db import Base
+from backend.app.tenancy import TenantOwned
 
 
 class AuditAction(str, Enum):
@@ -58,7 +59,7 @@ class AuditEventType(str, Enum):
     SYSTEM = "SYSTEM"
 
 
-class AuditEvent(Base):
+class AuditEvent(TenantOwned, Base):
     """Audit event record for tracking sensitive operations."""
 
     __tablename__ = "audit_events"

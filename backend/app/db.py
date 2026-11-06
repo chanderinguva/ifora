@@ -46,7 +46,9 @@ def get_db():
 
     Returns a SQLAlchemy session that is automatically closed after the request.
     """
-    db = SessionLocal()
+    from backend.app.tenancy import use_tenant, default_tenant_id
+
+    db = use_tenant(SessionLocal(), default_tenant_id())  # single-tenant: resolved per request later (host/path)
     try:
         yield db
     finally:

@@ -6,13 +6,14 @@ from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import backref, relationship
 
 from backend.app.db import Base
+from backend.app.tenancy import TenantOwned
 
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-class UserMFA(Base):
+class UserMFA(TenantOwned, Base):
     """One TOTP enrolment per user. `enabled` stays False until the first code is confirmed."""
 
     __tablename__ = "user_mfa"
@@ -29,7 +30,7 @@ class UserMFA(Base):
     user = relationship("User", backref=backref("mfa", uselist=False, cascade="all, delete-orphan"))
 
 
-class MFARecoveryCode(Base):
+class MFARecoveryCode(TenantOwned, Base):
     __tablename__ = "mfa_recovery_codes"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -39,7 +40,7 @@ class MFARecoveryCode(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
 
 
-class MFAChallenge(Base):
+class MFAChallenge(TenantOwned, Base):
     """Short-lived proof that the password step succeeded; exchanged for a session after MFA."""
 
     __tablename__ = "mfa_challenges"

@@ -7,6 +7,7 @@ from alembic import context
 from sqlalchemy import create_engine, pool
 
 from backend.app.db import Base
+from backend.app.tenancy import Tenant  # noqa: F401
 
 # Import every model so its table is registered on Base.metadata
 from backend.app.audit.model import AuditEvent  # noqa: F401

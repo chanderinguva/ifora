@@ -12,6 +12,7 @@ from sqlalchemy.orm import relationship
 
 from backend.app.config import settings
 from backend.app.db import Base
+from backend.app.tenancy import TenantOwned
 
 
 def _now() -> datetime:
@@ -27,7 +28,7 @@ class SessionStatus(str, Enum):
     INVALID = "invalid"
 
 
-class Session(Base):
+class Session(TenantOwned, Base):
     """User session model using cryptographically secure opaque tokens."""
 
     __tablename__ = "sessions"

@@ -5,10 +5,11 @@ from enum import Enum
 from typing import Any, Dict, Optional
 
 from passlib.hash import argon2
-from sqlalchemy import Column, DateTime, Integer, String, Boolean, Text
+from sqlalchemy import Column, DateTime, Integer, String, Boolean, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from backend.app.db import Base
+from backend.app.tenancy import TenantOwned
 
 
 class UserStatus(str, Enum):
@@ -20,17 +21,21 @@ class UserStatus(str, Enum):
     LOCKED_OUT = "locked_out"
 
 
-class User(Base):
+class User(TenantOwned, Base):
     """User account model."""
 
     __tablename__ = "users"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "email", name="uq_users_tenant_email"),
+        UniqueConstraint("tenant_id", "username", name="uq_users_tenant_username"),
+    )
 
     # Primary key
     id = Column(Integer, primary_key=True, autoincrement=True)
 
     # Core identity
-    email = Column(String(255), unique=True, nullable=False, index=True)
-    username = Column(String(100), unique=True, nullable=False, index=True)
+    email = Column(String(255), nullable=False, index=True)
+    username = Column(String(100), nullable=False, index=True)
 
     # Password hash (Argon2id)
     password_hash = Column(String(255), nullable=False)
