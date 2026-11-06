@@ -54,6 +54,12 @@ export default function LoginPage() {
 
   const finish = async () => {
     const u = await getCurrentUser();
+    // Return to an in-progress OIDC authorization, but only to a same-site relative path (never an open redirect).
+    const next = new URLSearchParams(window.location.search).get("next");
+    if (next && /^\/(?![/\\])[A-Za-z0-9\-._~/?=&%]*$/.test(next)) {
+      router.push(next);
+      return;
+    }
     router.push(u?.mfa_setup_required ? "/settings#security" : u && inAdminView(u) ? "/admin/dashboard" : "/dashboard");
   };
 

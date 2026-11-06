@@ -110,7 +110,7 @@ RFC 9700 baseline; `state` and `nonce` supported; PKCE S256 only (no `plain`); `
 | M1.2 | Signing keys | RS256 keys (Fernet-encrypted with `OIDC_KEY_ENCRYPTION_KEY`), `/oauth/jwks`, rotation with publish-before-sign and retire-after-overlap, emergency revocation, super-admin API + `rotate-signing-key` CLI, JWT sign/verify with alg allow-list; ES256 slot reserved | **Done** (branch `feature-oidc-signing-keys`) |
 | M1.3 | Client registry | `oidc_clients` / `oidc_client_secrets` (migration 0011), admin API + Applications page, exact redirect validation (https; http only for localhost; no wildcard/fragment), Argon2id secret hashing with two-secret rotation, `authenticate_client`, first-party flag (super admin only) | **Done** (branch `feature-oidc-clients`) |
 | M1.4 | Discovery | `/.well-known/openid-configuration`, issuer/config settings | |
-| M2.1 | Authorize + consent | Pending requests, PKCE S256, consent UI, first-party skip rules | |
+| M2.1 | Authorize + consent | Pending requests, PKCE S256, consent UI, first-party skip rules | Done (prompt=login, select_account and max_age are rejected with request_not_supported until M4; acr_values is ignored, which the spec allows) |
 | M2.2 | Token endpoint | Code exchange, ID token, RFC 9068 JWT access tokens, UserInfo | |
 | M3 | Refresh + revocation | Rotation, family reuse detection, `/oauth/revoke` | |
 | M4 | Logout + prompts | RP-initiated logout, `max_age`/`prompt`/`acr_values` | |
