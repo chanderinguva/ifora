@@ -93,9 +93,9 @@ export default function GroupDetail() {
               {group.members?.map((m) => (
                 <tr key={m.id} className="border-b last:border-0">
                   <td className={td}>{m.first_name} {m.last_name}</td>
-                  <td className={td}>{m.email}</td>
+                  <td className={td}>{m.email} {m.via_rule != null && <Badge tone="info">via rule</Badge>}</td>
                   <td className={td + " text-right"}>
-                    <Button size="sm" variant="outline" onClick={() => run(async () => apply(await http<Group>(`/admin/groups/${id}/members/${m.id}`, { method: "DELETE" })), "Member removed")}>
+                    <Button size="sm" variant="outline" disabled={m.via_rule != null} title={m.via_rule != null ? "Managed by a group rule" : undefined} onClick={() => run(async () => apply(await http<Group>(`/admin/groups/${id}/members/${m.id}`, { method: "DELETE" })), "Member removed")}>
                       Remove
                     </Button>
                   </td>

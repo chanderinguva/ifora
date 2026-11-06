@@ -46,6 +46,7 @@ export default function GroupsPage() {
   return (
     <div>
       <PageHeader title="Groups">
+        <Link href="/admin/group-rules" className="text-sm underline-offset-4 hover:underline">Group rules →</Link>
         <Button onClick={() => setCreating((v) => !v)}><Plus className="mr-1 h-4 w-4" /> New group</Button>
       </PageHeader>
 

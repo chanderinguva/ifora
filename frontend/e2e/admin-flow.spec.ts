@@ -13,6 +13,7 @@ test("admin manages a user and group; the user sees it; admin cleans up", async 
   await page.locator("#nu-first").fill("E2E");
   await page.locator("#nu-last").fill("Tester");
   await page.locator("#nu-email").fill(email);
+  await page.getByLabel("I will set a password").check();
   await page.locator("#nu-pw").fill(USER_PASSWORD);
   await page.getByRole("button", { name: "Create user" }).click();
   await page.getByLabel("Search users").fill(email);
