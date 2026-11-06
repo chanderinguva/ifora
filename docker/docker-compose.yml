@@ -49,6 +49,7 @@ services:
       - SECRET_KEY=${SECRET_KEY:?set SECRET_KEY in docker/.env}
       - ADMIN_SECRET_KEY=${ADMIN_SECRET_KEY:?set ADMIN_SECRET_KEY in docker/.env}
       - MFA_ENCRYPTION_KEY=${MFA_ENCRYPTION_KEY:?set MFA_ENCRYPTION_KEY in docker/.env}
+      - ADMIN_MFA_REQUIRED=${ADMIN_MFA_REQUIRED:-true}
       - ENVIRONMENT=development
     ports:
       - "8000:8000"

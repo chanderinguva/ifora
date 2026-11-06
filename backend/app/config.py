@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     # Generate: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     MFA_ENCRYPTION_KEY: str = Field(...)
     MFA_ISSUER: str = Field(default="IdentityForge")
+    # Admins must have an authenticator app or a passkey before the admin API works for them.
+    ADMIN_MFA_REQUIRED: bool = Field(default=True)
     MFA_CHALLENGE_MINUTES: int = Field(default=5)
     MFA_CHALLENGE_MAX_ATTEMPTS: int = Field(default=5)
 

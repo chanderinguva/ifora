@@ -41,6 +41,9 @@ Rules enforced server-side: no self-delete/self-deactivate, mass-assignment igno
 - Admin "reset sign-in factors" removes TOTP, passkeys and the policy (lost devices), revokes sessions, and is audited.
 - Every role (user, admin, super admin) enrols from **Account settings** (header user menu), the same self-service API.
 
+## Admin MFA policy
+`ADMIN_MFA_REQUIRED` (default `true`). An admin or super admin with neither an enabled authenticator app nor a passkey can still sign in, but `require_admin` answers every admin endpoint with 403 "Multi-factor authentication setup required"; self-service endpoints (profile, MFA, passkeys, sessions) keep working so they can enrol. `/me` exposes `mfa_setup_required`; the UI sends such admins to Account settings with a banner and bounces admin pages back. Enrolling lifts the gate immediately; disabling the last factor, or an admin reset, re-applies it. The recovery CLI (below) is unaffected. Normal users are not subject to it.
+
 ## Operator recovery (lost every factor)
 Other admins cannot reset a super admin, so recovery is an operator action with shell access to the deployment (that access is the trust boundary):
 `docker exec -w /app identityforge-api python -m backend.cli reset-factors <email>` (`--yes` skips the prompt).
