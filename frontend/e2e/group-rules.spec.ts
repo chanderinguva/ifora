@@ -59,7 +59,7 @@ test("a group rule adds matching users automatically and keeps them in step", as
   await page.getByRole("button", { name: "Delete group" }).click();
   await page.goto("/admin/users");
   await page.getByLabel("Search users").fill(email);
-  await page.getByRole("link", { name: email }).click();
+  await page.getByRole("link", { name: "Rule Target" }).click();
   await page.getByRole("button", { name: "Delete user" }).click();
   await expect(page).toHaveURL(/\/admin\/users$/);
 });

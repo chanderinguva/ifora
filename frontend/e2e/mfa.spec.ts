@@ -13,6 +13,7 @@ test("user enrols TOTP, signs in with it and with a recovery code, then turns it
   await page.locator("#nu-first").fill("MFA");
   await page.locator("#nu-last").fill("Tester");
   await page.locator("#nu-email").fill(email);
+  await page.getByLabel("I will set a password").check();
   await page.locator("#nu-pw").fill(USER_PASSWORD);
   await page.getByRole("button", { name: "Create user" }).click();
   await page.getByLabel("Search users").fill(email);
