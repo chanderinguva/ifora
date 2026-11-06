@@ -1,0 +1,1 @@
+"""IdentityForge Backend Application."""

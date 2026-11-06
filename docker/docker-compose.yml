@@ -1,0 +1,79 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: identityforge-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: identityforge
+      POSTGRES_PASSWORD: identityforge_local_password_change_after_first_login
+      POSTGRES_DB: identityforge
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U identityforge"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: identityforge-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  backend-api:
+    build:
+      context: ..
+      dockerfile: docker/backend/Dockerfile
+    container_name: identityforge-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://identityforge:identityforge_local_password_change_after_first_login@postgres:5432/identityforge
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=change_this_in_production_uses_strong_random_value_32chars_min
+      - ADMIN_SECRET_KEY=change_this_after_first_bootstrap_use_env_var
+      - ENVIRONMENT=development
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../backend:/app/backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/frontend/Dockerfile
+    container_name: identityforge-frontend
+    restart: unless-stopped
+    depends_on:
+      backend-api:
+        condition: service_healthy
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NODE_ENV=development
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../frontend:/app/frontend
+    command: ["npm", "run", "dev", "--host", "0.0.0.0", "--port", "3000"]
+
+volumes:
+  postgres_data:
+  redis_data:

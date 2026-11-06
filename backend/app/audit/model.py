@@ -1,0 +1,140 @@
+"""Audit event model for tracking system activities."""
+
+from datetime import datetime
+from enum import Enum
+from typing import Any, Dict, Optional
+
+from sqlalchemy import Column, DateTime, Enum as SAEnum, ForeignKey, Integer, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import relationship
+
+from backend.app.db import Base
+
+
+class AuditAction(str, Enum):
+    """Types of audit actions."""
+
+    USER_CREATED = "USER_CREATED"
+    USER_UPDATED = "USER_UPDATED"
+    USER_DEACTIVATED = "USER_DEACTIVATED"
+    USER_ACTIVATED = "USER_ACTIVATED"
+    USER_PASSWORD_CHANGED = "USER_PASSWORD_CHANGED"
+    GROUP_CREATED = "GROUP_CREATED"
+    GROUP_UPDATED = "GROUP_UPDATED"
+    GROUP_DELETED = "GROUP_DELETED"
+    GROUP_MEMBER_ADDED = "GROUP_MEMBER_ADDED"
+    GROUP_MEMBER_REMOVED = "GROUP_MEMBER_REMOVED"
+    SESSION_CREATED = "SESSION_CREATED"
+    SESSION_INVALIDATED = "SESSION_INVALIDATED"
+    LOGIN_SUCCESS = "LOGIN_SUCCESS"
+    LOGIN_FAILURE = "LOGIN_FAILURE"
+    LOGOUT = "LOGOUT"
+    ADMIN_BOOTSTRAP = "ADMIN_BOOTSTRAP"
+
+
+class AuditEventType(str, Enum):
+    """High-level audit event categories."""
+
+    AUTHENTICATION = "AUTHENTICATION"
+    AUTHORIZATION = "AUTHORIZATION"
+    USER_MANAGEMENT = "USER_MANAGEMENT"
+    GROUP_MANAGEMENT = "GROUP_MANAGEMENT"
+    SYSTEM = "SYSTEM"
+
+
+class AuditEvent(Base):
+    """Audit event record for tracking sensitive operations."""
+
+    __tablename__ = "audit_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    timestamp = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+
+    # Actor information (never include raw credentials)
+    actor_id = Column(String(255), nullable=True)
+    actor_type = Column(String(50), nullable=True)
+    actor_ip_address = Column(String(45), nullable=True)  # IPv6 compatible
+
+    # Action details
+    action = Column(String(50), nullable=False)
+    event_type = Column(String(50), nullable=False)
+
+    # Target (user, group, etc.)
+    target_id = Column(String(255), nullable=True)
+    target_type = Column(String(50), nullable=True)
+
+    # Metadata - sanitized, no secrets
+    metadata = Column(JSONB, nullable=True)
+
+    # Additional details as text
+    details = Column(Text, nullable=True)
+
+    def __init__(
+        self,
+        action: AuditAction,
+        actor_id: Optional[str] = None,
+        actor_type: Optional[str] = None,
+        actor_ip_address: Optional[str] = None,
+        target_id: Optional[str] = None,
+        target_type: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        details: Optional[str] = None,
+    ):
+        self.action = action.value
+        self.event_type = self._get_event_type(action)
+        self.actor_id = actor_id
+        self.actor_type = actor_type
+        self.actor_ip_address = actor_ip_address
+        self.target_id = target_id
+        self.target_type = target_type
+        self.metadata = metadata
+        self.details = details
+
+    @staticmethod
+    def _get_event_type(action: AuditAction) -> str:
+        """Map audit action to event type."""
+        auth_actions = {
+            AuditAction.LOGIN_SUCCESS,
+            AuditAction.LOGIN_FAILURE,
+            AuditAction.LOGOUT,
+            AuditAction.SESSION_CREATED,
+            AuditAction.SESSION_INVALIDATED,
+        }
+        user_actions = {
+            AuditAction.USER_CREATED,
+            AuditAction.USER_UPDATED,
+            AuditAction.USER_DEACTIVATED,
+            AuditAction.USER_ACTIVATED,
+            AuditAction.USER_PASSWORD_CHANGED,
+        }
+        group_actions = {
+            AuditAction.GROUP_CREATED,
+            AuditAction.GROUP_UPDATED,
+            AuditAction.GROUP_DELETED,
+            AuditAction.GROUP_MEMBER_ADDED,
+            AuditAction.GROUP_MEMBER_REMOVED,
+        }
+
+        if action in auth_actions:
+            return AuditEventType.AUTHENTICATION.value
+        elif action in user_actions:
+            return AuditEventType.USER_MANAGEMENT.value
+        elif action in group_actions:
+            return AuditEventType.GROUP_MANAGEMENT.value
+        else:
+            return AuditEventType.SYSTEM.value
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for API responses."""
+        return {
+            "id": self.id,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+            "actor_id": self.actor_id,
+            "actor_type": self.actor_type,
+            "actor_ip_address": self.actor_ip_address,
+            "action": self.action,
+            "event_type": self.event_type,
+            "target_id": self.target_id,
+            "target_type": self.target_type,
+            "metadata": self.metadata,
+        }
