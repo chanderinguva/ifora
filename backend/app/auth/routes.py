@@ -16,6 +16,7 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 
 from backend.app import ratelimit
+from backend.app.auth import mfa_service
 from backend.app.config import settings
 from backend.app.db import get_db
 from backend.app.users.model import User
@@ -90,6 +91,42 @@ async def log_audit(
 _DUMMY_HASH = argon2.hash("dummy-password-for-timing-equalisation")
 
 
+async def complete_login(db: Session, request: Request, response: Response, user: User, method: str) -> dict:
+    """Create the session + cookie for a fully authenticated user (password, and MFA if enrolled)."""
+    now = datetime.now(timezone.utc)
+    user.failed_login_attempts = 0
+    user.lockout_until = None
+    user.last_login_at = now
+
+    session = AuthSession.create(
+        user_id=user.id,
+        session_lifetime_hours=settings.SESSION_LIFETIME_HOURS,
+        ip_address=request.client.host if request.client else None,
+        user_agent=(request.headers.get("user-agent") or "")[:500],
+        is_admin_session=user.is_admin,
+    )
+    db.add(session)
+    db.commit()
+
+    set_session_cookie(response, session.raw_token)
+
+    await log_audit(
+        db,
+        AuditAction.LOGIN_SUCCESS,
+        actor_id=str(user.id),
+        metadata={"method": method},
+        request=request,
+    )
+    logger.info("login.success", user_id=user.id)
+
+    return {
+        "success": True,
+        "user": user.to_dict(),
+        "csrf_token": AuthSession.csrf_token_for(session.raw_token),
+        "session": {"expires_at": session.expires_at.isoformat()},
+    }
+
+
 @router.post("/login", response_model=dict)
 async def login_endpoint(
     request: Request,
@@ -150,37 +187,17 @@ async def login_endpoint(
         logger.warning("login.attempt_failed", reason="inactive", user_id=user.id)
         raise fail()
 
-    user.failed_login_attempts = 0
-    user.lockout_until = None
-    user.last_login_at = now
+    if user.mfa is not None and user.mfa.enabled:
+        # Password was right, but no session until the second factor is proven.
+        raw = mfa_service.issue_challenge(db, user)
+        return {
+            "success": False,
+            "mfa_required": True,
+            "mfa_token": raw,
+            "expires_in": settings.MFA_CHALLENGE_MINUTES * 60,
+        }
 
-    session = AuthSession.create(
-        user_id=user.id,
-        session_lifetime_hours=settings.SESSION_LIFETIME_HOURS,
-        ip_address=request.client.host if request.client else None,
-        user_agent=(request.headers.get("user-agent") or "")[:500],
-        is_admin_session=user.is_admin,
-    )
-    db.add(session)
-    db.commit()
-
-    set_session_cookie(response, session.raw_token)
-
-    await log_audit(
-        db,
-        AuditAction.LOGIN_SUCCESS,
-        actor_id=str(user.id),
-        metadata={"method": "password"},
-        request=request,
-    )
-    logger.info("login.success", user_id=user.id)
-
-    return {
-        "success": True,
-        "user": user.to_dict(),
-        "csrf_token": AuthSession.csrf_token_for(session.raw_token),
-        "session": {"expires_at": session.expires_at.isoformat()},
-    }
+    return await complete_login(db, request, response, user, method="password")
 
 
 @router.post("/logout", response_model=LogoutResponse)

@@ -8,6 +8,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge, PageHeader, fmt } from "@/components/bits";
+import { MfaCard } from "@/components/mfa-card";
 import { http } from "@/lib/http";
 import type { User } from "@/lib/types";
 
@@ -106,6 +107,8 @@ export default function UserDashboard() {
           )}
         </CardContent>
       </Card>
+
+      <MfaCard />
 
       <Card className="mb-6">
         <CardHeader><CardTitle>Change password</CardTitle></CardHeader>

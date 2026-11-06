@@ -2,12 +2,12 @@
 
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { getCurrentUser, login } from "@/lib/auth-client";
+import { getCurrentUser, login, loginMfa } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -33,6 +33,12 @@ export default function LoginPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Until React has attached its handlers a native form submit would put the credentials in the
+  // URL (GET). Keep the forms inert until hydrated; method="post" is the belt-and-braces fallback.
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => setHydrated(true), []);
+  const [mfaToken, setMfaToken] = useState<string | null>(null);
+  const [code, setCode] = useState("");
 
   const {
     register,
@@ -42,14 +48,38 @@ export default function LoginPage() {
     resolver: zodResolver(loginSchema),
   });
 
+  const finish = async () => {
+    const u = await getCurrentUser();
+    router.push(u?.is_admin ? "/admin/dashboard" : "/dashboard");
+  };
+
+  const onMfaSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!mfaToken) return;
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      await loginMfa(mfaToken, code);
+      await finish();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Verification failed");
+      setCode("");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const onSubmit = async (data: LoginFormData) => {
     setIsSubmitting(true);
     setError(null);
 
     try {
-      await login(data.email, data.password);
-      const u = await getCurrentUser();
-      router.push(u?.is_admin ? "/admin/dashboard" : "/dashboard");
+      const challenge = await login(data.email, data.password);
+      if (challenge) {
+        setMfaToken(challenge.mfaToken);
+        return;
+      }
+      await finish();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
@@ -61,9 +91,11 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-muted">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>Sign In</CardTitle>
+          <CardTitle>{mfaToken ? "Two-step verification" : "Sign In"}</CardTitle>
           <CardDescription>
-            Enter your credentials to access IdentityForge
+            {mfaToken
+              ? "Enter the 6-digit code from your authenticator app, or a recovery code."
+              : "Enter your credentials to access IdentityForge"}
           </CardDescription>
         </CardHeader>
 
@@ -75,8 +107,41 @@ export default function LoginPage() {
           </CardContent>
         )}
 
-        <CardContent>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        {mfaToken && (
+          <CardContent>
+            <form method="post" onSubmit={onMfaSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="mfa-code">Verification code</Label>
+                <Input
+                  id="mfa-code"
+                  inputMode="text"
+                  autoComplete="one-time-code"
+                  autoFocus
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  disabled={isSubmitting}
+                />
+              </div>
+              <Button type="submit" className="w-full" disabled={isSubmitting || !hydrated || !code.trim()}>
+                {isSubmitting ? "Verifying..." : "Verify"}
+              </Button>
+              <button
+                type="button"
+                className="w-full text-sm underline-offset-4 hover:underline"
+                onClick={() => {
+                  setMfaToken(null);
+                  setCode("");
+                  setError(null);
+                }}
+              >
+                Start over
+              </button>
+            </form>
+          </CardContent>
+        )}
+
+        <CardContent className={mfaToken ? "hidden" : undefined}>
+          <form method="post" onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -107,7 +172,7 @@ export default function LoginPage() {
               )}
             </div>
 
-            <Button type="submit" className="w-full" disabled={isSubmitting}>
+            <Button type="submit" className="w-full" disabled={isSubmitting || !hydrated}>
               {isSubmitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />

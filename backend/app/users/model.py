@@ -144,5 +144,6 @@ class User(Base):
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "last_login_at": self.last_login_at.isoformat() if self.last_login_at else None,
             "profile_attributes": self.get_profile_attributes(),
+            "mfa_enabled": bool(self.mfa and self.mfa.enabled),
         }
         return result

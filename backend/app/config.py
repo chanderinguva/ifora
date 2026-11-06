@@ -13,6 +13,12 @@ class Settings(BaseSettings):
     # Core settings
     SECRET_KEY: str = Field(..., min_length=32)
     ADMIN_SECRET_KEY: str = Field(..., min_length=32)
+    # Fernet key (urlsafe base64, 32 bytes) used to encrypt TOTP secrets at rest.
+    # Generate: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    MFA_ENCRYPTION_KEY: str = Field(...)
+    MFA_ISSUER: str = Field(default="IdentityForge")
+    MFA_CHALLENGE_MINUTES: int = Field(default=5)
+    MFA_CHALLENGE_MAX_ATTEMPTS: int = Field(default=5)
     ENVIRONMENT: str = Field(default="development")
     DEBUG: bool = Field(default=False)
 
@@ -47,6 +53,17 @@ class Settings(BaseSettings):
     # API
     API_V1_PREFIX: str = Field(default="/api/v1")
     CORS_ORIGINS: List[str] = Field(default=["http://localhost:3000", "http://localhost:8000"])
+
+    @field_validator("MFA_ENCRYPTION_KEY")
+    @classmethod
+    def valid_fernet_key(cls, v):
+        from cryptography.fernet import Fernet
+
+        try:
+            Fernet(v.encode())
+        except Exception as e:  # noqa: BLE001
+            raise ValueError("MFA_ENCRYPTION_KEY must be a valid Fernet key") from e
+        return v
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod

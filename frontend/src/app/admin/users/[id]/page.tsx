@@ -70,6 +70,7 @@ export default function UserDetail() {
       </PageHeader>
       <div className="mb-4 flex flex-wrap gap-2 text-sm">
         <Badge tone={user.status === "active" ? "good" : "bad"}>{user.status}</Badge>
+        {user.mfa_enabled && <Badge tone="good">MFA</Badge>}
         {user.is_super_admin ? <Badge tone="info">Super admin</Badge> : user.is_admin ? <Badge tone="info">Admin</Badge> : <Badge>User</Badge>}
         <span className="text-muted-foreground">Created {fmt(user.created_at)} · Last login {fmt(user.last_login_at)}</span>
       </div>
@@ -132,6 +133,20 @@ export default function UserDetail() {
             }
           >
             {user.status === "active" ? "Deactivate" : "Activate"}
+          </Button>
+        )}
+        {user.mfa_enabled && !isSelf && !protectedTarget && (
+          <Button
+            variant="outline"
+            onClick={() => {
+              if (!confirm("Remove this user's two-step verification? They will be signed out everywhere.")) return;
+              run(async () => {
+                await http(`/admin/users/${id}/mfa/reset`, { method: "POST" });
+                apply(await http<User>(`/admin/users/${id}`));
+              }, "MFA removed; the user's sessions were ended");
+            }}
+          >
+            Reset MFA
           </Button>
         )}
         {me.is_super_admin && !user.is_super_admin && (
