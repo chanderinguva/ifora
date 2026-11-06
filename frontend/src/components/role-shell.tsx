@@ -3,6 +3,7 @@
 import { LayoutDashboard, Users, Shield, ScrollText, Home, Settings } from "lucide-react";
 import { AppShell, type NavItem } from "./app-shell";
 import { useCurrentUser } from "./auth-guard";
+import { inAdminView } from "@/lib/roles";
 
 export const ADMIN_NAV: NavItem[] = [
   { href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -20,8 +21,9 @@ export const USER_NAV: NavItem[] = [
 /** Picks the navigation for the signed-in user's role. */
 export function RoleShell({ children }: { children: React.ReactNode }) {
   const user = useCurrentUser();
+  const admin = inAdminView(user);
   return (
-    <AppShell title={user.is_admin ? "Administration" : "My account"} nav={user.is_admin ? ADMIN_NAV : USER_NAV}>
+    <AppShell title={admin ? "Administration" : "My account"} nav={admin ? ADMIN_NAV : USER_NAV}>
       {children}
     </AppShell>
   );

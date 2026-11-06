@@ -3,10 +3,12 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronDown, LogOut, Settings, type LucideIcon } from "lucide-react";
+import { ChevronDown, LogOut, Settings, UserRound, ShieldCheck, type LucideIcon } from "lucide-react";
 import { logout } from "@/lib/auth-client";
+import { http } from "@/lib/http";
 import { cn } from "@/lib/utils";
 import { useCurrentUser } from "./auth-guard";
+import { Logo, LogoMark } from "./logo";
 import { ThemeToggle } from "./theme-toggle";
 
 export type NavItem = { href: string; label: string; icon: LucideIcon };
@@ -25,6 +27,34 @@ export function AppShell({
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const [stepUp, setStepUp] = useState(false);
+  const [pw, setPw] = useState("");
+  const [roleError, setRoleError] = useState<string | null>(null);
+  const [switching, setSwitching] = useState(false);
+
+  // A full navigation, so every page re-reads /me and shows the right shell for the new view.
+  async function switchToUser() {
+    setSwitching(true);
+    try {
+      await http("/me/role/user", { method: "POST" });
+      window.location.assign("/dashboard");
+    } catch (e) {
+      setRoleError(e instanceof Error ? e.message : "Could not switch");
+      setSwitching(false);
+    }
+  }
+  async function switchToAdmin(e: React.FormEvent) {
+    e.preventDefault();
+    setSwitching(true);
+    setRoleError(null);
+    try {
+      await http("/me/role/admin", { method: "POST", body: { password: pw } });
+      window.location.assign("/admin/dashboard");
+    } catch (err) {
+      setRoleError(err instanceof Error ? err.message : "Could not switch");
+      setSwitching(false);
+    }
+  }
 
   useEffect(() => {
     const close = (e: MouseEvent) => {
@@ -43,7 +73,7 @@ export function AppShell({
     <div className="flex min-h-screen bg-muted/30">
       <aside className="hidden w-60 shrink-0 flex-col border-r bg-background md:flex">
         <div className="border-b px-5 py-4">
-          <div className="text-lg font-semibold">IdentityForge</div>
+          <Logo />
           <div className="text-xs text-muted-foreground">{title}</div>
         </div>
         <nav className="flex-1 space-y-1 p-3" aria-label="Main">
@@ -69,6 +99,7 @@ export function AppShell({
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-between border-b bg-background px-6 py-3">
+          <LogoMark className="mr-3 md:hidden" title="IdentityForge" />
           <nav className="flex gap-3 md:hidden" aria-label="Mobile">
             {nav.map(({ href, label }) => (
               <Link key={href} href={href} className="text-sm underline-offset-4 hover:underline">
@@ -88,7 +119,7 @@ export function AppShell({
             >
               <span data-testid="current-user">{user.email}</span>
               <span className="text-xs text-muted-foreground">
-                {user.is_super_admin ? "super admin" : user.is_admin ? "admin" : ""}
+                {user.acting_as_user ? "user view" : user.is_super_admin ? "super admin" : user.is_admin ? "admin" : ""}
               </span>
               <ChevronDown className="h-4 w-4" />
             </button>
@@ -102,6 +133,45 @@ export function AppShell({
                 >
                   <Settings className="h-4 w-4" /> Account settings
                 </Link>
+                {user.is_admin && !user.acting_as_user && (
+                  <button
+                    role="menuitem"
+                    data-testid="switch-to-user"
+                    disabled={switching}
+                    className="flex w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-accent"
+                    onClick={switchToUser}
+                  >
+                    <UserRound className="h-4 w-4" /> Switch to user view
+                  </button>
+                )}
+                {user.is_admin && user.acting_as_user && !stepUp && (
+                  <button
+                    role="menuitem"
+                    data-testid="switch-to-admin"
+                    className="flex w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-accent"
+                    onClick={() => setStepUp(true)}
+                  >
+                    <ShieldCheck className="h-4 w-4" /> Switch to admin view
+                  </button>
+                )}
+                {user.is_admin && user.acting_as_user && stepUp && (
+                  <form onSubmit={switchToAdmin} className="space-y-2 px-3 py-2" aria-label="Confirm your password">
+                    <label htmlFor="role-pw" className="text-xs text-muted-foreground">Confirm your password</label>
+                    <input
+                      id="role-pw"
+                      type="password"
+                      autoComplete="current-password"
+                      autoFocus
+                      className="flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      value={pw}
+                      onChange={(e) => setPw(e.target.value)}
+                    />
+                    <button type="submit" disabled={!pw || switching} className="h-8 w-full rounded-md bg-primary px-3 text-sm text-primary-foreground disabled:opacity-50">
+                      Switch to admin view
+                    </button>
+                  </form>
+                )}
+                {roleError && <p role="alert" data-testid="role-error" className="px-3 py-1 text-xs text-destructive">{roleError}</p>}
                 <button
                   role="menuitem"
                   className="flex w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-accent"
@@ -120,6 +190,20 @@ export function AppShell({
           </div>
           </div>
         </header>
+        {user.is_admin && user.acting_as_user && (
+          <div role="status" data-testid="user-view-banner" className="flex flex-wrap items-center justify-between gap-2 border-b bg-amber-50 px-6 py-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+            <span>You are in <strong>user view</strong>. Administrator functions are switched off for this session.</span>
+            <button
+              className="underline underline-offset-4"
+              onClick={() => {
+                setMenuOpen(true);
+                setStepUp(true);
+              }}
+            >
+              Switch to admin view
+            </button>
+          </div>
+        )}
         <main className="flex-1 p-6">{children}</main>
       </div>
     </div>

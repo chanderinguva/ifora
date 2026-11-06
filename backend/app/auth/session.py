@@ -54,6 +54,8 @@ class Session(Base):
     ip_address = Column(String(45), nullable=True)  # IPv6 compatible
     user_agent = Column(String(500), nullable=True)
     is_admin_session = Column(Boolean, default=False, nullable=False)
+    # "Switch to user view": this session has dropped admin powers until the user steps back up.
+    acting_as_user = Column(Boolean, default=False, nullable=False, server_default="false")
 
     def __init__(
         self,

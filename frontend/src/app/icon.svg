@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <title>IdentityForge</title>
+  <style>
+    .s { stroke: #020817; }
+    .f { fill: #020817; }
+    @media (prefers-color-scheme: dark) { .s { stroke: #F8FAFC; } .f { fill: #F8FAFC; } }
+  </style>
+  <path class="s" d="M48 14H22V52" stroke-width="9" stroke-linejoin="miter" stroke-linecap="butt"/>
+  <path class="s" d="M22 33H40" stroke-width="9" stroke-linecap="butt"/>
+  <circle class="f" cx="46" cy="47" r="6.5"/>
+</svg>

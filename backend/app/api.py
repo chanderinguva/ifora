@@ -87,11 +87,12 @@ def create_app() -> FastAPI:
     from backend.app.audit.routes import router as audit_router
     from backend.app.auth.mfa_routes import router as mfa_router
     from backend.app.auth.passkey_routes import router as passkey_router
+    from backend.app.auth.role_routes import router as role_router
     from backend.app.groups.routes import router as groups_router
     from backend.app.profiles.routes import router as profiles_router
     from backend.app.users.routes import router as users_router
 
-    for r in (users_router, groups_router, profiles_router, audit_router, mfa_router, passkey_router):
+    for r in (users_router, groups_router, profiles_router, audit_router, mfa_router, passkey_router, role_router):
         app.include_router(r, prefix="/api/v1")
 
     return app

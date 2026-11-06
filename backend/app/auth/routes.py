@@ -229,7 +229,7 @@ async def get_current_user_endpoint(ctx=Depends(get_session_and_user)):
     session, user, raw_token = ctx
     return {
         "authenticated": True,
-        "user": user.to_dict(),
+        "user": {**user.to_dict(), "acting_as_user": session.acting_as_user},
         "csrf_token": AuthSession.csrf_token_for(raw_token),
         "session": {"expires_at": session.expires_at.isoformat()},
     }

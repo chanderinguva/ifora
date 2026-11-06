@@ -1,3 +1,5 @@
+> **Status:** Direction **A, Fold** was selected on 2026-11-06 and integrated into the app. See `guidelines.md`.
+
 # IdentityForge: brand exploration (steps 1-8)
 
 Status: exploration only. No direction selected. Nothing under `frontend/` or `backend/` was touched.
