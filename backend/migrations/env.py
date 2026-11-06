@@ -17,6 +17,7 @@ from backend.app.auth.session import Session  # noqa: F401
 from backend.app.groups.model import Group  # noqa: F401
 from backend.app.groups.rules import GroupRule  # noqa: F401
 from backend.app.oidc.models import SigningKey  # noqa: F401
+from backend.app.profiles.catalog import ProfileAttribute  # noqa: F401
 from backend.app.users.model import User  # noqa: F401
 
 config = context.config

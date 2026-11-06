@@ -10,10 +10,6 @@ _KEY = re.compile(r"^[a-z][a-z0-9_]{0,49}$")
 MAX_ATTRS = 20
 MAX_STR = 500
 
-# Attributes a user may edit about themselves. Anything else (e.g. department,
-# employee_id) is admin-managed, because attributes may later drive authorization.
-SELF_EDITABLE = {"phone", "title", "location", "timezone", "locale", "bio"}
-
 _LOCALE = re.compile(r"^[a-z]{2,3}(-[A-Z]{2})?$")  # e.g. en, en-GB, pt-BR
 
 
@@ -26,16 +22,6 @@ def valid_timezone(value: str) -> bool:
 
 def valid_locale(value: str) -> bool:
     return bool(_LOCALE.match(value))
-
-
-def check_self_service_values(new: Dict[str, Any], current: Dict[str, Any]) -> None:
-    """Validate timezone/locale when they change (an existing legacy value may be kept untouched)."""
-    tz = new.get("timezone")
-    if isinstance(tz, str) and tz != current.get("timezone") and not valid_timezone(tz):
-        raise ValueError("timezone must be an IANA time zone such as Europe/London")
-    loc = new.get("locale")
-    if isinstance(loc, str) and loc != current.get("locale") and not valid_locale(loc):
-        raise ValueError("locale must look like en or en-GB")
 
 
 def validate_attributes(value: Dict[str, Any]) -> Dict[str, AttrValue]:

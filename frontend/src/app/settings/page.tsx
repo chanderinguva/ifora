@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { AttrField, fromApi, toApi } from "@/components/attr-field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge, PageHeader, fmt } from "@/components/bits";
@@ -19,7 +20,6 @@ import type { User } from "@/lib/types";
 
 type SessionRow = { id: number; created_at: string; expires_at: string; current: boolean; ip_address: string | null; user_agent: string | null };
 
-const GENERAL_FIELDS = ["title", "phone", "location", "bio"];
 
 type ActivityRow = { timestamp: string; action: string; ip_address: string | null; method: string | null };
 const ACTIVITY_LABEL: Record<string, string> = {
@@ -43,7 +43,7 @@ export default function AccountSettings() {
     setMe(u);
     setDisplayPrefs(u.profile_attributes);
     setNames({ first_name: u.first_name, last_name: u.last_name });
-    setAttrs(Object.fromEntries((u.editable_attributes ?? []).map((k) => [k, String(u.profile_attributes?.[k] ?? "")])));
+    setAttrs(Object.fromEntries((u.editable_attributes ?? []).map((k) => [k, fromApi(u.profile_attributes?.[k])])));
   };
   const loadSessions = () => http<{ items: SessionRow[] }>("/me/sessions").then((r) => setSessions(r.items)).catch(() => {});
 
@@ -76,6 +76,9 @@ export default function AccountSettings() {
 
   if (!me) return <div className="text-sm text-muted-foreground">{msg ? msg.text : "Loading…"}</div>;
 
+  const schema = me.attribute_schema ?? [];
+  const label = (k: string) => schema.find((a) => a.key === k)?.display_name ?? k;
+  const general = schema.filter((a) => a.user_editable && a.key !== "timezone" && a.key !== "locale");
   const readOnly = Object.entries(me.profile_attributes ?? {}).filter(([k]) => !(me.editable_attributes ?? []).includes(k));
 
   return (
@@ -110,10 +113,10 @@ export default function AccountSettings() {
               <Label htmlFor="pf-last">Last name</Label>
               <Input id="pf-last" value={names.last_name} onChange={(e) => setNames({ ...names, last_name: e.target.value })} />
             </div>
-            {GENERAL_FIELDS.filter((k) => k in attrs).map((k) => (
-              <div key={k} className="space-y-2">
-                <Label htmlFor={`pf-${k}`} className="capitalize">{k}</Label>
-                <Input id={`pf-${k}`} value={attrs[k]} onChange={(e) => setAttrs({ ...attrs, [k]: e.target.value })} />
+            {general.map((a) => (
+              <div key={a.key} className="space-y-2">
+                <Label htmlFor={`pf-${a.key}`}>{a.display_name}</Label>
+                <AttrField idPrefix="pf" attr={a} value={attrs[a.key] ?? ""} onChange={(v) => setAttrs({ ...attrs, [a.key]: v })} />
               </div>
             ))}
           </div>
@@ -138,11 +141,11 @@ export default function AccountSettings() {
             <div className="text-sm">
               <div className="mb-1 font-medium">Managed by your administrator</div>
               <ul className="text-muted-foreground">
-                {readOnly.map(([k, v]) => <li key={k}><span className="capitalize">{k}</span>: {String(v)}</li>)}
+                {readOnly.map(([k, v]) => <li key={k}>{label(k)}: {String(v)}</li>)}
               </ul>
             </div>
           )}
-          <Button onClick={() => run(async () => apply(await http<User>("/me/profile", { method: "PATCH", body: { ...names, profile_attributes: Object.fromEntries(Object.entries(attrs).filter(([, v]) => v !== "")) } })), "Profile saved")}>
+          <Button onClick={() => run(async () => apply(await http<User>("/me/profile", { method: "PATCH", body: { ...names, profile_attributes: Object.fromEntries((me.attribute_schema ?? []).filter((a) => a.user_editable).map((a) => [a.key, toApi(a, attrs[a.key] ?? "")])) } })), "Profile saved")}>
             Save profile
           </Button>
         </CardContent>

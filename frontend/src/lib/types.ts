@@ -18,6 +18,7 @@ export type User = {
   acting_as_user?: boolean;
   groups?: { id: number; name: string }[];
   editable_attributes?: string[];
+  attribute_schema?: ProfileAttribute[];
 };
 
 export type Group = {
@@ -47,6 +48,11 @@ export type OidcClient = {
   client_secret?: string;
 };
 
+export type ProfileAttribute = {
+  key: string; display_name: string; description: string | null;
+  data_type: "string" | "number" | "boolean" | "enum" | "timezone" | "locale";
+  enum_options: string[] | null; user_editable: boolean; built_in: boolean;
+};
 export type RuleCondition = { attribute: string; operator: string; value: string };
 export type GroupRule = {
   id: number;

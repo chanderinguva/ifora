@@ -11,7 +11,8 @@ import { Label } from "@/components/ui/label";
 import { Badge, PageHeader, Pager, fieldClass, fmt, td, th } from "@/components/bits";
 import { useCurrentUser } from "@/components/auth-guard";
 import { http, qs, type Page } from "@/lib/http";
-import type { Group, User } from "@/lib/types";
+import { AttrField, toApi } from "@/components/attr-field";
+import type { Group, ProfileAttribute, User } from "@/lib/types";
 
 const PAGE_SIZE = 15;
 
@@ -133,7 +134,8 @@ const FIELD_NOTE = "Attributes set here are managed by administrators; users can
 
 function CreateUser({ canMakeAdmin, onDone }: { canMakeAdmin: boolean; onDone: () => void }) {
   const [f, setF] = useState({ email: "", first_name: "", last_name: "", username: "", password: "", is_admin: false });
-  const [attrs, setAttrs] = useState({ department: "", employee_id: "", manager: "" });
+  const [schema, setSchema] = useState<ProfileAttribute[]>([]);
+  const [attrs, setAttrs] = useState<Record<string, string>>({});
   const [pwMode, setPwMode] = useState<"set" | "generate">("generate");
   const [groups, setGroups] = useState<Group[]>([]);
   const [picked, setPicked] = useState<number[]>([]);
@@ -143,6 +145,7 @@ function CreateUser({ canMakeAdmin, onDone }: { canMakeAdmin: boolean; onDone: (
   const set = (k: string, v: string | boolean) => setF((s) => ({ ...s, [k]: v }));
 
   useEffect(() => {
+    http<{ items: ProfileAttribute[] }>("/admin/profile-attributes").then((r) => setSchema(r.items.filter((a) => !a.user_editable))).catch(() => {});
     http<Page<Group>>(`/admin/groups${qs({ page: 1, page_size: 100 })}`).then((r) => setGroups(r.items.filter((g) => !g.is_system_group))).catch(() => {});
   }, []);
 
@@ -153,7 +156,7 @@ function CreateUser({ canMakeAdmin, onDone }: { canMakeAdmin: boolean; onDone: (
     try {
       const body: Record<string, unknown> = {
         email: f.email, first_name: f.first_name, last_name: f.last_name, is_admin: f.is_admin, group_ids: picked,
-        profile_attributes: Object.fromEntries(Object.entries(attrs).filter(([, v]) => v.trim() !== "")),
+        profile_attributes: Object.fromEntries(schema.map((a) => [a.key, toApi(a, attrs[a.key] ?? "")]).filter(([, v]) => v !== null)),
       };
       if (f.username.trim()) body.username = f.username.trim();
       if (pwMode === "set") body.password = f.password;
@@ -216,10 +219,10 @@ function CreateUser({ canMakeAdmin, onDone }: { canMakeAdmin: boolean; onDone: (
           <fieldset className="space-y-2 sm:col-span-2">
             <legend className="text-sm font-medium">Organisation</legend>
             <div className="grid gap-3 sm:grid-cols-3">
-              {(["department", "employee_id", "manager"] as const).map((k) => (
-                <div key={k} className="space-y-1">
-                  <Label htmlFor={`nu-${k}`} className="capitalize">{k.replace("_", " ")}</Label>
-                  <Input id={`nu-${k}`} value={attrs[k]} onChange={(e) => setAttrs({ ...attrs, [k]: e.target.value })} />
+              {schema.map((a) => (
+                <div key={a.key} className="space-y-1">
+                  <Label htmlFor={`nu-${a.key}`}>{a.display_name}</Label>
+                  <AttrField idPrefix="nu" attr={a} value={attrs[a.key] ?? ""} onChange={(v) => setAttrs({ ...attrs, [a.key]: v })} />
                 </div>
               ))}
             </div>

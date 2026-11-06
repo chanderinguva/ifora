@@ -27,7 +27,7 @@ from backend.app.audit.service import record
 from backend.app.config import settings
 from backend.app.db import Base
 from backend.app.groups.model import Group, user_group_association
-from backend.app.profiles.schemas import SELF_EDITABLE
+from backend.app.profiles import catalog as profile_catalog
 from backend.app.tenancy import TenantOwned
 from backend.app.users.model import User
 
@@ -82,7 +82,7 @@ def feature_enabled() -> bool:
     return bool(settings.GROUP_RULES_ENABLED)
 
 
-def validate_conditions(match: str, conditions: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+def validate_conditions(db: Session, match: str, conditions: List[Dict[str, Any]]) -> List[Dict[str, str]]:
     """Return the normalised conditions or raise ValueError with a user-facing message."""
     if match not in ("all", "any"):
         raise ValueError("match must be 'all' or 'any'")
@@ -90,14 +90,19 @@ def validate_conditions(match: str, conditions: List[Dict[str, Any]]) -> List[Di
         raise ValueError("a rule needs at least one condition")
     if len(conditions) > MAX_CONDITIONS:
         raise ValueError(f"at most {MAX_CONDITIONS} conditions")
+    defs = profile_catalog.by_key(db)
     out = []
     for c in conditions:
         attr, op = str(c.get("attribute", "")).strip().lower(), c.get("operator")
         value = c.get("value", "")
-        if attr in SELF_EDITABLE or attr in ("first_name", "last_name"):
+        if attr in ("first_name", "last_name"):
             raise ValueError(f"'{attr}' can be edited by users themselves, so it cannot be used in a rule")
-        if attr not in FIXED_ATTRIBUTES and not _KEY.match(attr):
-            raise ValueError(f"invalid attribute '{attr}'")
+        if attr not in FIXED_ATTRIBUTES:
+            defn = defs.get(attr)
+            if defn is None:
+                raise ValueError(f"unknown attribute '{attr}'; define it in the Profile editor first")
+            if defn.user_editable:
+                raise ValueError(f"'{attr}' can be edited by users themselves, so it cannot be used in a rule")
         if op not in OPERATORS:
             raise ValueError(f"unknown operator '{op}'")
         if op in ("is_set", "is_not_set"):
