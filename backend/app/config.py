@@ -73,6 +73,11 @@ class Settings(BaseSettings):
     RATE_LIMIT_BOOTSTRAP_ATTEMPTS: int = Field(default=5)
     RATE_LIMIT_BOOTSTRAP_WINDOW_SECONDS: int = Field(default=900)
 
+    # SCIM server (ADR 007)
+    SCIM_RATE_LIMIT_FAILURES: int = Field(default=20)      # failed bearer tokens per client IP per window
+    SCIM_RATE_LIMIT_WINDOW_SECONDS: int = Field(default=300)
+    SCIM_RATE_LIMIT_REQUESTS_PER_MINUTE: int = Field(default=1200)  # per token
+
     # Admin
     ADMIN_EMAIL: str = Field(default="admin@identityforge.local")
     ADMIN_FIRST_NAME: str = Field(default="System")

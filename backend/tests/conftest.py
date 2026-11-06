@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-TEST_DB = "identityforge_test"
+TEST_DB = os.environ.get("TEST_DB_NAME", "identityforge_test")
 _base = os.environ["DATABASE_URL"]  # run inside the api container (or export DATABASE_URL)
 _u = urlparse(_base)
 _test_url = urlunparse(_u._replace(path=f"/{TEST_DB}"))
@@ -33,7 +33,7 @@ from cryptography.fernet import Fernet as _F
 os.environ["OIDC_KEY_ENCRYPTION_KEY"] = _F.generate_key().decode()
 # Isolated Redis database for rate-limit state (never the dev db 0)
 _redis_base = os.environ.get("REDIS_URL", "redis://localhost:6379/0").rsplit("/", 1)[0]
-os.environ["REDIS_URL"] = f"{_redis_base}/15"
+os.environ["REDIS_URL"] = f"{_redis_base}/{os.environ.get('TEST_REDIS_DB', '15')}"
 
 
 def _ensure_database():
