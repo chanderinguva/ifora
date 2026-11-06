@@ -45,9 +45,9 @@ class PreviewBody(BaseModel):
     conditions: List[Dict[str, Any]]
 
 
-def _clean(body_match: str, conditions: List[Dict[str, Any]]):
+def _clean(db: Session, body_match: str, conditions: List[Dict[str, Any]]):
     try:
-        return svc.validate_conditions(body_match, conditions)
+        return svc.validate_conditions(db, body_match, conditions)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -82,12 +82,12 @@ def list_rules(db: Session = Depends(get_db), _: User = Depends(require_admin)):
 
 @router.post("/preview")
 def preview(body: PreviewBody, db: Session = Depends(get_db), _: User = Depends(require_admin)):
-    return svc.preview(db, body.match, _clean(body.match, body.conditions))
+    return svc.preview(db, body.match, _clean(db, body.match, body.conditions))
 
 
 @router.post("", status_code=201)
 def create_rule(body: RuleBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
-    conditions = _clean(body.match, body.conditions)
+    conditions = _clean(db, body.match, body.conditions)
     ids = _targets(db, body.group_ids)
     if db.query(func.count(GroupRule.id)).scalar() >= svc.MAX_RULES:
         raise HTTPException(status_code=409, detail=f"At most {svc.MAX_RULES} rules")
@@ -116,7 +116,7 @@ def update_rule(
     rule = _rule_or_404(db, rule_id)
     if rule.status == "active":
         raise HTTPException(status_code=409, detail="Deactivate the rule before editing it")
-    rule.conditions = _clean(body.match, body.conditions)
+    rule.conditions = _clean(db, body.match, body.conditions)
     rule.match = body.match
     rule.name = body.name.strip()
     rule.updated_at = datetime.now(timezone.utc)

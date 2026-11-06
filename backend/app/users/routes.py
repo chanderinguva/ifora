@@ -19,6 +19,7 @@ from backend.app.auth.sessions_util import revoke_user_sessions
 from backend.app.db import get_db
 from backend.app.groups import rules as group_rules
 from backend.app.groups.model import Group, user_group_association
+from backend.app.profiles import catalog as profile_catalog
 from backend.app.profiles.schemas import validate_attributes, validate_password
 from backend.app.users.model import User
 
@@ -98,6 +99,17 @@ def _guard_target(actor: User, target: User) -> None:
         raise HTTPException(status_code=403, detail="Cannot modify a super administrator")
     if target.is_admin and not actor.is_super_admin and target.id != actor.id:
         raise HTTPException(status_code=403, detail="Only a super administrator can modify administrators")
+
+
+def _clean_attrs(db: Session, values: Dict[str, Any], current: Dict[str, Any]) -> Dict[str, Any]:
+    """Admins may set any attribute defined in the Profile editor; values are type-checked."""
+    try:
+        cleaned = profile_catalog.validate_values(db, values, only_editable_by_user=False, current=current)
+    except profile_catalog.PermissionError_ as e:
+        raise HTTPException(status_code=e.status, detail=e.message)
+    except profile_catalog.AttributeError_ as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return {k: v for k, v in cleaned.items() if v is not None}
 
 
 def _generate_password() -> str:
@@ -183,7 +195,7 @@ def create_user(
         password=password,
         is_admin=body.is_admin,
     )
-    user.set_profile_attributes(body.profile_attributes)
+    user.set_profile_attributes(_clean_attrs(db, body.profile_attributes, {}))
     db.add(user)
     try:
         db.flush()
@@ -236,7 +248,7 @@ def update_user(
         user.last_name = body.last_name
         changed["last_name"] = True
     if body.profile_attributes is not None:
-        user.set_profile_attributes(body.profile_attributes)
+        user.set_profile_attributes(_clean_attrs(db, body.profile_attributes, user.get_profile_attributes()))
         changed["profile_attributes"] = True
 
     if body.is_admin is not None and body.is_admin != user.is_admin:

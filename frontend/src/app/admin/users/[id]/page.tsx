@@ -11,9 +11,9 @@ import { Label } from "@/components/ui/label";
 import { Badge, PageHeader, fmt } from "@/components/bits";
 import { useCurrentUser } from "@/components/auth-guard";
 import { http } from "@/lib/http";
-import type { User } from "@/lib/types";
+import { AttrField, fromApi, toApi } from "@/components/attr-field";
+import type { ProfileAttribute, User } from "@/lib/types";
 
-type Attr = { key: string; value: string };
 
 export default function UserDetail() {
   const { id } = useParams<{ id: string }>();
@@ -22,17 +22,19 @@ export default function UserDetail() {
   const [user, setUser] = useState<User | null>(null);
   const [issuedCode, setIssuedCode] = useState<string | null>(null);
   const [form, setForm] = useState({ first_name: "", last_name: "", email: "" });
-  const [attrs, setAttrs] = useState<Attr[]>([]);
+  const [schema, setSchema] = useState<ProfileAttribute[]>([]);
+  const [attrs, setAttrs] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [newPw, setNewPw] = useState("");
 
   const apply = useCallback((u: User) => {
     setUser(u);
     setForm({ first_name: u.first_name, last_name: u.last_name, email: u.email });
-    setAttrs(Object.entries(u.profile_attributes ?? {}).map(([key, v]) => ({ key, value: String(v ?? "") })));
+    setAttrs(Object.fromEntries(Object.entries(u.profile_attributes ?? {}).map(([k, v]) => [k, fromApi(v)])));
   }, []);
 
   useEffect(() => {
+    http<{ items: ProfileAttribute[] }>("/admin/profile-attributes").then((r) => setSchema(r.items)).catch(() => {});
     http<User>(`/admin/users/${id}`).then(apply).catch((e) => setMsg({ ok: false, text: e.message }));
   }, [id, apply]);
 
@@ -59,8 +61,11 @@ export default function UserDetail() {
 
   const save = () =>
     run(async () => {
-      const profile_attributes: Record<string, string> = {};
-      for (const a of attrs) if (a.key.trim()) profile_attributes[a.key.trim()] = a.value;
+      const profile_attributes: Record<string, string | number | boolean> = {};
+      for (const a of schema) {
+        const v = toApi(a, attrs[a.key] ?? "");
+        if (v !== null) profile_attributes[a.key] = v;
+      }
       apply(await http<User>(`/admin/users/${id}`, { method: "PATCH", body: { ...form, profile_attributes } }));
     }, "Saved");
 
@@ -118,16 +123,16 @@ export default function UserDetail() {
 
       <Card className="mb-6">
         <CardHeader><CardTitle>Profile attributes</CardTitle></CardHeader>
-        <CardContent className="space-y-3">
-          {attrs.map((a, i) => (
-            <div key={i} className="flex gap-2">
-              <Input aria-label="Attribute name" placeholder="name (e.g. department)" value={a.key} onChange={(e) => setAttrs(attrs.map((x, j) => (j === i ? { ...x, key: e.target.value } : x)))} />
-              <Input aria-label="Attribute value" placeholder="value" value={a.value} onChange={(e) => setAttrs(attrs.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))} />
-              <Button type="button" variant="outline" onClick={() => setAttrs(attrs.filter((_, j) => j !== i))}>Remove</Button>
-            </div>
-          ))}
-          <Button type="button" variant="secondary" onClick={() => setAttrs([...attrs, { key: "", value: "" }])}>Add attribute</Button>
-          <p className="text-xs text-muted-foreground">Names: lowercase letters, digits and underscores. Up to 20 attributes.</p>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            {schema.map((a) => (
+              <div key={a.key} className="space-y-2">
+                <Label htmlFor={`attr-${a.key}`}>{a.display_name}{a.user_editable ? "" : <span className="ml-1 text-xs text-muted-foreground">(admin only)</span>}</Label>
+                <AttrField attr={a} value={attrs[a.key] ?? ""} onChange={(v) => setAttrs({ ...attrs, [a.key]: v })} />
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">Attributes are defined in the <Link className="underline underline-offset-4" href="/admin/profile-editor">Profile editor</Link>.</p>
         </CardContent>
       </Card>
 

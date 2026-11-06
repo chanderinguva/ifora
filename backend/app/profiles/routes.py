@@ -13,7 +13,8 @@ from backend.app.auth.session import Session as AuthSession
 from backend.app.auth.session import SessionStatus
 from backend.app.auth.sessions_util import revoke_user_sessions
 from backend.app.db import get_db
-from backend.app.profiles.schemas import SELF_EDITABLE, PasswordChange, check_self_service_values, validate_attributes
+from backend.app.profiles import catalog as cat
+from backend.app.profiles.schemas import PasswordChange, validate_attributes
 from backend.app.users.model import User
 
 router = APIRouter(prefix="/me", tags=["profile"])
@@ -30,16 +31,18 @@ class ProfileUpdate(BaseModel):
         return None if v is None else validate_attributes(v)
 
 
-def _profile(user: User) -> dict:
+def _profile(user: User, db: Session) -> dict:
     d = user.to_dict()
     d["groups"] = [{"id": g.id, "name": g.name} for g in user.groups]
-    d["editable_attributes"] = sorted(SELF_EDITABLE)
+    schema = cat.catalog(db)
+    d["attribute_schema"] = [a.to_dict() for a in schema]
+    d["editable_attributes"] = [a.key for a in schema if a.user_editable]
     return d
 
 
 @router.get("/profile")
-def get_profile(ctx=Depends(get_session_and_user)):
-    return _profile(ctx[1])
+def get_profile(ctx=Depends(get_session_and_user), db: Session = Depends(get_db)):
+    return _profile(ctx[1], db)
 
 
 @router.patch("/profile")
@@ -60,15 +63,17 @@ def update_profile(
     if body.profile_attributes is not None:
         current = user.get_profile_attributes()
         try:
-            check_self_service_values(body.profile_attributes, current)
-        except ValueError as e:
+            cleaned = cat.validate_values(db, body.profile_attributes, only_editable_by_user=True, current=current)
+        except cat.PermissionError_ as e:
+            raise HTTPException(status_code=e.status, detail=e.message)
+        except cat.AttributeError_ as e:
             raise HTTPException(status_code=422, detail=str(e))
-        # Admin-managed keys stay as they are; users only control SELF_EDITABLE keys.
-        merged = {k: v for k, v in current.items() if k not in SELF_EDITABLE}
-        for k, v in body.profile_attributes.items():
-            if k not in SELF_EDITABLE:
-                raise HTTPException(status_code=403, detail=f"Attribute '{k}' cannot be edited by users")
-            if v is not None:
+        # Only the keys sent change (null/empty clears one); everything else, admin-managed values included, is untouched.
+        merged = dict(current)
+        for k, v in cleaned.items():
+            if v is None:
+                merged.pop(k, None)
+            else:
                 merged[k] = v
         user.set_profile_attributes(merged)
         changed["profile_attributes"] = sorted(body.profile_attributes)
@@ -76,7 +81,7 @@ def update_profile(
         record(db, AuditAction.PROFILE_UPDATED, request, user, user.id, "user", {"changed": changed})
     db.commit()
     db.refresh(user)
-    return _profile(user)
+    return _profile(user, db)
 
 
 @router.post("/password")
