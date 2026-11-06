@@ -98,10 +98,14 @@ def get_current_user(ctx=Depends(get_session_and_user)) -> User:
     return ctx[1]
 
 
-def require_admin(user: User = Depends(get_current_user)) -> User:
-    """Deny by default: only admins pass."""
+def require_admin(ctx=Depends(get_session_and_user)) -> User:
+    """Deny by default: only admins pass, and only in a session that is in admin view."""
+    session, user, _ = ctx
     if not user.is_admin:
         raise HTTPException(status_code=403, detail="Forbidden")
+    if session.acting_as_user:
+        # The admin chose "user view" for this session: administrator functions are off until they step back up.
+        raise HTTPException(status_code=403, detail="Switch to admin view to use administrator functions")
     if user.needs_mfa_setup:
         # Still signed in (so they can reach Account settings and enrol), but no admin power yet.
         raise HTTPException(status_code=403, detail="Multi-factor authentication setup required")

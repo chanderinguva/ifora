@@ -36,6 +36,7 @@ class AuditAction(str, Enum):
     MFA_DISABLED = "MFA_DISABLED"
     MFA_RESET = "MFA_RESET"
     ENROLLMENT_CODE_ISSUED = "ENROLLMENT_CODE_ISSUED"
+    ROLE_SWITCHED = "ROLE_SWITCHED"
     MFA_RECOVERY_USED = "MFA_RECOVERY_USED"
     MFA_RECOVERY_REGENERATED = "MFA_RECOVERY_REGENERATED"
     MFA_CHALLENGE_FAILED = "MFA_CHALLENGE_FAILED"
@@ -127,6 +128,7 @@ class AuditEvent(Base):
             AuditAction.PASSKEY_LOGIN_FAILED,
             AuditAction.PASSKEY_POLICY_CHANGED,
             AuditAction.PASSKEY_COUNTER_ANOMALY,
+            AuditAction.ROLE_SWITCHED,
         }
         user_actions = {
             AuditAction.USER_CREATED,

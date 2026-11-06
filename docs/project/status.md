@@ -18,13 +18,15 @@ _Last updated: 2026-11-05_
 | System audit events | Done | Recorded in the same transaction; viewer with filter |
 | Admin dashboard | Done | Real counts from the database, recent activity |
 | User dashboard | Done | Profile, groups, change password, active sessions |
-| Browser & API tests | Done | 139 API integration tests (real Postgres test DB) + 9 Playwright browser tests (the policy spec needs a throwaway admin, see below) (incl. a Chrome virtual authenticator) |
+| Browser & API tests | Done | 148 API integration tests (real Postgres test DB) + 11 Playwright browser tests (the policy spec needs a throwaway admin, see below) (incl. a Chrome virtual authenticator) |
 | Security review | **Partial** | Self-review recorded in ADR 003; no independent review yet |
 
 ## Hardening done after Phase 1
 - TOTP multi-factor authentication with recovery codes (ADR 003).
 - Passkeys (WebAuthn): usernameless sign-in, optional "require a passkey" policy, admin reset (ADR 003).
 - Admin MFA policy (`ADMIN_MFA_REQUIRED`, on by default) with one-time enrolment codes for first enrolment (ADR 003).
+- Role view: admins can work as a normal user per session; switching back needs the password (ADR 003).
+- Brand identity (forge-fold mark, Lora wordmark, theme-aware logo, favicon/app icons; `docs/brand/guidelines.md`).
 - Dark theme (Light / System / Dark switch in the header and on the login page).
 - Operator recovery CLI for lost factors (`python -m backend.cli reset-factors <email>`, ADR 003).
 - Account settings page and header user menu for all roles (MFA/passkey enrolment, password, sessions).
@@ -59,4 +61,4 @@ docker exec -w /app/backend identityforge-api python -m pytest -q
 # Browser (system Chrome; needs the stack running; creates and deletes its own user/group)
 cd frontend && set -a && . ../.env && set +a && npx playwright test
 ```
-`.env` must contain `ADMIN_EMAIL` and `ADMIN_PASSWORD` of an existing super admin. If that admin has enrolled an authenticator app (as the policy requires), also set `ADMIN_TOTP_SECRET` (its base32 secret); without a second factor and with the policy on, the admin cannot reach the admin area, so run the suite with `ADMIN_MFA_REQUIRED=false` on the backend instead. `admin-mfa-policy.spec.ts` needs `E2E_POLICY_ADMIN_EMAIL`, `E2E_POLICY_ADMIN_PASSWORD` and `E2E_ENROLMENT_CODE` for a throwaway admin with no factor (never the real admin); it is skipped otherwise.
+`.env` must contain `ADMIN_EMAIL` and `ADMIN_PASSWORD` of an existing super admin. If that admin has enrolled an authenticator app (as the policy requires), also set `ADMIN_TOTP_SECRET` (its base32 secret); without a second factor and with the policy on, the admin cannot reach the admin area, so run the suite with `ADMIN_MFA_REQUIRED=false` on the backend instead. `role-switch.spec.ts` needs `E2E_ROLE_ADMIN_EMAIL`/`E2E_ROLE_ADMIN_PASSWORD` for a throwaway admin and a backend with `ADMIN_MFA_REQUIRED=false`. `admin-mfa-policy.spec.ts` needs `E2E_POLICY_ADMIN_EMAIL`, `E2E_POLICY_ADMIN_PASSWORD` and `E2E_ENROLMENT_CODE` for a throwaway admin with no factor (never the real admin); it is skipped otherwise.

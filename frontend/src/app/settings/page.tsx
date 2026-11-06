@@ -10,12 +10,15 @@ import { Label } from "@/components/ui/label";
 import { Badge, PageHeader, fmt } from "@/components/bits";
 import { MfaCard } from "@/components/mfa-card";
 import { PasskeyCard } from "@/components/passkey-card";
+import { useCurrentUser } from "@/components/auth-guard";
+import { inAdminView } from "@/lib/roles";
 import { http } from "@/lib/http";
 import type { User } from "@/lib/types";
 
 type SessionRow = { id: number; created_at: string; expires_at: string; current: boolean; ip_address: string | null; user_agent: string | null };
 
 export default function AccountSettings() {
+  const cu = useCurrentUser();
   const [me, setMe] = useState<User | null>(null);
   const [names, setNames] = useState({ first_name: "", last_name: "" });
   const [attrs, setAttrs] = useState<Record<string, string>>({});
@@ -63,7 +66,7 @@ export default function AccountSettings() {
   return (
     <div className="max-w-3xl">
       <PageHeader title="Account settings">
-        {me.is_admin && <Link href="/admin/dashboard" className="text-sm underline-offset-4 hover:underline">Go to administration →</Link>}
+        {inAdminView(cu) && <Link href="/admin/dashboard" className="text-sm underline-offset-4 hover:underline">Go to administration →</Link>}
       </PageHeader>
 
       {me.mfa_setup_required && (
@@ -73,7 +76,7 @@ export default function AccountSettings() {
           </AlertDescription>
         </Alert>
       )}
-      {!me.mfa_setup_required && me.is_admin && (
+      {!me.mfa_setup_required && inAdminView(cu) && (
         <p className="mb-4 text-sm"><Link href="/admin/dashboard" className="underline underline-offset-4">Continue to administration →</Link></p>
       )}
 

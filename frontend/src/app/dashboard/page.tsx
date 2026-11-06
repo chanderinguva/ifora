@@ -5,11 +5,14 @@ import Link from "next/link";
 import { CheckCircle2, Circle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge, PageHeader } from "@/components/bits";
+import { useCurrentUser } from "@/components/auth-guard";
+import { inAdminView } from "@/lib/roles";
 import { http } from "@/lib/http";
 import type { User } from "@/lib/types";
 
 /** End-user home: who am I, what groups am I in, and how well is my account protected. */
 export default function UserHome() {
+  const cu = useCurrentUser();
   const [me, setMe] = useState<User | null>(null);
   useEffect(() => {
     http<User>("/me/profile").then(setMe).catch(() => {});
@@ -24,7 +27,7 @@ export default function UserHome() {
   return (
     <div className="max-w-3xl">
       <PageHeader title={`Hello, ${me.first_name}`}>
-        {me.is_admin && <Link href="/admin/dashboard" className="text-sm underline-offset-4 hover:underline">Go to administration →</Link>}
+        {inAdminView(cu) && <Link href="/admin/dashboard" className="text-sm underline-offset-4 hover:underline">Go to administration →</Link>}
       </PageHeader>
 
       <Card className="mb-6" data-testid="security-checklist">
