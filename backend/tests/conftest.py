@@ -1,52 +1,61 @@
 """Test configuration and fixtures for IdentityForge backend."""
 
-import os
 import pytest
-import tempfile
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.ext.declarative import declarative_base
+import sys
+import os
 
-from backend.app.db import Base
-from backend.app.main import app
-
-# Use a temporary database for tests
-TEST_DATABASE_PATH = tempfile.mktemp(suffix=".db")
-TEST_DATABASE_URL = f"sqlite:///{TEST_DATABASE_PATH}"
-
-engine = create_engine(TEST_DATABASE_URL)
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# Add project root to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 @pytest.fixture(scope="session")
 def test_app():
     """Create test application."""
+    from backend.app.api import get_app
+
+    app = get_app()
     app.config["TESTING"] = True
     return app
 
 
 @pytest.fixture
-def db_session():
-    """Create database session for tests."""
-    Base.metadata.create_all(bind=engine)
-    session = TestingSessionLocal()
-    try:
-        yield session
-    finally:
-        session.close()
-        Base.metadata.drop_all(bind=engine)
+def mock_db_session():
+    """Mock database session for unit tests."""
+    class MockSession:
+        def __init__(self):
+            self.committed = False
+            self.added = []
+
+        def add(self, obj):
+            self.added.append(obj)
+
+        def commit(self):
+            self.committed = True
+
+        def close(self):
+            pass
+
+        def query(self, model):
+            return MockQuery()
+
+    class MockQuery:
+        def __init__(self):
+            pass
+
+        def filter(self, *args):
+            return self
+
+        def first(self):
+            return None
+
+    return MockSession()
 
 
 @pytest.fixture
-def client(test_app, db_session):
+def client(test_app, mock_db_session):
     """Create test client."""
     from starlette.testclient import TestClient
+    from unittest.mock import patch
 
-    def get_db_override():
-        try:
-            yield db_session
-        finally:
-            pass
-
-    test_app.dependency_overrides = {"get_db": get_db_override}
-    return TestClient(test_app)
+    with patch("backend.app.db.get_db", return_value=mock_db_session):
+        return TestClient(test_app)
