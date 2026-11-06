@@ -30,6 +30,23 @@ export type Group = {
   members?: { id: number; email: string; first_name: string; last_name: string; via_rule?: number | null }[];
 };
 
+export type OidcSecret = { id: number; hint: string; state: "active" | "expired" | "revoked"; created_at: string; expires_at: string | null; last_used_at: string | null };
+export type OidcClient = {
+  id: number;
+  client_id: string;
+  name: string;
+  description: string | null;
+  client_type: "public" | "confidential";
+  first_party: boolean;
+  status: "active" | "disabled";
+  redirect_uris: string[];
+  post_logout_redirect_uris: string[];
+  allowed_scopes: string[];
+  grant_types: string[];
+  secrets: OidcSecret[];
+  client_secret?: string;
+};
+
 export type RuleCondition = { attribute: string; operator: string; value: string };
 export type GroupRule = {
   id: number;
