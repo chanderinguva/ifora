@@ -1,6 +1,6 @@
 /** Root layout for IdentityForge frontend. */
 
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Lora } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -14,6 +14,13 @@ const lora = Lora({
 export const metadata: Metadata = {
   title: "IdentityForge",
   description: "Identity and Access Management Platform",
+};
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#020817" },
+  ],
 };
 
 export default function RootLayout({

@@ -9,7 +9,9 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { getCurrentUser, login, loginMfa, loginWithPasskey } from "@/lib/auth-client";
 import { KeyRound } from "lucide-react";
+import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { inAdminView } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -52,7 +54,7 @@ export default function LoginPage() {
 
   const finish = async () => {
     const u = await getCurrentUser();
-    router.push(u?.mfa_setup_required ? "/settings#security" : u?.is_admin ? "/admin/dashboard" : "/dashboard");
+    router.push(u?.mfa_setup_required ? "/settings#security" : u && inAdminView(u) ? "/admin/dashboard" : "/dashboard");
   };
 
   const onPasskey = async () => {
@@ -107,6 +109,7 @@ export default function LoginPage() {
       <ThemeToggle className="absolute right-4 top-4 bg-background" />
       <Card className="w-full max-w-md">
         <CardHeader>
+          <Logo size="lg" className="mb-4" />
           <CardTitle>{mfaToken ? "Two-step verification" : "Sign In"}</CardTitle>
           <CardDescription>
             {mfaToken
