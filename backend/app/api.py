@@ -99,7 +99,10 @@ def create_app() -> FastAPI:
     app.include_router(group_rules_router, prefix="/api/v1")
     app.include_router(features_router, prefix="/api/v1")
     app.include_router(oidc_public_router)  # issuer-root endpoints: /oauth/*, later /.well-known/*
+    from backend.app.oidc.client_routes import router as oidc_clients_router
+
     app.include_router(oidc_admin_router, prefix="/api/v1")
+    app.include_router(oidc_clients_router, prefix="/api/v1")
 
     for r in (users_router, groups_router, profiles_router, audit_router, mfa_router, passkey_router, role_router):
         app.include_router(r, prefix="/api/v1")

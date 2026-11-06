@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, Index, Integer, String, Text, UniqueConstraint, text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 
 from backend.app.db import Base
@@ -50,3 +50,41 @@ class SigningKey(TenantOwned, Base):
             "activate_at": self.activate_at.isoformat(),
             "retire_at": self.retire_at.isoformat() if self.retire_at else None,
         }
+
+
+class OIDCClient(TenantOwned, Base):
+    """A registered relying party / application (ADR 005 §7)."""
+
+    __tablename__ = "oidc_clients"
+    __table_args__ = (UniqueConstraint("tenant_id", "client_id", name="uq_oidc_clients_tenant_client_id"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(String(64), nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    description = Column(String(500), nullable=True)
+    client_type = Column(String(16), nullable=False)  # public | confidential  (service clients: Phase 2)
+    token_endpoint_auth_method = Column(String(32), nullable=False)  # none | client_secret_basic
+    first_party = Column(Boolean, nullable=False, default=False, server_default="false")
+    status = Column(String(16), nullable=False, default="active")  # active | disabled
+    redirect_uris = Column(JSONB, nullable=False)
+    post_logout_redirect_uris = Column(JSONB, nullable=False, default=list)
+    allowed_scopes = Column(JSONB, nullable=False)
+    grant_types = Column(JSONB, nullable=False)
+    created_by = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=_now)
+
+
+class OIDCClientSecret(TenantOwned, Base):
+    """Confidential-client secrets. Hash only; two may be active at once so rotation needs no downtime."""
+
+    __tablename__ = "oidc_client_secrets"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_pk = Column(Integer, ForeignKey("oidc_clients.id", ondelete="CASCADE"), nullable=False, index=True)
+    secret_hash = Column(String(255), nullable=False)
+    hint = Column(String(8), nullable=False)  # last characters, to tell secrets apart in the UI
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)

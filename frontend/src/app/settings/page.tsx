@@ -19,6 +19,8 @@ import type { User } from "@/lib/types";
 
 type SessionRow = { id: number; created_at: string; expires_at: string; current: boolean; ip_address: string | null; user_agent: string | null };
 
+const GENERAL_FIELDS = ["title", "phone", "location", "bio"];
+
 type ActivityRow = { timestamp: string; action: string; ip_address: string | null; method: string | null };
 const ACTIVITY_LABEL: Record<string, string> = {
   LOGIN_SUCCESS: "Signed in", LOGIN_FAILURE: "Failed sign-in", LOGOUT: "Signed out", USER_PASSWORD_CHANGED: "Password changed",
@@ -108,18 +110,29 @@ export default function AccountSettings() {
               <Label htmlFor="pf-last">Last name</Label>
               <Input id="pf-last" value={names.last_name} onChange={(e) => setNames({ ...names, last_name: e.target.value })} />
             </div>
-            {Object.keys(attrs).map((k) => (
+            {GENERAL_FIELDS.filter((k) => k in attrs).map((k) => (
               <div key={k} className="space-y-2">
                 <Label htmlFor={`pf-${k}`} className="capitalize">{k}</Label>
-                {k === "timezone" ? (
-                  <TimezoneSelect id="pf-timezone" value={attrs[k]} onChange={(v) => setAttrs({ ...attrs, [k]: v })} />
-                ) : k === "locale" ? (
-                  <LocaleSelect id="pf-locale" value={attrs[k]} onChange={(v) => setAttrs({ ...attrs, [k]: v })} />
-                ) : (
-                  <Input id={`pf-${k}`} value={attrs[k]} onChange={(e) => setAttrs({ ...attrs, [k]: e.target.value })} />
-                )}
+                <Input id={`pf-${k}`} value={attrs[k]} onChange={(e) => setAttrs({ ...attrs, [k]: e.target.value })} />
               </div>
             ))}
+          </div>
+          <div className="border-t pt-4">
+            <h3 className="mb-3 text-sm font-semibold">Language &amp; region</h3>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {"timezone" in attrs && (
+                <div className="space-y-2">
+                  <Label htmlFor="pf-timezone">Time zone</Label>
+                  <TimezoneSelect id="pf-timezone" value={attrs.timezone} onChange={(v) => setAttrs({ ...attrs, timezone: v })} />
+                </div>
+              )}
+              {"locale" in attrs && (
+                <div className="space-y-2">
+                  <Label htmlFor="pf-locale">Locale</Label>
+                  <LocaleSelect id="pf-locale" value={attrs.locale} onChange={(v) => setAttrs({ ...attrs, locale: v })} />
+                </div>
+              )}
+            </div>
           </div>
           {readOnly.length > 0 && (
             <div className="text-sm">
