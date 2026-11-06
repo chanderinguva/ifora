@@ -106,7 +106,7 @@ RFC 9700 baseline; `state` and `nonce` supported; PKCE S256 only (no `plain`); `
 |---|---|---|---|
 | M0.1 | Tenancy foundation | `tenants` + `tenant_id` migration (0007) on all tenant-owned tables, default tenant, fail-closed ORM scoping (`backend/app/tenancy.py`), per-tenant unique email/username | **Done** (branch `feature-tenancy-foundation`) |
 | M0.2 | Tenancy tests | Cross-tenant isolation tests (`tests/test_tenancy.py`): fail-closed, scoped reads/writes/bulk delete, admin API, login, audit | **Done** |
-| M1.1 | Session facts | `sessions.auth_time` + `amr`, set in `complete_login`; `/me` exposes; tests per method | |
+| M1.1 | Session facts | `sessions.auth_time` + `amr` (migration 0008), set in `complete_login` via `auth/authn.py`; `/login` and `/me` expose `auth_time`/`amr`/`acr`; tests per method. Step-up re-auth that updates them is M4 | **Done** (branch `feature-session-auth-facts`) |
 | M1.2 | Signing keys | Signer/KeySet abstraction, RS256, encrypted keys, JWKS, rotation (service + CLI), tests incl. rotation overlap | |
 | M1.3 | Client registry | Models, admin API + UI, exact redirect validation, secret hashing, first-party flag | |
 | M1.4 | Discovery | `/.well-known/openid-configuration`, issuer/config settings | |

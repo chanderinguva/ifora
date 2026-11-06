@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from backend.app import ratelimit
 from backend.app.auth import mfa_service
+from backend.app.auth.authn import acr_for, amr_for
 from backend.app.config import settings
 from backend.app.db import get_db
 from backend.app.users.model import User
@@ -91,6 +92,15 @@ async def log_audit(
 _DUMMY_HASH = argon2.hash("dummy-password-for-timing-equalisation")
 
 
+def _session_info(session: AuthSession) -> dict:
+    return {
+        "expires_at": session.expires_at.isoformat(),
+        "auth_time": session.auth_time.isoformat(),
+        "amr": session.amr,
+        "acr": acr_for(session.amr),
+    }
+
+
 async def complete_login(db: Session, request: Request, response: Response, user: User, method: str) -> dict:
     """Create the session + cookie for a fully authenticated user (password, and MFA if enrolled)."""
     now = datetime.now(timezone.utc)
@@ -104,6 +114,7 @@ async def complete_login(db: Session, request: Request, response: Response, user
         ip_address=request.client.host if request.client else None,
         user_agent=(request.headers.get("user-agent") or "")[:500],
         is_admin_session=user.is_admin,
+        amr=amr_for(method),
     )
     db.add(session)
     db.commit()
@@ -123,7 +134,7 @@ async def complete_login(db: Session, request: Request, response: Response, user
         "success": True,
         "user": user.to_dict(),
         "csrf_token": AuthSession.csrf_token_for(session.raw_token),
-        "session": {"expires_at": session.expires_at.isoformat()},
+        "session": _session_info(session),
     }
 
 
@@ -231,7 +242,7 @@ async def get_current_user_endpoint(ctx=Depends(get_session_and_user)):
         "authenticated": True,
         "user": {**user.to_dict(), "acting_as_user": session.acting_as_user},
         "csrf_token": AuthSession.csrf_token_for(raw_token),
-        "session": {"expires_at": session.expires_at.isoformat()},
+        "session": _session_info(session),
     }
 
 
