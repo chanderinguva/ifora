@@ -32,6 +32,15 @@ Rules enforced server-side: no self-delete/self-deactivate, mass-assignment igno
 - Enrol / disable / regenerate need the current password; disable and regenerate also need a valid code. Enabling or disabling revokes the user's other sessions.
 - Admins can reset a user's MFA (lost device); same target protections as other admin actions, sessions revoked, audited.
 
+## Passkeys (WebAuthn, phishing-resistant)
+- `py_webauthn` 3.x. Registration requires a discoverable credential and user verification; sign-in is usernameless (`POST /login/passkey/options` then `/verify`). RP ID and allowed origins are configuration (`WEBAUTHN_RP_ID`, `WEBAUTHN_ORIGINS`).
+- Ceremonies are single-use, DB-stored challenges (5 min). A signature-counter rollback is rejected and audited. Each user has a random `webauthn_handle` (never the email or id).
+- A verified passkey (user verification) is multi-factor on its own, so TOTP is skipped on passkey sign-in.
+- Add / remove / policy changes need the current password. Already-registered devices are excluded from registration.
+- Policy "require a passkey" needs at least 2 passkeys, revokes other sessions, and makes password and TOTP login return 403 (only after the password is correct, to avoid leaking account state).
+- Admin "reset sign-in factors" removes TOTP, passkeys and the policy (lost devices), revokes sessions, and is audited.
+- Every role (user, admin, super admin) enrols from **Account settings** (header user menu), the same self-service API.
+
 ## Known gaps (not yet implemented)
-- MFA is optional (no policy forcing admins to enrol yet); no WebAuthn/passkeys; no password reset by email.
+- No policy forcing admins to enrol; no recovery path if a super admin loses every factor (needs a CLI); no password reset by email.
 - Client IP is the direct peer address; configure the ASGI server's proxy-header handling when deployed behind a proxy.

@@ -182,15 +182,23 @@ def mfa_regenerate(
 def admin_reset_mfa(
     user_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)
 ):
-    """Remove a user's MFA (lost device). Same target protections as other admin actions."""
+    """Remove all of a user's extra sign-in factors: TOTP, recovery codes and passkeys, and lift
+    the passkey-required policy (lost device). Same target protections as other admin actions."""
     user = _get_or_404(db, user_id)
     _guard_target(actor, user)
     if user.id == actor.id:
         raise HTTPException(status_code=400, detail="Use the account security page to manage your own MFA")
-    if user.mfa is None:
-        raise HTTPException(status_code=409, detail="User has no MFA configured")
+    if user.mfa is None and not user.passkeys and not user.passkey_required:
+        raise HTTPException(status_code=409, detail="User has no MFA or passkeys configured")
+    passkeys_removed = len(user.passkeys)
     mfa_service.remove_mfa(db, user)
+    for p in list(user.passkeys):
+        db.delete(p)
+    user.passkey_required = False
     revoked = revoke_user_sessions(db, user.id)
-    record(db, AuditAction.MFA_RESET, request, actor, user.id, "user", {"sessions_revoked": revoked})
+    record(
+        db, AuditAction.MFA_RESET, request, actor, user.id, "user",
+        {"sessions_revoked": revoked, "passkeys_removed": passkeys_removed},
+    )
     db.commit()
     return {"success": True}

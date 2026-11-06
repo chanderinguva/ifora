@@ -255,3 +255,22 @@ def test_admin_reset_follows_target_protections(db, admin, super_admin, member):
 def test_mfa_cascades_on_user_delete(db, enrolled, admin):
     assert admin.delete(f"/admin/users/{enrolled.user.id}").status_code == 200
     assert db.query(UserMFA).count() == 0 and db.query(MFARecoveryCode).count() == 0
+
+
+def test_super_admin_can_enrol_totp_and_must_use_it_to_sign_in(db, super_admin):
+    """Admins and super admins use the same self-service enrolment as everyone else."""
+    codes = enrol(super_admin, db, super_admin.user.email)
+    assert len(codes) == 10
+
+    fresh = Api()
+    r = fresh.login(super_admin.user.email)
+    assert r.status_code == 200 and r.json()["mfa_required"] is True
+    assert "csrf_token" not in r.json()
+
+    r = fresh.c.post(
+        "/api/v1/login/mfa",
+        json={"mfa_token": r.json()["mfa_token"], "code": totp_for(db, super_admin.user.email)},
+        headers={"Origin": ORIGIN},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["user"]["is_super_admin"] is True

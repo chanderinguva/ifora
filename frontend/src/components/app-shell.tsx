@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { LogOut, type LucideIcon } from "lucide-react";
+import { ChevronDown, LogOut, Settings, type LucideIcon } from "lucide-react";
 import { logout } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 import { useCurrentUser } from "./auth-guard";
@@ -21,6 +22,21 @@ export function AppShell({
   const user = useCurrentUser();
   const pathname = usePathname();
   const router = useRouter();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const close = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setMenuOpen(false);
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", esc);
+    };
+  }, []);
 
   return (
     <div className="flex min-h-screen bg-muted/30">
@@ -59,23 +75,45 @@ export function AppShell({
               </Link>
             ))}
           </nav>
-          <div className="ml-auto flex items-center gap-4 text-sm">
-            <span className="text-muted-foreground" data-testid="current-user">
-              {user.email}
-              {user.is_super_admin ? " · super admin" : user.is_admin ? " · admin" : ""}
-            </span>
+          <div className="relative ml-auto text-sm" ref={menuRef}>
             <button
-              className="inline-flex items-center gap-1 rounded-md border px-3 py-1.5 hover:bg-accent"
-              onClick={async () => {
-                try {
-                  await logout();
-                } finally {
-                  router.replace("/login");
-                }
-              }}
+              data-testid="user-menu"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              className="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 hover:bg-accent"
+              onClick={() => setMenuOpen((v) => !v)}
             >
-              <LogOut className="h-4 w-4" /> Log out
+              <span data-testid="current-user">{user.email}</span>
+              <span className="text-xs text-muted-foreground">
+                {user.is_super_admin ? "super admin" : user.is_admin ? "admin" : ""}
+              </span>
+              <ChevronDown className="h-4 w-4" />
             </button>
+            {menuOpen && (
+              <div role="menu" className="absolute right-0 z-20 mt-2 w-56 rounded-md border bg-background p-1 shadow-md">
+                <Link
+                  role="menuitem"
+                  href="/settings"
+                  className="flex items-center gap-2 rounded px-3 py-2 hover:bg-accent"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  <Settings className="h-4 w-4" /> Account settings
+                </Link>
+                <button
+                  role="menuitem"
+                  className="flex w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-accent"
+                  onClick={async () => {
+                    try {
+                      await logout();
+                    } finally {
+                      router.replace("/login");
+                    }
+                  }}
+                >
+                  <LogOut className="h-4 w-4" /> Log out
+                </button>
+              </div>
+            )}
           </div>
         </header>
         <main className="flex-1 p-6">{children}</main>

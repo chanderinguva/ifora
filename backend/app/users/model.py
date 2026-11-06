@@ -55,6 +55,10 @@ class User(Base):
 
     # Login throttling
     failed_login_attempts = Column(Integer, default=0, nullable=False)
+
+    # WebAuthn: stable random user handle (never PII) and the "passkey only" policy
+    webauthn_handle = Column(String(64), nullable=True)
+    passkey_required = Column(Boolean, default=False, nullable=False, server_default="false")
     lockout_until = Column(DateTime(timezone=True), nullable=True)
 
     def __init__(
@@ -145,5 +149,7 @@ class User(Base):
             "last_login_at": self.last_login_at.isoformat() if self.last_login_at else None,
             "profile_attributes": self.get_profile_attributes(),
             "mfa_enabled": bool(self.mfa and self.mfa.enabled),
+            "passkey_count": len(self.passkeys),
+            "passkey_required": self.passkey_required,
         }
         return result

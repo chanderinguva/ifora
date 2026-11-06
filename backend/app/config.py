@@ -19,6 +19,14 @@ class Settings(BaseSettings):
     MFA_ISSUER: str = Field(default="IdentityForge")
     MFA_CHALLENGE_MINUTES: int = Field(default=5)
     MFA_CHALLENGE_MAX_ATTEMPTS: int = Field(default=5)
+
+    # WebAuthn / passkeys. RP ID must be the registrable domain of the *frontend* origin the
+    # browser sees (e.g. "localhost", or "example.com" for https://app.example.com);
+    # origins must match exactly (scheme + host + port).
+    WEBAUTHN_RP_ID: str = Field(default="localhost")
+    WEBAUTHN_RP_NAME: str = Field(default="IdentityForge")
+    WEBAUTHN_ORIGINS: List[str] = Field(default=["http://localhost:3000"])
+    WEBAUTHN_CEREMONY_SECONDS: int = Field(default=300)
     ENVIRONMENT: str = Field(default="development")
     DEBUG: bool = Field(default=False)
 
@@ -63,6 +71,13 @@ class Settings(BaseSettings):
             Fernet(v.encode())
         except Exception as e:  # noqa: BLE001
             raise ValueError("MFA_ENCRYPTION_KEY must be a valid Fernet key") from e
+        return v
+
+    @field_validator("WEBAUTHN_ORIGINS", mode="before")
+    @classmethod
+    def parse_webauthn_origins(cls, v):
+        if isinstance(v, str):
+            return [o.strip() for o in v.split(",") if o.strip()]
         return v
 
     @field_validator("CORS_ORIGINS", mode="before")

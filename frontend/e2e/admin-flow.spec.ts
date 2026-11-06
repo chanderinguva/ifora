@@ -44,7 +44,8 @@ test("admin manages a user and group; the user sees it; admin cleans up", async 
   const status = await page.evaluate(async () => (await fetch("http://localhost:8000/api/v1/admin/users", { credentials: "include" })).status);
   expect(status).toBe(403);
 
-  // --- self-service profile edit ---
+  // --- self-service profile edit (Account settings) ---
+  await page.goto("/settings");
   await page.locator("#pf-title").fill("QA Engineer");
   await page.getByRole("button", { name: "Save profile" }).click();
   await expect(page.getByRole("status")).toContainText("Profile saved");
