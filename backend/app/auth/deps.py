@@ -1,6 +1,7 @@
 """Authentication dependencies: session cookie lookup and CSRF protection."""
 
 import hmac
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 
 from fastapi import Depends, HTTPException, Request, Response
@@ -68,6 +69,12 @@ def get_session_and_user(
         if session is not None and session.status == SessionStatus.ACTIVE.value:
             session.status = SessionStatus.EXPIRED.value
             db.commit()
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    idle = timedelta(minutes=settings.SESSION_IDLE_TIMEOUT_MINUTES)
+    if datetime.now(timezone.utc) - session.last_activity_at > idle:
+        session.status = SessionStatus.EXPIRED.value
+        db.commit()
         raise HTTPException(status_code=401, detail="Not authenticated")
 
     user = db.query(User).filter(User.id == session.user_id).first()

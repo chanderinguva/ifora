@@ -24,6 +24,9 @@ os.environ["DATABASE_URL_ASYNC"] = _async_url
 os.environ.setdefault("SECRET_KEY", "test_secret_key_value_with_at_least_32_chars")
 os.environ.setdefault("ADMIN_SECRET_KEY", "test_admin_bootstrap_key_with_32_chars_min")
 os.environ["ENVIRONMENT"] = "test"
+# Isolated Redis database for rate-limit state (never the dev db 0)
+_redis_base = os.environ.get("REDIS_URL", "redis://localhost:6379/0").rsplit("/", 1)[0]
+os.environ["REDIS_URL"] = f"{_redis_base}/15"
 
 
 def _ensure_database():
@@ -72,6 +75,16 @@ def reset_schema():
 def _schema():
     reset_schema()
     yield
+
+
+@pytest.fixture(autouse=True)
+def _clean_redis():
+    import redis
+
+    r = redis.Redis.from_url(os.environ["REDIS_URL"])
+    r.flushdb()
+    yield
+    r.flushdb()
 
 
 @pytest.fixture(autouse=True)

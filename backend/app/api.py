@@ -47,6 +47,7 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=exc.status_code,
             content={"detail": exc.detail},
+            headers=getattr(exc, "headers", None),
         )
 
     @app.exception_handler(SQLAlchemyError)

@@ -28,10 +28,16 @@ class Settings(BaseSettings):
     SESSION_COOKIE_SECURE: bool = Field(default=False)
     SESSION_COOKIE_SAMESITE: str = Field(default="lax")
     SESSION_LIFETIME_HOURS: int = Field(default=8)
+    SESSION_IDLE_TIMEOUT_MINUTES: int = Field(default=30)
 
     # Rate limiting
     MAX_LOGIN_ATTEMPTS: int = Field(default=5)
     LOGIN_LOCKOUT_MINUTES: int = Field(default=15)
+    # Per-client-IP throttle on failed logins / bootstrap attempts (Redis, fixed window)
+    RATE_LIMIT_LOGIN_FAILURES: int = Field(default=10)
+    RATE_LIMIT_LOGIN_WINDOW_SECONDS: int = Field(default=300)
+    RATE_LIMIT_BOOTSTRAP_ATTEMPTS: int = Field(default=5)
+    RATE_LIMIT_BOOTSTRAP_WINDOW_SECONDS: int = Field(default=900)
 
     # Admin
     ADMIN_EMAIL: str = Field(default="admin@identityforge.local")

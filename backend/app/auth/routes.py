@@ -15,6 +15,7 @@ from passlib.hash import argon2
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 
+from backend.app import ratelimit
 from backend.app.config import settings
 from backend.app.db import get_db
 from backend.app.users.model import User
@@ -106,8 +107,14 @@ async def login_endpoint(
     - Fresh opaque token per login (no session fixation); only its hash is stored
     """
     check_origin(request)
+    ip = ratelimit.client_ip(request)
+    ratelimit.check("login", ip, settings.RATE_LIMIT_LOGIN_FAILURES)
     now = datetime.now(timezone.utc)
     invalid = HTTPException(status_code=401, detail="Invalid credentials")
+
+    def fail() -> HTTPException:
+        ratelimit.hit("login", ip, settings.RATE_LIMIT_LOGIN_WINDOW_SECONDS)
+        return invalid
 
     user = db.query(User).filter(User.email == login_data.email.lower()).first()
 
@@ -117,7 +124,7 @@ async def login_endpoint(
         except Exception:
             pass
         logger.warning("login.attempt_failed", reason="user_not_found")
-        raise invalid
+        raise fail()
 
     if user.is_locked_out():
         try:
@@ -125,7 +132,7 @@ async def login_endpoint(
         except Exception:
             pass
         logger.warning("login.attempt_failed", reason="account_locked", user_id=user.id)
-        raise invalid
+        raise fail()
 
     if not user.verify_password(login_data.password):
         user.failed_login_attempts += 1
@@ -137,11 +144,11 @@ async def login_endpoint(
             db, AuditAction.LOGIN_FAILURE, actor_id=str(user.id), request=request
         )
         logger.warning("login.attempt_failed", reason="invalid_password", user_id=user.id)
-        raise invalid
+        raise fail()
 
     if user.status != "active":
         logger.warning("login.attempt_failed", reason="inactive", user_id=user.id)
-        raise invalid
+        raise fail()
 
     user.failed_login_attempts = 0
     user.lockout_until = None
@@ -219,10 +226,13 @@ async def bootstrap_admin_endpoint(
     - Requires strong password
     - Logs all bootstrap attempts
     """
+    ip = ratelimit.client_ip(request) if request else "unknown"
+    ratelimit.check("bootstrap", ip, settings.RATE_LIMIT_BOOTSTRAP_ATTEMPTS)
     # Verify secret key
     if not hmac.compare_digest(
         bootstrap_data.secret_key.encode(), settings.ADMIN_SECRET_KEY.encode()
     ):
+        ratelimit.hit("bootstrap", ip, settings.RATE_LIMIT_BOOTSTRAP_WINDOW_SECONDS)
         logger.warning("bootstrap.attempt_failed", reason="invalid_secret_key")
         raise HTTPException(status_code=403, detail="Invalid bootstrap key")
 
