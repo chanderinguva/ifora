@@ -7,6 +7,7 @@ import { ChevronDown, LogOut, Settings, type LucideIcon } from "lucide-react";
 import { logout } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 import { useCurrentUser } from "./auth-guard";
+import { ThemeToggle } from "./theme-toggle";
 
 export type NavItem = { href: string; label: string; icon: LucideIcon };
 
@@ -75,7 +76,9 @@ export function AppShell({
               </Link>
             ))}
           </nav>
-          <div className="relative ml-auto text-sm" ref={menuRef}>
+          <div className="ml-auto flex items-center gap-3">
+          <ThemeToggle />
+          <div className="relative text-sm" ref={menuRef}>
             <button
               data-testid="user-menu"
               aria-haspopup="menu"
@@ -114,6 +117,7 @@ export function AppShell({
                 </button>
               </div>
             )}
+          </div>
           </div>
         </header>
         <main className="flex-1 p-6">{children}</main>

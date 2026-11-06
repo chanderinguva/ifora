@@ -9,6 +9,7 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { getCurrentUser, login, loginMfa, loginWithPasskey } from "@/lib/auth-client";
 import { KeyRound } from "lucide-react";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -102,7 +103,8 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted">
+    <div className="relative flex min-h-screen items-center justify-center bg-muted">
+      <ThemeToggle className="absolute right-4 top-4 bg-background" />
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle>{mfaToken ? "Two-step verification" : "Sign In"}</CardTitle>
@@ -198,7 +200,7 @@ export default function LoginPage() {
             </Button>
 
             <div className="relative py-1 text-center text-xs text-muted-foreground">
-              <span className="bg-background px-2">or</span>
+              <span className="bg-card px-2">or</span>
             </div>
             <Button
               type="button"

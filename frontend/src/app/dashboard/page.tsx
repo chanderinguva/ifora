@@ -32,7 +32,7 @@ export default function UserHome() {
         <CardContent className="space-y-3">
           {steps.map((s) => (
             <div key={s.label} className="flex items-start gap-3">
-              {s.done ? <CheckCircle2 className="mt-0.5 h-5 w-5 text-green-600" /> : <Circle className="mt-0.5 h-5 w-5 text-muted-foreground" />}
+              {s.done ? <CheckCircle2 className="mt-0.5 h-5 w-5 text-green-600 dark:text-green-400" /> : <Circle className="mt-0.5 h-5 w-5 text-muted-foreground" />}
               <div>
                 <div className="text-sm font-medium">{s.label} {s.done && <Badge tone="good">done</Badge>}</div>
                 <div className="text-xs text-muted-foreground">{s.hint}</div>

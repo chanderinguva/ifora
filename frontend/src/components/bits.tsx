@@ -14,9 +14,9 @@ export function Badge({
 }) {
   const tones = {
     neutral: "bg-secondary text-secondary-foreground",
-    good: "bg-green-100 text-green-800",
-    bad: "bg-red-100 text-red-800",
-    info: "bg-blue-100 text-blue-800",
+    good: "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300",
+    bad: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
+    info: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300",
   };
   return <span className={cn("inline-flex rounded-full px-2 py-0.5 text-xs font-medium", tones[tone])}>{children}</span>;
 }
