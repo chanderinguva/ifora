@@ -10,6 +10,8 @@ import { Label } from "@/components/ui/label";
 import { Badge, PageHeader, fmt } from "@/components/bits";
 import { MfaCard } from "@/components/mfa-card";
 import { PasskeyCard } from "@/components/passkey-card";
+import { LocaleSelect, TimezoneSelect } from "@/components/pref-selects";
+import { setDisplayPrefs } from "@/lib/display";
 import { useCurrentUser } from "@/components/auth-guard";
 import { inAdminView } from "@/lib/roles";
 import { http } from "@/lib/http";
@@ -17,17 +19,27 @@ import type { User } from "@/lib/types";
 
 type SessionRow = { id: number; created_at: string; expires_at: string; current: boolean; ip_address: string | null; user_agent: string | null };
 
+type ActivityRow = { timestamp: string; action: string; ip_address: string | null; method: string | null };
+const ACTIVITY_LABEL: Record<string, string> = {
+  LOGIN_SUCCESS: "Signed in", LOGIN_FAILURE: "Failed sign-in", LOGOUT: "Signed out", USER_PASSWORD_CHANGED: "Password changed",
+  MFA_ENABLED: "Authenticator app added", MFA_DISABLED: "Authenticator app removed", MFA_RESET: "Sign-in factors reset",
+  MFA_RECOVERY_USED: "Recovery code used", MFA_CHALLENGE_FAILED: "Failed second factor", PASSKEY_REGISTERED: "Passkey added",
+  PASSKEY_REMOVED: "Passkey removed", PASSKEY_LOGIN_FAILED: "Failed passkey sign-in", ROLE_SWITCHED: "Switched role view",
+};
+
 export default function AccountSettings() {
   const cu = useCurrentUser();
   const [me, setMe] = useState<User | null>(null);
   const [names, setNames] = useState({ first_name: "", last_name: "" });
   const [attrs, setAttrs] = useState<Record<string, string>>({});
   const [sessions, setSessions] = useState<SessionRow[]>([]);
+  const [activity, setActivity] = useState<ActivityRow[]>([]);
   const [pw, setPw] = useState({ current_password: "", new_password: "" });
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const apply = (u: User) => {
     setMe(u);
+    setDisplayPrefs(u.profile_attributes);
     setNames({ first_name: u.first_name, last_name: u.last_name });
     setAttrs(Object.fromEntries((u.editable_attributes ?? []).map((k) => [k, String(u.profile_attributes?.[k] ?? "")])));
   };
@@ -36,6 +48,7 @@ export default function AccountSettings() {
   useEffect(() => {
     http<User>("/me/profile").then(apply).catch((e) => setMsg({ ok: false, text: e.message }));
     loadSessions();
+    http<{ items: ActivityRow[] }>("/me/activity").then((r) => setActivity(r.items)).catch(() => {});
     // the factor cards announce changes so the "setup required" banner clears right after enrolling
     const refresh = () => http<User>("/me/profile").then((u) => setMe((m) => (m ? { ...m, mfa_setup_required: u.mfa_setup_required, mfa_enabled: u.mfa_enabled, passkey_count: u.passkey_count } : u))).catch(() => {});
     window.addEventListener("factors-changed", refresh);
@@ -98,7 +111,13 @@ export default function AccountSettings() {
             {Object.keys(attrs).map((k) => (
               <div key={k} className="space-y-2">
                 <Label htmlFor={`pf-${k}`} className="capitalize">{k}</Label>
-                <Input id={`pf-${k}`} value={attrs[k]} onChange={(e) => setAttrs({ ...attrs, [k]: e.target.value })} />
+                {k === "timezone" ? (
+                  <TimezoneSelect id="pf-timezone" value={attrs[k]} onChange={(v) => setAttrs({ ...attrs, [k]: v })} />
+                ) : k === "locale" ? (
+                  <LocaleSelect id="pf-locale" value={attrs[k]} onChange={(v) => setAttrs({ ...attrs, [k]: v })} />
+                ) : (
+                  <Input id={`pf-${k}`} value={attrs[k]} onChange={(e) => setAttrs({ ...attrs, [k]: e.target.value })} />
+                )}
               </div>
             ))}
           </div>
@@ -148,6 +167,26 @@ export default function AccountSettings() {
             Change password
           </Button>
           </form>
+        </CardContent>
+      </Card>
+
+      <Card className="mb-6">
+        <CardHeader><CardTitle>Recent activity</CardTitle></CardHeader>
+        <CardContent>
+          {activity.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No recent activity.</p>
+          ) : (
+            <ul className="space-y-2 text-sm" data-testid="activity">
+              {activity.map((a, i) => (
+                <li key={i} className="flex flex-wrap items-center gap-2">
+                  <Badge tone={a.action.endsWith("FAILURE") || a.action.endsWith("FAILED") ? "bad" : "neutral"}>{ACTIVITY_LABEL[a.action] ?? a.action}</Badge>
+                  <span>{fmt(a.timestamp)}</span>
+                  <span className="text-muted-foreground">· {a.ip_address ?? "unknown IP"}{a.method ? ` · ${a.method}` : ""}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="mt-3 text-xs text-muted-foreground">Don&apos;t recognise something? Change your password; other devices are signed out.</p>
         </CardContent>
       </Card>
 

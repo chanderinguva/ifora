@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth-client";
 import { inAdminView } from "@/lib/roles";
+import { setDisplayPrefs } from "@/lib/display";
 import type { User } from "@/lib/types";
 
 const UserContext = createContext<User | null>(null);
@@ -27,7 +28,10 @@ export function AuthGuard({
       if (!u) router.replace("/login");
       else if (requireAdmin && u.mfa_setup_required) router.replace("/settings#security");
       else if (requireAdmin && !inAdminView(u)) router.replace("/dashboard");
-      else setUser(u);
+      else {
+        setDisplayPrefs(u.profile_attributes);
+        setUser(u);
+      }
     });
     return () => {
       alive = false;
