@@ -19,6 +19,14 @@ class Settings(BaseSettings):
     MFA_ISSUER: str = Field(default="IdentityForge")
     # Admins must have an authenticator app or a passkey before the admin API works for them.
     ADMIN_MFA_REQUIRED: bool = Field(default=True)
+    # OIDC provider (ADR 005). The signing-key encryption key must be a *different* Fernet key from MFA_ENCRYPTION_KEY.
+    OIDC_ISSUER: str = Field(default="http://localhost:8000")
+    OIDC_KEY_ENCRYPTION_KEY: str = Field(default="")
+    OIDC_RSA_KEY_BITS: int = Field(default=3072)
+    OIDC_ID_TOKEN_TTL_SECONDS: int = Field(default=600)
+    OIDC_ACCESS_TOKEN_TTL_SECONDS: int = Field(default=600)
+    OIDC_CLOCK_SKEW_SECONDS: int = Field(default=60)
+    OIDC_JWKS_CACHE_SECONDS: int = Field(default=300)
     MFA_CHALLENGE_MINUTES: int = Field(default=5)
     MFA_CHALLENGE_MAX_ATTEMPTS: int = Field(default=5)
 
