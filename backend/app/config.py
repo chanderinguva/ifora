@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     OIDC_KEY_ENCRYPTION_KEY: str = Field(default="")
     # Where /oauth/authorize sends the browser for login / consent (a page of the web UI).
     OIDC_LOGIN_UI_URL: str = Field(default="http://localhost:3000/oauth/authorize")
+    OIDC_LOGOUT_UI_URL: str = Field(default="http://localhost:3000/oauth/logout")
     OIDC_PENDING_REQUEST_TTL_SECONDS: int = Field(default=600)
     OIDC_CODE_TTL_SECONDS: int = Field(default=60)
     OIDC_REFRESH_IDLE_DAYS: int = Field(default=7)       # unused for this long = expired

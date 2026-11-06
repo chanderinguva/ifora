@@ -8,12 +8,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ApiError, http } from "@/lib/http";
+import { logout } from "@/lib/auth-client";
 
 type View = {
   client: { name: string; description: string | null; first_party: boolean };
   scopes: { name: string; description: string }[];
   user: { email: string };
   consent_required: boolean;
+  reauth_required: boolean;
   redirect_host: string;
 };
 
@@ -24,6 +26,12 @@ export default function AuthorizePage() {
   const [busy, setBusy] = useState(false);
   const [rid, setRid] = useState("");
 
+  // The application asked for a fresh sign-in (prompt=login, max_age, acr_values): end this session and sign in again.
+  const reauthenticate = useCallback(async (id: string) => {
+    await logout().catch(() => {});
+    router.replace(`/login?next=${encodeURIComponent(`/oauth/authorize?request_id=${id}`)}`);
+  }, [router]);
+
   const decide = useCallback(async (id: string, approve: boolean) => {
     setBusy(true);
     setError(null);
@@ -31,10 +39,11 @@ export default function AuthorizePage() {
       const r = await http<{ redirect_to: string }>(`/oidc/authorization-requests/${encodeURIComponent(id)}/decision`, { method: "POST", body: { approve } });
       window.location.assign(r.redirect_to);
     } catch (e) {
+      if (e instanceof ApiError && e.status === 403 && e.message === "reauthentication_required") { await reauthenticate(id); return; }
       setError(e instanceof Error ? e.message : "Something went wrong");
       setBusy(false);
     }
-  }, []);
+  }, [reauthenticate]);
 
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("request_id") ?? "";
@@ -42,6 +51,7 @@ export default function AuthorizePage() {
     if (!id) { setError("This page needs a sign-in request from an application."); return; }
     http<View>(`/oidc/authorization-requests/${encodeURIComponent(id)}`)
       .then((v) => {
+        if (v.reauth_required) { reauthenticate(id); return; }
         setView(v);
         if (!v.consent_required) decide(id, true); // trusted application, nothing to ask
       })
@@ -50,7 +60,7 @@ export default function AuthorizePage() {
           router.replace(`/login?next=${encodeURIComponent(`/oauth/authorize?request_id=${id}`)}`);
         } else setError(e instanceof Error ? e.message : "Something went wrong");
       });
-  }, [decide, router]);
+  }, [decide, reauthenticate, router]);
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-background p-4">

@@ -60,6 +60,8 @@ class Params:
     nonce: Optional[str]
     code_challenge: str
     prompt: Optional[str]
+    max_age: Optional[int] = None
+    acr_values: Optional[List[str]] = None
 
 
 def redirect_with(redirect_uri: str, params: Dict[str, Optional[str]]) -> str:
@@ -119,12 +121,37 @@ def validate_request(db: Session, q: Dict[str, str]) -> Params:
             raise AuthzError("invalid_request", "invalid prompt")
         if "none" in values and len(values) > 1:
             raise AuthzError("invalid_request", "prompt=none cannot be combined with other values")
-        if set(values) & {"login", "select_account"}:
-            raise AuthzError("request_not_supported", "prompt=login and select_account are not supported yet")
+    max_age = None
     if "max_age" in q:
-        raise AuthzError("request_not_supported", "max_age is not supported yet")
+        if not re.fullmatch(r"[0-9]{1,9}", q["max_age"]):
+            raise AuthzError("invalid_request", "max_age must be a non-negative integer number of seconds")
+        max_age = int(q["max_age"])
+    acr = None
+    if q.get("acr_values"):
+        if len(q["acr_values"]) > MAX_PARAM:
+            raise AuthzError("invalid_request", "acr_values is too long")
+        acr = [v for v in q["acr_values"].split(" ") if v]
 
-    return Params(client, redirect_uri, scopes, state, nonce, challenge, prompt)
+    return Params(client, redirect_uri, scopes, state, nonce, challenge, prompt, max_age, acr)
+
+
+def needs_reauth(p: Params, session) -> bool:
+    """Must the user authenticate again for this request? (OIDC Core 3.1.2.1 prompt=login, max_age, acr_values.)
+
+    acr_values is a voluntary request: when the session is below the asked level the user is sent through sign-in once;
+    whatever level they then reach is reported honestly in the ID token's `acr`."""
+    wants = bool(p.prompt and "login" in p.prompt.split(" ")) or p.max_age is not None or bool(p.acr_values)
+    if session is None:
+        return wants  # a fresh sign-in is coming anyway; recorded so a stale session cannot be reused later
+    if p.prompt and "login" in p.prompt.split(" "):
+        return True
+    if p.max_age is not None and (now() - session.auth_time).total_seconds() > p.max_age:
+        return True
+    if p.acr_values:
+        from backend.app.auth.authn import acr_for
+
+        return acr_for(session.amr) not in p.acr_values
+    return False
 
 
 def get_consent(db: Session, user_id: int, client: OIDCClient) -> Optional[OIDCConsent]:
@@ -156,11 +183,11 @@ def record_consent(db: Session, user_id: int, client: OIDCClient, scopes: List[s
     c.granted_via, c.revoked_at, c.updated_at = via, None, now()
 
 
-def park(db: Session, p: Params) -> str:
+def park(db: Session, p: Params, auth_after: Optional[datetime] = None) -> str:
     raw = secrets.token_urlsafe(32)
     db.add(PendingAuthRequest(
         request_hash=_h(raw), client_pk=p.client.id, redirect_uri=p.redirect_uri, scopes=p.scopes, state=p.state,
-        nonce=p.nonce, code_challenge=p.code_challenge, prompt=p.prompt,
+        nonce=p.nonce, code_challenge=p.code_challenge, prompt=p.prompt, auth_after=auth_after,
         expires_at=now() + timedelta(seconds=settings.OIDC_PENDING_REQUEST_TTL_SECONDS),
     ))
     return raw

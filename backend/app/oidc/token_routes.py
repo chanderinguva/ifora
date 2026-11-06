@@ -111,6 +111,10 @@ def discovery():
         "claims_supported": ["sub", "iss", "aud", "exp", "iat", "auth_time", "nonce", "amr", "acr", "at_hash", "name", "given_name",
                              "family_name", "preferred_username", "zoneinfo", "locale", "updated_at", "email", "groups"],
         "authorization_response_iss_parameter_supported": True,
+        "end_session_endpoint": f"{iss}/oauth/logout",
+        "prompt_values_supported": ["none", "login", "consent", "select_account"],
+        "acr_values_supported": ["urn:identityforge:acr:1", "urn:identityforge:acr:2"],
+        "claims_parameter_supported": False,
         "request_parameter_supported": False,
         "request_uri_parameter_supported": False,
     }, headers={"Cache-Control": "public, max-age=300", "Access-Control-Allow-Origin": "*"})

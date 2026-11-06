@@ -218,6 +218,7 @@ def verify_jwt(
     audience: str,
     typ: Optional[str] = None,
     algorithms: tuple = ("RS256",),
+    allow_expired: bool = False,
 ) -> dict:
     """Validate signature (algorithm allow-list, key chosen by kid from our own JWKS), issuer, audience,
     expiry and, when given, the `typ` header. Never trusts the token's `alg`. Returns the claims."""
@@ -233,12 +234,13 @@ def verify_jwt(
         decoded = jwt.decode(token, keyset, algorithms=list(algorithms))
         if typ is not None and decoded.header.get("typ") != typ:
             raise TokenError("unexpected token type")
-        JWTClaimsRegistry(
-            leeway=settings.OIDC_CLOCK_SKEW_SECONDS,
-            iss={"essential": True, "value": issuer},
-            aud={"essential": True, "value": audience},
-            exp={"essential": True},
-        ).validate(decoded.claims)
+        checks = {"iss": {"essential": True, "value": issuer}, "aud": {"essential": True, "value": audience}}
+        if not allow_expired:  # an RP-initiated logout may present an ID token that has since expired (OIDC RP-Initiated Logout 1.0)
+            checks["exp"] = {"essential": True}
+        to_check = decoded.claims
+        if allow_expired:  # the registry checks every time claim that is present, so leave them out of what it sees
+            to_check = {k: v for k, v in decoded.claims.items() if k not in ("exp", "nbf", "iat")}
+        JWTClaimsRegistry(leeway=settings.OIDC_CLOCK_SKEW_SECONDS, **checks).validate(to_check)
     except TokenError:
         raise
     except (JoseError, ValueError, KeyError) as e:
