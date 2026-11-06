@@ -72,6 +72,9 @@ def reset_schema():
         conn.exec_driver_sql("DROP SCHEMA public CASCADE")
         conn.exec_driver_sql("CREATE SCHEMA public")
     command.upgrade(alembic_config(), "head")
+    from backend.app.tenancy import reset_tenant_cache
+
+    reset_tenant_cache()
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -93,14 +96,16 @@ def _clean_redis():
 @pytest.fixture(autouse=True)
 def _clean_db():
     with engine.begin() as conn:
-        names = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables)
+        names = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables if t.name != "tenants")
         conn.exec_driver_sql(f"TRUNCATE {names} RESTART IDENTITY CASCADE")
     yield
 
 
 @pytest.fixture
 def db():
-    s = SessionLocal()
+    from backend.app.tenancy import tenant_session
+
+    s = tenant_session()
     yield s
     s.close()
 

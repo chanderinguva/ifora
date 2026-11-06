@@ -8,6 +8,7 @@ from sqlalchemy import Column, DateTime, Integer, String, Boolean, ForeignKey, T
 from sqlalchemy.orm import relationship
 
 from backend.app.db import Base
+from backend.app.tenancy import TenantOwned
 
 
 # Association table for user-group membership
@@ -30,7 +31,7 @@ class GroupRole(str, Enum):
     OWNER = "owner"
 
 
-class Group(Base):
+class Group(TenantOwned, Base):
     """Group model for organizing users."""
 
     __tablename__ = "groups"

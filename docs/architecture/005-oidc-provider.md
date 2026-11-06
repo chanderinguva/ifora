@@ -104,8 +104,8 @@ RFC 9700 baseline; `state` and `nonce` supported; PKCE S256 only (no `plain`); `
 ## Implementation backlog
 | ID | Milestone | Work | Status |
 |---|---|---|---|
-| M0.1 | Tenancy foundation | `tenants` + `tenant_id` migration on all tenant-owned tables, default tenant, scoped query helpers, unique constraints per tenant | Next |
-| M0.2 | Tenancy tests | Cross-tenant isolation tests for users, groups, sessions, audit, admin routes | Next |
+| M0.1 | Tenancy foundation | `tenants` + `tenant_id` migration (0007) on all tenant-owned tables, default tenant, fail-closed ORM scoping (`backend/app/tenancy.py`), per-tenant unique email/username | **Done** (branch `feature-tenancy-foundation`) |
+| M0.2 | Tenancy tests | Cross-tenant isolation tests (`tests/test_tenancy.py`): fail-closed, scoped reads/writes/bulk delete, admin API, login, audit | **Done** |
 | M1.1 | Session facts | `sessions.auth_time` + `amr`, set in `complete_login`; `/me` exposes; tests per method | |
 | M1.2 | Signing keys | Signer/KeySet abstraction, RS256, encrypted keys, JWKS, rotation (service + CLI), tests incl. rotation overlap | |
 | M1.3 | Client registry | Models, admin API + UI, exact redirect validation, secret hashing, first-party flag | |

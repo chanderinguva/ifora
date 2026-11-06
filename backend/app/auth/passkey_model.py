@@ -6,13 +6,14 @@ from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, LargeBina
 from sqlalchemy.orm import backref, relationship
 
 from backend.app.db import Base
+from backend.app.tenancy import TenantOwned
 
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-class Passkey(Base):
+class Passkey(TenantOwned, Base):
     __tablename__ = "passkeys"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -44,7 +45,7 @@ class Passkey(Base):
         }
 
 
-class WebAuthnChallenge(Base):
+class WebAuthnChallenge(TenantOwned, Base):
     """A pending ceremony. Single use: consumed (deleted) on the first verify attempt."""
 
     __tablename__ = "webauthn_challenges"
