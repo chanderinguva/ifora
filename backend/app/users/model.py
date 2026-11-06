@@ -5,6 +5,7 @@ from enum import Enum
 from typing import Any, Dict, Optional
 
 from passlib.hash import argon2
+import uuid
 from sqlalchemy import Column, DateTime, Integer, String, Boolean, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 
@@ -34,6 +35,8 @@ class User(TenantOwned, Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
 
     # Core identity
+    # Opaque, stable, never-reused identifier exposed to relying parties as the OIDC `sub` (never the email or the row id).
+    public_id = Column(String(36), nullable=False, unique=True, default=lambda: str(uuid.uuid4()))
     email = Column(String(255), nullable=False, index=True)
     username = Column(String(100), nullable=False, index=True)
 

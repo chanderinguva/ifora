@@ -101,6 +101,9 @@ def create_app() -> FastAPI:
     from backend.app.oidc.authorize_routes import api_router as oidc_authz_api, public_router as oidc_authz_public
 
     app.include_router(oidc_authz_public)
+    from backend.app.oidc.token_routes import router as oidc_token_router
+
+    app.include_router(oidc_token_router)
     app.include_router(oidc_authz_api, prefix="/api/v1")
     app.include_router(oidc_public_router)  # issuer-root endpoints: /oauth/*, later /.well-known/*
     from backend.app.oidc.client_routes import router as oidc_clients_router
