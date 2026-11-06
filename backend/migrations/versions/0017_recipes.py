@@ -1,14 +1,14 @@
 """recipe engine: recipes, versions, connections, outbox, jobs, job steps (ADR 008)
 
 Revision ID: 0017
-Revises: 0015
+Revises: 0016
 """
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 revision = '0017'
-down_revision = '0015'
+down_revision = '0016'
 branch_labels = None
 depends_on = None
 

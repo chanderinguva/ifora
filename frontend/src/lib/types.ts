@@ -48,6 +48,19 @@ export type OidcClient = {
   client_secret?: string;
 };
 
+export type ScimToken = {
+  id: number;
+  name: string;
+  token_prefix: string;
+  status: "active" | "revoked" | "expired";
+  created_at: string | null;
+  expires_at: string | null;
+  revoked_at: string | null;
+  last_used_at: string | null;
+  /** Only present in the create response; shown once. */
+  token?: string;
+};
+
 export type ProfileAttribute = {
   key: string; display_name: string; description: string | null;
   data_type: "string" | "number" | "boolean" | "enum" | "timezone" | "locale";

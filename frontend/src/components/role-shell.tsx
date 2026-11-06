@@ -1,6 +1,6 @@
 "use client";
 
-import { LayoutDashboard, Users, Shield, ScrollText, Home, Settings, Workflow, AppWindow, SlidersHorizontal, Zap } from "lucide-react";
+import { LayoutDashboard, Users, Shield, ScrollText, Home, Settings, Workflow, AppWindow, SlidersHorizontal, RefreshCw, Zap } from "lucide-react";
 import { AppShell, type NavGroup } from "./app-shell";
 import { useCurrentUser } from "./auth-guard";
 import { inAdminView } from "@/lib/roles";
@@ -17,7 +17,13 @@ export const ADMIN_NAV: NavGroup[] = [
     ],
   },
   { label: "Automation", items: [{ href: "/admin/recipes", label: "Recipes", icon: Zap }] },
-  { label: "Applications", items: [{ href: "/admin/oidc-clients", label: "OIDC clients", icon: AppWindow }] },
+  {
+    label: "Applications",
+    items: [
+      { href: "/admin/oidc-clients", label: "OIDC clients", icon: AppWindow },
+      { href: "/admin/provisioning", label: "Provisioning", icon: RefreshCw },
+    ],
+  },
   { label: "Security", items: [{ href: "/admin/audit", label: "Audit log", icon: ScrollText }] },
   { label: "Account", items: [{ href: "/settings", label: "Account settings", icon: Settings }] },
 ];
