@@ -38,6 +38,12 @@ class AuditAction(str, Enum):
     MFA_RECOVERY_USED = "MFA_RECOVERY_USED"
     MFA_RECOVERY_REGENERATED = "MFA_RECOVERY_REGENERATED"
     MFA_CHALLENGE_FAILED = "MFA_CHALLENGE_FAILED"
+    PASSKEY_REGISTERED = "PASSKEY_REGISTERED"
+    PASSKEY_REMOVED = "PASSKEY_REMOVED"
+    PASSKEY_RENAMED = "PASSKEY_RENAMED"
+    PASSKEY_LOGIN_FAILED = "PASSKEY_LOGIN_FAILED"
+    PASSKEY_POLICY_CHANGED = "PASSKEY_POLICY_CHANGED"
+    PASSKEY_COUNTER_ANOMALY = "PASSKEY_COUNTER_ANOMALY"
 
 
 class AuditEventType(str, Enum):
@@ -114,6 +120,12 @@ class AuditEvent(Base):
             AuditAction.MFA_RECOVERY_USED,
             AuditAction.MFA_RECOVERY_REGENERATED,
             AuditAction.MFA_CHALLENGE_FAILED,
+            AuditAction.PASSKEY_REGISTERED,
+            AuditAction.PASSKEY_REMOVED,
+            AuditAction.PASSKEY_RENAMED,
+            AuditAction.PASSKEY_LOGIN_FAILED,
+            AuditAction.PASSKEY_POLICY_CHANGED,
+            AuditAction.PASSKEY_COUNTER_ANOMALY,
         }
         user_actions = {
             AuditAction.USER_CREATED,

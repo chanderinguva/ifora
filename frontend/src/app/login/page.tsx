@@ -7,7 +7,8 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { getCurrentUser, login, loginMfa } from "@/lib/auth-client";
+import { getCurrentUser, login, loginMfa, loginWithPasskey } from "@/lib/auth-client";
+import { KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -51,6 +52,19 @@ export default function LoginPage() {
   const finish = async () => {
     const u = await getCurrentUser();
     router.push(u?.is_admin ? "/admin/dashboard" : "/dashboard");
+  };
+
+  const onPasskey = async () => {
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      await loginWithPasskey();
+      await finish();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Passkey sign-in failed");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const onMfaSubmit = async (e: React.FormEvent) => {
@@ -181,6 +195,20 @@ export default function LoginPage() {
               ) : (
                 "Sign In"
               )}
+            </Button>
+
+            <div className="relative py-1 text-center text-xs text-muted-foreground">
+              <span className="bg-background px-2">or</span>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={onPasskey}
+              disabled={isSubmitting || !hydrated}
+            >
+              <KeyRound className="mr-2 h-4 w-4" />
+              Sign in with a passkey
             </Button>
           </form>
         </CardContent>

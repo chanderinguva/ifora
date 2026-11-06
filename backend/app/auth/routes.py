@@ -187,6 +187,12 @@ async def login_endpoint(
         logger.warning("login.attempt_failed", reason="inactive", user_id=user.id)
         raise fail()
 
+    if user.passkey_required:
+        # Phishing-resistant policy: a password (even with TOTP) can never start a session.
+        # Only someone who already knows the password learns this.
+        logger.info("login.refused_passkey_required", user_id=user.id)
+        raise HTTPException(status_code=403, detail="This account requires signing in with a passkey.")
+
     if user.mfa is not None and user.mfa.enabled:
         # Password was right, but no session until the second factor is proven.
         raw = mfa_service.issue_challenge(db, user)

@@ -22,6 +22,7 @@ test("user enrols TOTP, signs in with it and with a recovery code, then turns it
   // enrol
   await login(page, email, USER_PASSWORD);
   await expect(page).toHaveURL(/\/dashboard$/);
+  await page.goto("/settings");
   const card = page.getByTestId("mfa-card");
   await card.getByRole("button", { name: "Set up" }).click();
   await page.locator("#mfa-pw").fill("WrongPassw0rd!!");
@@ -65,6 +66,7 @@ test("user enrols TOTP, signs in with it and with a recovery code, then turns it
   await page.locator("#mfa-code").fill(codes[0]);
   await page.getByRole("button", { name: "Verify" }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
+  await page.goto("/settings");
   await expect(page.getByTestId("mfa-card")).toContainText("9 recovery codes remaining");
   await logout(page);
   await login(page, email, USER_PASSWORD);
@@ -76,6 +78,7 @@ test("user enrols TOTP, signs in with it and with a recovery code, then turns it
   await page.locator("#mfa-code").fill(codes[1]);
   await page.getByRole("button", { name: "Verify" }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
+  await page.goto("/settings");
   const card2 = page.getByTestId("mfa-card");
   await card2.getByRole("button", { name: "Turn off" }).click();
   await page.locator("#mfa-pw2").fill(USER_PASSWORD);

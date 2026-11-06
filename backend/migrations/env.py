@@ -11,6 +11,7 @@ from backend.app.db import Base
 # Import every model so its table is registered on Base.metadata
 from backend.app.audit.model import AuditEvent  # noqa: F401
 from backend.app.auth.mfa_model import MFAChallenge, MFARecoveryCode, UserMFA  # noqa: F401
+from backend.app.auth.passkey_model import Passkey, WebAuthnChallenge  # noqa: F401
 from backend.app.auth.session import Session  # noqa: F401
 from backend.app.groups.model import Group  # noqa: F401
 from backend.app.users.model import User  # noqa: F401

@@ -71,6 +71,8 @@ export default function UserDetail() {
       <div className="mb-4 flex flex-wrap gap-2 text-sm">
         <Badge tone={user.status === "active" ? "good" : "bad"}>{user.status}</Badge>
         {user.mfa_enabled && <Badge tone="good">MFA</Badge>}
+        {(user.passkey_count ?? 0) > 0 && <Badge tone="good">{user.passkey_count} passkey{user.passkey_count === 1 ? "" : "s"}</Badge>}
+        {user.passkey_required && <Badge tone="info">passkey required</Badge>}
         {user.is_super_admin ? <Badge tone="info">Super admin</Badge> : user.is_admin ? <Badge tone="info">Admin</Badge> : <Badge>User</Badge>}
         <span className="text-muted-foreground">Created {fmt(user.created_at)} · Last login {fmt(user.last_login_at)}</span>
       </div>
@@ -135,18 +137,18 @@ export default function UserDetail() {
             {user.status === "active" ? "Deactivate" : "Activate"}
           </Button>
         )}
-        {user.mfa_enabled && !isSelf && !protectedTarget && (
+        {(user.mfa_enabled || (user.passkey_count ?? 0) > 0 || user.passkey_required) && !isSelf && !protectedTarget && (
           <Button
             variant="outline"
             onClick={() => {
-              if (!confirm("Remove this user's two-step verification? They will be signed out everywhere.")) return;
+              if (!confirm("Remove this user's authenticator app, passkeys and passkey requirement? They will be signed out everywhere and can sign in with their password again.")) return;
               run(async () => {
                 await http(`/admin/users/${id}/mfa/reset`, { method: "POST" });
                 apply(await http<User>(`/admin/users/${id}`));
-              }, "MFA removed; the user's sessions were ended");
+              }, "Sign-in factors reset; the user's sessions were ended");
             }}
           >
-            Reset MFA
+            Reset MFA &amp; passkeys
           </Button>
         )}
         {me.is_super_admin && !user.is_super_admin && (
