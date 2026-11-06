@@ -41,6 +41,11 @@ Rules enforced server-side: no self-delete/self-deactivate, mass-assignment igno
 - Admin "reset sign-in factors" removes TOTP, passkeys and the policy (lost devices), revokes sessions, and is audited.
 - Every role (user, admin, super admin) enrols from **Account settings** (header user menu), the same self-service API.
 
+## Operator recovery (lost every factor)
+Other admins cannot reset a super admin, so recovery is an operator action with shell access to the deployment (that access is the trust boundary):
+`docker exec -w /app identityforge-api python -m backend.cli reset-factors <email>` (`--yes` skips the prompt).
+It removes TOTP, recovery codes and passkeys, lifts the passkey-required policy, clears any lockout, ends all sessions and leaves the password untouched. Each run is audited as `MFA_RESET` with `via: cli` and no actor. It shares `mfa_service.reset_all_factors` with the admin API.
+
 ## Known gaps (not yet implemented)
-- No policy forcing admins to enrol; no recovery path if a super admin loses every factor (needs a CLI); no password reset by email.
+- No policy forcing admins to enrol; no password reset by email.
 - Client IP is the direct peer address; configure the ASGI server's proxy-header handling when deployed behind a proxy.
