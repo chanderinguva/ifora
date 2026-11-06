@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, Optional
 
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy import Column, DateTime, Integer, String, Boolean, ForeignKey
 from sqlalchemy.orm import relationship
 
@@ -57,6 +58,9 @@ class Session(TenantOwned, Base):
     is_admin_session = Column(Boolean, default=False, nullable=False)
     # "Switch to user view": this session has dropped admin powers until the user steps back up.
     acting_as_user = Column(Boolean, default=False, nullable=False, server_default="false")
+    # When and how the user actually authenticated (not when the session was last used).
+    auth_time = Column(DateTime(timezone=True), default=_now, nullable=False)
+    amr = Column(JSONB, nullable=False, default=lambda: ["pwd"])
 
     def __init__(
         self,
@@ -65,11 +69,14 @@ class Session(TenantOwned, Base):
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None,
         is_admin_session: bool = False,
+        amr: Optional[list] = None,
     ):
         self.user_id = user_id
         self.raw_token = self._generate_token()  # not persisted
         self.token = self.hash_token(self.raw_token)
         self.is_admin_session = is_admin_session
+        self.auth_time = _now()
+        self.amr = list(amr) if amr else ["pwd"]
         self.ip_address = ip_address
         self.user_agent = user_agent
         self.expires_at = _now() + timedelta(hours=session_lifetime_hours)
