@@ -52,17 +52,8 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     """Create the application with lifespan management."""
-    app = FastAPI(
-        title="IdentityForge API",
-        description="Identity and Access Management Platform",
-        version="0.1.0",
-        lifespan=lifespan,
-    )
-
-    # Mount API router
-    app.include_router(api.app.router, prefix="/api/v1")
-
-    return app
+    # The API module already creates and exports the app
+    return api.app
 
 
 # Create application instance

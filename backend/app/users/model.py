@@ -103,11 +103,9 @@ class User(Base):
         """Check if account is currently locked out."""
         if self.lockout_until is None:
             return False
-        if self.failed_login_attempts >= 5:
-            from datetime import datetime
+        from datetime import datetime, timezone
 
-            return datetime.utcnow() < self.lockout_until
-        return False
+        return datetime.now(timezone.utc) < self.lockout_until
 
     @property
     def name(self) -> str:

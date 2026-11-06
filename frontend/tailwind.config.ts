@@ -2,9 +2,15 @@ import type { Config } from "tailwindcss";
 
 export default {
   darkMode: ["class"],
-  content: ["./src/**/*.{ts,tsx}", "./pages/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}"],
+  content: ["./src/**/*.{ts,tsx}", "./pages/**/*.{ts,tsx}", "./src/components/**/*.{ts,tsx}"],
   plugins: [],
+  theme: {
   extend: {
+    fontFamily: {
+      sans: ["var(--font-lora)", "Georgia", "serif"],
+      serif: ["var(--font-lora)", "Georgia", "serif"],
+      mono: ["var(--font-lora)", "Georgia", "serif"],
+    },
     colors: {
       border: "hsl(var(--border))",
       input: "hsl(var(--input))",
@@ -27,6 +33,14 @@ export default {
         DEFAULT: "hsl(var(--muted))",
         foreground: "hsl(var(--muted-foreground))",
       },
+      card: {
+        DEFAULT: "hsl(var(--card))",
+        foreground: "hsl(var(--card-foreground))",
+      },
+      popover: {
+        DEFAULT: "hsl(var(--popover))",
+        foreground: "hsl(var(--popover-foreground))",
+      },
       accent: {
         DEFAULT: "hsl(var(--accent))",
         foreground: "hsl(var(--accent-foreground))",
@@ -38,4 +52,5 @@ export default {
       sm: "calc(var(--radius) - 4px)",
     },
   },
+},
 } satisfies Config;

@@ -1,14 +1,21 @@
 """Session model for authentication."""
 
+import hashlib
+import hmac
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, Optional
 
 from sqlalchemy import Column, DateTime, Integer, String, Boolean, ForeignKey
 from sqlalchemy.orm import relationship
 
+from backend.app.config import settings
 from backend.app.db import Base
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class SessionStatus(str, Enum):
@@ -31,15 +38,16 @@ class Session(Base):
     # User relationship
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
 
-    # Cryptographically secure opaque token (256 bits)
+    # SHA-256 hash of the opaque token (the raw token only lives in the cookie,
+    # so a database leak does not yield usable sessions)
     token = Column(String(64), unique=True, nullable=False, index=True)
 
     # Status tracking
     status = Column(String(50), default=SessionStatus.ACTIVE.value, nullable=False)
 
     # Activity tracking
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
-    last_activity_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=_now, nullable=False)
+    last_activity_at = Column(DateTime(timezone=True), default=_now, nullable=False)
     expires_at = Column(DateTime(timezone=True), nullable=False)
 
     # Context
@@ -56,11 +64,12 @@ class Session(Base):
         is_admin_session: bool = False,
     ):
         self.user_id = user_id
-        self.token = self._generate_token()
+        self.raw_token = self._generate_token()  # not persisted
+        self.token = self.hash_token(self.raw_token)
         self.is_admin_session = is_admin_session
         self.ip_address = ip_address
         self.user_agent = user_agent
-        self.expires_at = datetime.utcnow() + timedelta(hours=session_lifetime_hours)
+        self.expires_at = _now() + timedelta(hours=session_lifetime_hours)
 
     @staticmethod
     def _generate_token() -> str:
@@ -73,10 +82,22 @@ class Session(Base):
         """
         return secrets.token_urlsafe(32)
 
+    @staticmethod
+    def hash_token(raw_token: str) -> str:
+        """Hash a raw session token for storage/lookup (64 hex chars)."""
+        return hashlib.sha256(raw_token.encode()).hexdigest()
+
+    @staticmethod
+    def csrf_token_for(raw_token: str) -> str:
+        """Derive the CSRF token bound to a session (HMAC with server secret)."""
+        return hmac.new(
+            settings.SECRET_KEY.encode(), b"csrf:" + raw_token.encode(), hashlib.sha256
+        ).hexdigest()
+
     @property
     def is_expired(self) -> bool:
         """Check if session has expired."""
-        return datetime.utcnow() > self.expires_at or self.status != SessionStatus.ACTIVE.value
+        return _now() > self.expires_at or self.status != SessionStatus.ACTIVE.value
 
     def revoke(self) -> None:
         """Revoke the session."""
@@ -84,12 +105,12 @@ class Session(Base):
 
     def extend(self, additional_hours: int = 8) -> None:
         """Extend session lifetime."""
-        self.expires_at = datetime.utcnow() + timedelta(hours=additional_hours)
-        self.last_activity_at = datetime.utcnow()
+        self.expires_at = _now() + timedelta(hours=additional_hours)
+        self.last_activity_at = _now()
 
     def touch(self) -> None:
         """Update last activity timestamp."""
-        self.last_activity_at = datetime.utcnow()
+        self.last_activity_at = _now()
 
     @classmethod
     def create(cls, **kwargs) -> "Session":
