@@ -1,6 +1,7 @@
 """MFA: login second step, self-service enrolment, and admin reset."""
 
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -33,6 +34,11 @@ class PasswordOnly(BaseModel):
     password: str = Field(..., max_length=128)
 
 
+class EnrolStart(BaseModel):
+    password: str = Field(..., max_length=128)
+    enrollment_code: Optional[str] = Field(default=None, max_length=64)
+
+
 class CodeOnly(BaseModel):
     code: str = Field(..., max_length=64)
 
@@ -45,6 +51,17 @@ class PasswordAndCode(BaseModel):
 def _reauth(user: User, password: str) -> None:
     if not user.verify_password(password):
         raise HTTPException(status_code=403, detail="Password is incorrect")
+
+
+def require_enrollment_code(user: User, supplied: Optional[str], request: Request) -> None:
+    """Admins who must enrol a first factor need the out-of-band code, not just their password."""
+    if not user.needs_mfa_setup:
+        return
+    ip = ratelimit.client_ip(request)
+    ratelimit.check("login", ip, settings.RATE_LIMIT_LOGIN_FAILURES)
+    if not mfa_service.enrollment_code_ok(user, supplied):
+        ratelimit.hit("login", ip, settings.RATE_LIMIT_LOGIN_WINDOW_SECONDS)
+        raise HTTPException(status_code=403, detail="A valid enrolment code is required. Ask a super admin or operator for one.")
 
 
 # ---- login step 2 -----------------------------------------------------------
@@ -106,11 +123,13 @@ def mfa_status(ctx=Depends(get_session_and_user), db: Session = Depends(get_db))
 
 @router.post("/me/mfa/setup")
 def mfa_setup(
-    body: PasswordOnly, request: Request, ctx=Depends(get_session_and_user), db: Session = Depends(get_db)
+    body: EnrolStart, request: Request, ctx=Depends(get_session_and_user), db: Session = Depends(get_db)
 ):
-    """Start enrolment (requires the current password). Replaces any unconfirmed attempt."""
+    """Start enrolment (requires the current password, plus an enrolment code for admins with no factor yet).
+    Replaces any unconfirmed attempt."""
     user = ctx[1]
     _reauth(user, body.password)
+    require_enrollment_code(user, body.enrollment_code, request)
     if user.mfa is not None and user.mfa.enabled:
         raise HTTPException(status_code=409, detail="MFA is already enabled")
     secret = mfa.new_secret()
@@ -134,6 +153,7 @@ def mfa_enable(body: CodeOnly, request: Request, ctx=Depends(get_session_and_use
     user.mfa.enabled = True
     user.mfa.enabled_at = datetime.now(timezone.utc)
     user.mfa.last_used_step = step
+    mfa_service.clear_enrollment_code(user)
     codes = mfa_service.replace_recovery_codes(db, user)
     revoked = revoke_user_sessions(db, user.id, except_id=session.id)
     record(db, AuditAction.MFA_ENABLED, request, user, user.id, "user", {"other_sessions_revoked": revoked})
@@ -194,3 +214,25 @@ def admin_reset_mfa(
     record(db, AuditAction.MFA_RESET, request, actor, user.id, "user", result)
     db.commit()
     return {"success": True}
+
+
+@router.post("/admin/users/{user_id}/enrollment-code")
+def issue_enrollment_code(
+    user_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)
+):
+    """A super admin hands an admin the one-time code they need to enrol their first factor.
+    A super admin's own code comes from the operator CLI (nobody above them)."""
+    if not actor.is_super_admin:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    user = _get_or_404(db, user_id)
+    if not user.is_admin or user.is_super_admin:
+        raise HTTPException(status_code=400, detail="Enrolment codes are for administrators")
+    if not user.needs_mfa_setup:
+        raise HTTPException(status_code=409, detail="This user does not need to enrol a first factor")
+    code = mfa_service.issue_enrollment_code(user)
+    record(
+        db, AuditAction.ENROLLMENT_CODE_ISSUED, request, actor, user.id, "user",
+        {"expires_in_hours": mfa_service.ENROLLMENT_CODE_HOURS},
+    )
+    db.commit()
+    return {"code": code, "expires_in_hours": mfa_service.ENROLLMENT_CODE_HOURS}

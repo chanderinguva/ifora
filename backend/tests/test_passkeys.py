@@ -10,10 +10,10 @@ from tests.conftest import ORIGIN, STRONG, Api, make_user
 from tests.fake_authenticator import FakeAuthenticator
 
 
-def register(api, auth=None, name="Laptop", **kw):
+def register(api, auth=None, name="Laptop", enrollment_code=None, **kw):
     """Run the registration ceremony; returns (authenticator, response)."""
     auth = auth or FakeAuthenticator()
-    o = api.post("/me/passkeys/register/options", {"password": STRONG})
+    o = api.post("/me/passkeys/register/options", {"password": STRONG, "enrollment_code": enrollment_code})
     assert o.status_code == 200, o.text
     cred = auth.register(o.json()["options"], **kw)
     r = api.post("/me/passkeys/register/verify", {"ceremony_id": o.json()["ceremony_id"], "credential": cred, "name": name})

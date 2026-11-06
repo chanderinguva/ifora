@@ -14,7 +14,8 @@ type Status = { enabled: boolean; pending: boolean; recovery_codes_remaining: nu
 type Mode = "idle" | "password" | "scan" | "disable" | "regen";
 
 /** Self-service two-step verification: enrol, disable, regenerate recovery codes. */
-export function MfaCard() {
+export function MfaCard({ needsCode = false }: { needsCode?: boolean }) {
+  const [enrolCode, setEnrolCode] = useState("");
   const [status, setStatus] = useState<Status | null>(null);
   const [mode, setMode] = useState<Mode>("idle");
   const [password, setPassword] = useState("");
@@ -49,7 +50,7 @@ export function MfaCard() {
 
   const startSetup = () =>
     run(async () => {
-      setSetup(await http("/me/mfa/setup", { method: "POST", body: { password } }));
+      setSetup(await http("/me/mfa/setup", { method: "POST", body: { password, enrollment_code: needsCode ? enrolCode : undefined } }));
       setPassword("");
       setMode("scan");
     });
@@ -138,6 +139,13 @@ export function MfaCard() {
           <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); startSetup(); }}>
             <Label htmlFor="mfa-pw">Confirm your password to continue</Label>
             <Input id="mfa-pw" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            {needsCode && (
+              <>
+                <Label htmlFor="mfa-enrol-code">Enrolment code</Label>
+                <Input id="mfa-enrol-code" autoComplete="off" placeholder="XXXX-XXXX-XXXX" value={enrolCode} onChange={(e) => setEnrolCode(e.target.value)} />
+                <p className="text-xs text-muted-foreground">Administrators need a one-time code from a super admin or the operator to set up their first sign-in factor.</p>
+              </>
+            )}
             <div className="flex gap-2">
               <Button type="submit" disabled={!password}>Continue</Button>
               <Button type="button" variant="ghost" onClick={reset}>Cancel</Button>

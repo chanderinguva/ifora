@@ -10,8 +10,10 @@ from sqlalchemy.orm import Session
 from backend.app import ratelimit
 from backend.app.audit.model import AuditAction
 from backend.app.audit.service import record
+from backend.app.auth import mfa_service
 from backend.app.auth import passkey_service as svc
 from backend.app.auth.deps import check_origin, get_session_and_user
+from backend.app.auth.mfa_routes import EnrolStart, require_enrollment_code
 from backend.app.auth.passkey_model import Passkey
 from backend.app.auth.routes import complete_login
 from backend.app.auth.sessions_util import revoke_user_sessions
@@ -117,9 +119,10 @@ def list_passkeys(ctx=Depends(get_session_and_user)):
 
 
 @router.post("/me/passkeys/register/options")
-def register_options(body: PasswordOnly, ctx=Depends(get_session_and_user), db: Session = Depends(get_db)):
+def register_options(body: EnrolStart, request: Request, ctx=Depends(get_session_and_user), db: Session = Depends(get_db)):
     user = ctx[1]
     _reauth(user, body.password)
+    require_enrollment_code(user, body.enrollment_code, request)
     if len(user.passkeys) >= 10:
         raise HTTPException(status_code=400, detail="Passkey limit reached")
     ceremony, options = svc.registration_options(db, user)
@@ -142,6 +145,7 @@ def register_verify(
         logger.warning("passkey.register_failed", user_id=user.id, error=str(e))
         raise HTTPException(status_code=400, detail="Passkey could not be verified")
     db.flush()
+    mfa_service.clear_enrollment_code(user)
     record(db, AuditAction.PASSKEY_REGISTERED, request, user, user.id, "user", {"passkey_id": passkey.id, "name": passkey.name})
     db.commit()
     db.refresh(passkey)

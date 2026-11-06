@@ -60,6 +60,9 @@ class User(Base):
     webauthn_handle = Column(String(64), nullable=True)
     passkey_required = Column(Boolean, default=False, nullable=False, server_default="false")
     lockout_until = Column(DateTime(timezone=True), nullable=True)
+    # One-time code an operator/super admin hands to an admin who must enrol a first factor.
+    enrollment_code_hash = Column(String(64), nullable=True)
+    enrollment_code_expires_at = Column(DateTime(timezone=True), nullable=True)
 
     def __init__(
         self,

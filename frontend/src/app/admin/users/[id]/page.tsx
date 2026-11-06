@@ -20,6 +20,7 @@ export default function UserDetail() {
   const me = useCurrentUser();
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
+  const [issuedCode, setIssuedCode] = useState<string | null>(null);
   const [form, setForm] = useState({ first_name: "", last_name: "", email: "" });
   const [attrs, setAttrs] = useState<Attr[]>([]);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -80,6 +81,13 @@ export default function UserDetail() {
       {msg && (
         <Alert variant={msg.ok ? "default" : "destructive"} className="mb-4" role="status">
           <AlertDescription>{msg.text}</AlertDescription>
+        </Alert>
+      )}
+      {issuedCode && (
+        <Alert className="mb-4" data-testid="issued-code">
+          <AlertDescription>
+            Enrolment code: <code className="font-mono text-base font-semibold">{issuedCode}</code>
+          </AlertDescription>
         </Alert>
       )}
       {protectedTarget && !isSelf && (
@@ -149,6 +157,19 @@ export default function UserDetail() {
             }}
           >
             Reset MFA &amp; passkeys
+          </Button>
+        )}
+        {me.is_super_admin && user.is_admin && !user.is_super_admin && user.mfa_setup_required && (
+          <Button
+            variant="outline"
+            onClick={() =>
+              run(async () => {
+                const r = await http<{ code: string; expires_in_hours: number }>(`/admin/users/${id}/enrollment-code`, { method: "POST" });
+                setIssuedCode(`${r.code} (single use, valid ${r.expires_in_hours}h)`);
+              }, "Enrolment code issued. Give it to the administrator out of band; it is shown only once.")
+            }
+          >
+            Issue enrolment code
           </Button>
         )}
         {me.is_super_admin && !user.is_super_admin && (
