@@ -15,7 +15,8 @@ Rules enforced here (fail closed):
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, event
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Table, event
+from sqlalchemy.sql import visitors
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm import declared_attr, with_loader_criteria
 
@@ -104,20 +105,31 @@ def tenant_session(tenant_id: int | None = None) -> OrmSession:
     return use_tenant(s, tenant_id if tenant_id is not None else default_tenant_id())
 
 
+def _tenant_tables() -> set:
+    return {m.local_table.name for m in Base.registry.mappers if issubclass(m.class_, TenantOwned)}
+
+
+def _touches_tenant_tables(stmt) -> bool:
+    """True if the statement references a tenant-owned table anywhere (columns, FROM, joins, subqueries).
+
+    Walks the whole expression tree: `state.all_mappers` misses `select_from()`-only references, which
+    let `query(Model).count()` read every tenant.
+    """
+    tables = _tenant_tables()
+    return any(isinstance(e, Table) and e.name in tables for e in visitors.iterate(stmt))
+
+
 @event.listens_for(OrmSession, "do_orm_execute")
 def _scope_queries(state):
     info = state.session.info
     if info.get("unscoped"):
         return
-    stmt = state.statement
-    # Cheap check: does the statement touch any tenant-owned mapper?
-    touched = {m.class_ for m in state.all_mappers} if state.all_mappers else set()
-    if not any(issubclass(c, TenantOwned) for c in touched):
-        return
     tid = info.get("tenant_id")
     if tid is None:
-        raise TenantContextMissing("tenant-owned table accessed without a tenant context")
-    state.statement = stmt.options(
+        if _touches_tenant_tables(state.statement):
+            raise TenantContextMissing("tenant-owned table accessed without a tenant context")
+        return
+    state.statement = state.statement.options(
         with_loader_criteria(
             TenantOwned,
             lambda cls: cls.tenant_id == tid,

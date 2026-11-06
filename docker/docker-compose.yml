@@ -50,6 +50,8 @@ services:
       - ADMIN_SECRET_KEY=${ADMIN_SECRET_KEY:?set ADMIN_SECRET_KEY in docker/.env}
       - MFA_ENCRYPTION_KEY=${MFA_ENCRYPTION_KEY:?set MFA_ENCRYPTION_KEY in docker/.env}
       - ADMIN_MFA_REQUIRED=${ADMIN_MFA_REQUIRED:-true}
+      - OIDC_KEY_ENCRYPTION_KEY=${OIDC_KEY_ENCRYPTION_KEY:-}
+      - OIDC_ISSUER=${OIDC_ISSUER:-http://localhost:8000}
       - ENVIRONMENT=development
     ports:
       - "8000:8000"

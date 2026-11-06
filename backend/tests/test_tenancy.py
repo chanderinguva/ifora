@@ -129,3 +129,27 @@ def test_audit_log_is_tenant_scoped(db, tenant_b, super_admin):
     s.close()
     body = super_admin.get("/admin/audit").text
     assert "other-tenant-secret" not in body
+
+
+def test_aggregate_and_subquery_forms_are_scoped_too(db, tenant_b):
+    """Regression: count()/select_from() once ignored the tenant filter and read every tenant."""
+    from sqlalchemy import func, select
+
+    make_user(db, "a@example.com")
+    user_in(tenant_b, "b@example.com")
+    assert db.query(User).count() == 1
+    assert db.query(func.count(User.id)).scalar() == 1
+    assert db.execute(select(func.count()).select_from(User)).scalar() == 1
+    assert db.execute(select(func.count()).select_from(select(User).subquery())).scalar() == 1
+    assert db.query(User).filter(User.id.in_(select(User.id))).count() == 1
+
+
+def test_no_context_blocks_aggregates_too():
+    from sqlalchemy import func, select
+
+    s = SessionLocal()
+    with pytest.raises(TenantContextMissing):
+        s.query(User).count()
+    with pytest.raises(TenantContextMissing):
+        s.execute(select(func.count()).select_from(User))
+    s.close()

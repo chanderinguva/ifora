@@ -53,3 +53,16 @@ def test_does_not_change_the_password(db, member):
     assert main(["reset-factors", "member@example.com", "-y"]) == 0
     db.expire_all()
     assert db.query(User).filter_by(email="member@example.com").one().password_hash == before
+
+
+def test_cli_rotate_signing_key(db):
+    from backend.cli import rotate_signing_key
+    from backend.app.oidc import keys
+
+    keys.signing_key(db)
+    lines = []
+    assert rotate_signing_key(out=lines.append) == 0
+    assert "pending" in lines[0]
+    assert rotate_signing_key(out=lines.append) == 1  # rotation already in progress
+    assert rotate_signing_key(emergency=True, confirm=lambda _: "n", out=lines.append) == 2
+    assert rotate_signing_key(emergency=True, assume_yes=True, out=lines.append) == 0

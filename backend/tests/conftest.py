@@ -21,12 +21,16 @@ os.environ["DATABASE_URL_ASYNC"] = _async_url
 os.environ.setdefault("SECRET_KEY", "test_secret_key_value_with_at_least_32_chars")
 os.environ.setdefault("ADMIN_SECRET_KEY", "test_admin_bootstrap_key_with_32_chars_min")
 os.environ["ENVIRONMENT"] = "test"
+os.environ["OIDC_RSA_KEY_BITS"] = "2048"  # faster key generation in tests
 # Off for the general suite (its admins have no second factor); test_admin_mfa_policy turns it on.
 os.environ["ADMIN_MFA_REQUIRED"] = "false"
 if "MFA_ENCRYPTION_KEY" not in os.environ:
     from cryptography.fernet import Fernet
 
     os.environ["MFA_ENCRYPTION_KEY"] = Fernet.generate_key().decode()
+from cryptography.fernet import Fernet as _F
+
+os.environ["OIDC_KEY_ENCRYPTION_KEY"] = _F.generate_key().decode()
 # Isolated Redis database for rate-limit state (never the dev db 0)
 _redis_base = os.environ.get("REDIS_URL", "redis://localhost:6379/0").rsplit("/", 1)[0]
 os.environ["REDIS_URL"] = f"{_redis_base}/15"

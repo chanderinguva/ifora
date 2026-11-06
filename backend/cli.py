@@ -68,6 +68,32 @@ def issue_enrollment_code(email: str, out=print) -> int:
         db.close()
 
 
+def rotate_signing_key(emergency: bool = False, assume_yes: bool = False, confirm=input, out=print) -> int:
+    """Rotate the OIDC signing key. --emergency signs with the new key immediately and revokes every old one."""
+    from backend.app.oidc import keys
+
+    db = tenant_session()
+    try:
+        if emergency and not assume_yes and confirm(
+            "Emergency rotation revokes ALL current keys; tokens already issued stop verifying. Continue? [y/N] "
+        ).strip().lower() != "y":
+            out("aborted")
+            return 2
+
+        def audit(name, meta=None):
+            record(db, AuditAction(name), None, None, None, "signing_key", {**(meta or {}), "via": "cli"})
+
+        try:
+            new = keys.rotate(db, emergency=emergency, audit=audit)
+        except keys.KeyConfigError as e:
+            out(f"error: {e}")
+            return 1
+        out(f"new key {new.kid} ({new.alg}) status={new.status}, signs from {new.activate_at.isoformat()}")
+        return 0
+    finally:
+        db.close()
+
+
 def main(argv: Optional[list] = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m backend.cli", description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -76,7 +102,12 @@ def main(argv: Optional[list] = None) -> int:
     p.add_argument("--yes", "-y", action="store_true", help="do not prompt")
     e = sub.add_parser("issue-enrollment-code", help="one-time code for an admin to enrol their first factor")
     e.add_argument("email")
+    r = sub.add_parser("rotate-signing-key", help="rotate the OIDC token signing key")
+    r.add_argument("--emergency", action="store_true", help="revoke all existing keys immediately (suspected compromise)")
+    r.add_argument("--yes", "-y", action="store_true", help="do not prompt")
     args = parser.parse_args(argv)
+    if args.cmd == "rotate-signing-key":
+        return rotate_signing_key(args.emergency, args.yes)
     if args.cmd == "issue-enrollment-code":
         return issue_enrollment_code(args.email)
     return reset_factors(args.email, args.yes)
