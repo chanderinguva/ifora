@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     OIDC_LOGIN_UI_URL: str = Field(default="http://localhost:3000/oauth/authorize")
     OIDC_PENDING_REQUEST_TTL_SECONDS: int = Field(default=600)
     OIDC_CODE_TTL_SECONDS: int = Field(default=60)
+    OIDC_REFRESH_IDLE_DAYS: int = Field(default=7)       # unused for this long = expired
+    OIDC_REFRESH_ABSOLUTE_DAYS: int = Field(default=30)  # hard cap on a family, however often it is used
     RATE_LIMIT_TOKEN_FAILURES: int = Field(default=20)
     RATE_LIMIT_TOKEN_WINDOW_SECONDS: int = Field(default=300)
     OIDC_RSA_KEY_BITS: int = Field(default=3072)

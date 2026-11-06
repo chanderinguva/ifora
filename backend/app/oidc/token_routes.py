@@ -12,7 +12,7 @@ from backend.app.audit.model import AuditAction
 from backend.app.audit.service import record
 from backend.app.config import settings
 from backend.app.db import get_db
-from backend.app.oidc import keys, tokens
+from backend.app.oidc import keys, refresh, tokens
 from backend.app.oidc.claims import user_claims
 from backend.app.oidc.clients import SUPPORTED_SCOPES
 from backend.app.oidc.models import OIDCClient
@@ -43,12 +43,16 @@ async def token(request: Request, db: Session = Depends(get_db)):
             raise tokens.TokenError("invalid_request", "repeated parameter")
         client = tokens.authenticate(db, request.headers.get("authorization"), form)
 
-        def replay(row):
-            record(db, AuditAction.OIDC_CODE_REPLAY_DETECTED, request, None, row.user_id, "user", {"client_id": client.client_id})
+        def audit(action: str, user_id: Optional[int], meta: dict):
+            record(db, AuditAction(action), request, None, user_id, "user", {"client_id": client.client_id, **meta})
 
-        body, user = tokens.exchange_code(db, client, form, replay)
+        grant = form.get("grant_type")
+        if grant == "refresh_token":
+            body, user = refresh.rotate(db, client, form, audit)
+        else:
+            body, user = tokens.exchange_code(db, client, form, audit)
         record(db, AuditAction.OIDC_TOKEN_ISSUED, request, user, user.id, "user",
-               {"client_id": client.client_id, "scope": body["scope"]})
+               {"client_id": client.client_id, "scope": body["scope"], "grant": grant})
         db.commit()
     except tokens.TokenError as e:
         db.rollback()  # exchange_code already committed anything that must persist (a burned or replayed code)
@@ -98,10 +102,10 @@ def discovery():
         "jwks_uri": f"{iss}/oauth/jwks",
         "response_types_supported": ["code"],
         "response_modes_supported": ["query"],
-        "grant_types_supported": ["authorization_code"],
+        "grant_types_supported": ["authorization_code", "refresh_token"],
         "subject_types_supported": ["public"],
         "id_token_signing_alg_values_supported": ["RS256"],
-        "scopes_supported": [s for s in SUPPORTED_SCOPES if s != "offline_access"],
+        "scopes_supported": list(SUPPORTED_SCOPES),
         "token_endpoint_auth_methods_supported": ["client_secret_basic", "none"],
         "code_challenge_methods_supported": ["S256"],
         "claims_supported": ["sub", "iss", "aud", "exp", "iat", "auth_time", "nonce", "amr", "acr", "at_hash", "name", "given_name",
@@ -110,3 +114,36 @@ def discovery():
         "request_parameter_supported": False,
         "request_uri_parameter_supported": False,
     }, headers={"Cache-Control": "public, max-age=300", "Access-Control-Allow-Origin": "*"})
+
+
+@router.post("/oauth/revoke")
+async def revoke(request: Request, db: Session = Depends(get_db)):
+    """RFC 7009. Revoking a refresh token ends its whole family. Access tokens are short-lived self-contained JWTs
+    and cannot be recalled, which the response says honestly instead of pretending."""
+    ident = ratelimit.client_ip(request)
+    ratelimit.check("oauth_token", ident, settings.RATE_LIMIT_TOKEN_FAILURES)
+    try:
+        if not (request.headers.get("content-type") or "").lower().startswith(FORM):
+            raise tokens.TokenError("invalid_request", f"Content-Type must be {FORM}")
+        pairs = (await request.form()).multi_items()
+        form = dict(pairs)
+        if len(pairs) != len(form):
+            raise tokens.TokenError("invalid_request", "repeated parameter")
+        client = tokens.authenticate(db, request.headers.get("authorization"), form)
+        raw = form.get("token")
+        if not raw or len(raw) > 4096:
+            raise tokens.TokenError("invalid_request", "token is required")
+        if form.get("token_type_hint") == "access_token" or raw.count(".") == 2:
+            raise tokens.TokenError("unsupported_token_type", "access tokens are short-lived and cannot be revoked; revoke the refresh token")
+        row = db.query(refresh.RefreshToken).filter(refresh.RefreshToken.token_hash == refresh._h(raw)).first()
+        if row is not None and row.client_pk == client.id:  # someone else's token: succeed silently, change nothing
+            n = refresh.revoke_family(db, row.family_id)
+            if n:
+                record(db, AuditAction.OIDC_TOKEN_REVOKED, request, None, row.user_id, "user", {"client_id": client.client_id, "family": row.family_id})
+        db.commit()
+    except tokens.TokenError as e:
+        db.rollback()
+        if e.error == "invalid_client":
+            ratelimit.hit("oauth_token", ident, settings.RATE_LIMIT_TOKEN_WINDOW_SECONDS)
+        return _error(e)
+    return JSONResponse({}, headers=NO_STORE)

@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge, PageHeader, fmt } from "@/components/bits";
 import { MfaCard } from "@/components/mfa-card";
+import { ConnectedAppsCard } from "@/components/connected-apps-card";
 import { PasskeyCard } from "@/components/passkey-card";
 import { LocaleSelect, TimezoneSelect } from "@/components/pref-selects";
 import { setDisplayPrefs } from "@/lib/display";
@@ -185,6 +186,8 @@ export default function AccountSettings() {
           </form>
         </CardContent>
       </Card>
+
+      <ConnectedAppsCard />
 
       <Card className="mb-6">
         <CardHeader><CardTitle>Recent activity</CardTitle></CardHeader>

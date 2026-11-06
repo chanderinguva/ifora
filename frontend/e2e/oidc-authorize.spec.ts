@@ -59,6 +59,15 @@ test("authorize: sign in on the way, consent screen, allow and deny return to th
   const bad = await p.goto(url("s").replace(encodeURIComponent(CB), encodeURIComponent("https://evil.example.com/cb")));
   expect(bad?.status()).toBe(400);
   expect((await bad?.text())).toContain("redirect URI");
+  // the user can see the app under Connected applications and withdraw it; the next authorize asks again
+  p.on("dialog", (d) => d.accept());
+  await p.goto("/settings");
+  const apps = p.getByTestId("connected-apps");
+  await expect(apps).toContainText(name);
+  await apps.getByRole("button", { name: `Withdraw access for ${name}` }).click();
+  await expect(p.getByTestId("connected-apps")).toHaveCount(0);
+  await p.goto(url("s-after"));
+  await expect(p.getByTestId("consent-card")).toContainText(`${name} wants access`);
   await ctx.close();
 
   // clean up
