@@ -10,10 +10,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 TEST_DB = "identityforge_test"
-_base = os.environ.get(
-    "DATABASE_URL",
-    "postgresql+psycopg2://identityforge:identityforge_local_password_change_after_first_login@localhost:5432/identityforge",
-)
+_base = os.environ["DATABASE_URL"]  # run inside the api container (or export DATABASE_URL)
 _u = urlparse(_base)
 _test_url = urlunparse(_u._replace(path=f"/{TEST_DB}"))
 _async_url = _test_url.replace("+psycopg2", "+asyncpg")
