@@ -18,15 +18,16 @@ _Last updated: 2026-11-05_
 | System audit events | Done | Recorded in the same transaction; viewer with filter |
 | Admin dashboard | Done | Real counts from the database, recent activity |
 | User dashboard | Done | Profile, groups, change password, active sessions |
-| Browser & API tests | Done | 46 API integration tests (real Postgres test DB) + 5 Playwright browser tests |
+| Browser & API tests | Done | 76 API integration tests (real Postgres test DB) + 6 Playwright browser tests |
 | Security review | **Partial** | Self-review recorded in ADR 003; no independent review yet |
 
 ## Hardening done after Phase 1
+- TOTP multi-factor authentication with recovery codes (ADR 003).
 - Per-IP login throttling and bootstrap-key throttling (Redis), idle session timeout (30 min).
 - Secrets live in gitignored `docker/.env`; compose refuses to start without them. Postgres/Redis bind to 127.0.0.1 only.
 
 ## Not done / known gaps
-- MFA, email-based password reset.
+- MFA policy (require for admins), WebAuthn/passkeys, email-based password reset.
 - `SESSION_COOKIE_SECURE` is off (plain HTTP in dev); turn it on behind TLS. Behind a reverse proxy, configure uvicorn `--proxy-headers`/`--forwarded-allow-ips` so rate limiting sees real client IPs.
 - Frontend runs `next dev` inside Docker (development mode).
 - No independent security review yet.

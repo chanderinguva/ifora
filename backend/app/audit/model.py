@@ -32,6 +32,12 @@ class AuditAction(str, Enum):
     LOGIN_FAILURE = "LOGIN_FAILURE"
     LOGOUT = "LOGOUT"
     ADMIN_BOOTSTRAP = "ADMIN_BOOTSTRAP"
+    MFA_ENABLED = "MFA_ENABLED"
+    MFA_DISABLED = "MFA_DISABLED"
+    MFA_RESET = "MFA_RESET"
+    MFA_RECOVERY_USED = "MFA_RECOVERY_USED"
+    MFA_RECOVERY_REGENERATED = "MFA_RECOVERY_REGENERATED"
+    MFA_CHALLENGE_FAILED = "MFA_CHALLENGE_FAILED"
 
 
 class AuditEventType(str, Enum):
@@ -102,6 +108,12 @@ class AuditEvent(Base):
             AuditAction.LOGOUT,
             AuditAction.SESSION_CREATED,
             AuditAction.SESSION_INVALIDATED,
+            AuditAction.MFA_ENABLED,
+            AuditAction.MFA_DISABLED,
+            AuditAction.MFA_RESET,
+            AuditAction.MFA_RECOVERY_USED,
+            AuditAction.MFA_RECOVERY_REGENERATED,
+            AuditAction.MFA_CHALLENGE_FAILED,
         }
         user_actions = {
             AuditAction.USER_CREATED,

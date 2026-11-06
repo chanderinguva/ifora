@@ -24,6 +24,14 @@ Rules enforced server-side: no self-delete/self-deactivate, mass-assignment igno
 - Per-account lockout (5 failures, 15 min) plus per-IP throttle of failed logins (10 / 5 min, Redis, HTTP 429 + Retry-After) and of bootstrap-key guesses. A successful login does not reset the IP counter, so a valid account cannot be used to reset guessing against others. The limiter fails open if Redis is down (logged).
 - Sessions: 8 h absolute lifetime and 30 min idle timeout.
 
+## Multi-factor authentication (TOTP)
+- RFC 6238 TOTP (SHA-1, 6 digits, 30 s, ±1 step drift) via `pyotp`; works with standard authenticator apps.
+- Secrets are Fernet-encrypted at rest with `MFA_ENCRYPTION_KEY` (separate from `SECRET_KEY`). Losing or rotating this key makes enrolled secrets undecryptable (users must re-enrol, admins can reset).
+- Login becomes two steps. A correct password returns a short-lived challenge (5 min, 5 attempts, hashed at rest) and **no session**; `POST /login/mfa` exchanges challenge + code for the session cookie. MFA failures count toward the IP throttle and the account lockout, and each successful TOTP step can be used only once (atomic conditional UPDATE).
+- 10 single-use recovery codes (60 bits each), stored as SHA-256 hashes, shown once. Regeneration invalidates the old set.
+- Enrol / disable / regenerate need the current password; disable and regenerate also need a valid code. Enabling or disabling revokes the user's other sessions.
+- Admins can reset a user's MFA (lost device); same target protections as other admin actions, sessions revoked, audited.
+
 ## Known gaps (not yet implemented)
-- No MFA / password reset by email.
+- MFA is optional (no policy forcing admins to enrol yet); no WebAuthn/passkeys; no password reset by email.
 - Client IP is the direct peer address; configure the ASGI server's proxy-header handling when deployed behind a proxy.
