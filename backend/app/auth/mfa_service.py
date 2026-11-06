@@ -113,3 +113,16 @@ def remove_mfa(db: Session, user: User) -> None:
     db.query(MFAChallenge).filter(MFAChallenge.user_id == user.id).delete(synchronize_session=False)
     if user.mfa is not None:
         db.delete(user.mfa)
+
+
+def reset_all_factors(db: Session, user) -> dict:
+    """Remove TOTP, recovery codes and passkeys, lift the passkey-required policy and end every
+    session. Shared by the admin API and the recovery CLI. Caller records the audit event and commits."""
+    from backend.app.auth.sessions_util import revoke_user_sessions
+
+    passkeys_removed = len(user.passkeys)
+    remove_mfa(db, user)
+    for p in list(user.passkeys):
+        db.delete(p)
+    user.passkey_required = False
+    return {"sessions_revoked": revoke_user_sessions(db, user.id), "passkeys_removed": passkeys_removed}
