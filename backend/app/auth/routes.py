@@ -184,6 +184,9 @@ async def login_endpoint(
 
     if not user.verify_password(login_data.password):
         user.failed_login_attempts += 1
+        from backend.app.recipes import events as recipe_events
+
+        recipe_events.emit_login_failed(db, user, user.failed_login_attempts)  # outbox row commits with the counter
         if user.failed_login_attempts >= settings.MAX_LOGIN_ATTEMPTS:
             user.lockout_until = now + timedelta(minutes=settings.LOGIN_LOCKOUT_MINUTES)
             user.failed_login_attempts = 0

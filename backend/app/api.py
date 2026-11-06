@@ -117,6 +117,12 @@ def create_app() -> FastAPI:
     app.include_router(oidc_admin_router, prefix="/api/v1")
     app.include_router(oidc_clients_router, prefix="/api/v1")
 
+    from backend.app.recipes.routes import connections_router as recipe_conn_router
+    from backend.app.recipes.routes import hooks_router as recipe_hooks_router
+    from backend.app.recipes.routes import router as recipes_router
+
+    for r in (recipes_router, recipe_conn_router, recipe_hooks_router):
+        app.include_router(r, prefix="/api/v1")
     from backend.app.scim.admin_routes import router as scim_admin_router
     from backend.app.scim.app import create_scim_app
 

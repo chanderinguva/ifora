@@ -3,6 +3,7 @@ boundary: it is how a super admin who lost every sign-in factor gets back in.
 
     python -m backend.cli reset-factors admin@example.com [--yes]
     python -m backend.cli issue-enrollment-code admin@example.com
+    python -m backend.cli recipes-worker [--once] [--interval 2]
 
 Removes the user's authenticator app, recovery codes and passkeys, lifts the passkey-required
 policy, clears any lockout, and ends all their sessions. The password is NOT changed or shown.
@@ -94,6 +95,20 @@ def rotate_signing_key(emergency: bool = False, assume_yes: bool = False, confir
         db.close()
 
 
+def recipes_worker(interval: float = 2.0, once: bool = False, out=print) -> int:
+    """Run the recipe dispatcher/worker loop (ADR 008). Several copies may run at once (SKIP LOCKED)."""
+    import time
+
+    from backend.app.recipes import engine
+
+    while True:
+        stats = engine.process_once()
+        if once:
+            out(f"recipes: {stats}")
+            return 0
+        time.sleep(interval)
+
+
 def main(argv: Optional[list] = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m backend.cli", description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -105,7 +120,12 @@ def main(argv: Optional[list] = None) -> int:
     r = sub.add_parser("rotate-signing-key", help="rotate the OIDC token signing key")
     r.add_argument("--emergency", action="store_true", help="revoke all existing keys immediately (suspected compromise)")
     r.add_argument("--yes", "-y", action="store_true", help="do not prompt")
+    w = sub.add_parser("recipes-worker", help="run the recipe engine worker loop")
+    w.add_argument("--once", action="store_true", help="process due work once and exit")
+    w.add_argument("--interval", type=float, default=2.0, help="seconds between polls")
     args = parser.parse_args(argv)
+    if args.cmd == "recipes-worker":
+        return recipes_worker(args.interval, args.once)
     if args.cmd == "rotate-signing-key":
         return rotate_signing_key(args.emergency, args.yes)
     if args.cmd == "issue-enrollment-code":

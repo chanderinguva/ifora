@@ -20,6 +20,9 @@ from backend.app.oidc.models import (  # noqa: F401
     AuthorizationCode, OIDCClient, OIDCClientSecret, OIDCConsent, PendingAuthRequest, RefreshToken, SigningKey,
 )
 from backend.app.profiles.catalog import ProfileAttribute  # noqa: F401
+from backend.app.recipes.models import (  # noqa: F401
+    Recipe, RecipeConnection, RecipeJob, RecipeJobStep, RecipeOutbox, RecipeVersion,
+)
 from backend.app.scim.models import ScimLink, ScimToken  # noqa: F401
 from backend.app.users.model import User  # noqa: F401
 
