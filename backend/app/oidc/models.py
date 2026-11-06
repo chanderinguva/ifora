@@ -147,3 +147,26 @@ class AuthorizationCode(TenantOwned, Base):
     created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
     expires_at = Column(DateTime(timezone=True), nullable=False)
     used_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class RefreshToken(TenantOwned, Base):
+    """Opaque rotating refresh token (ADR 005 §5). Only a hash is stored. Each use spends the token and issues its
+    successor in the same family; presenting a spent token means it leaked, so the whole family is revoked."""
+
+    __tablename__ = "oidc_refresh_tokens"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    token_hash = Column(String(64), nullable=False, unique=True)
+    family_id = Column(String(36), nullable=False, index=True)
+    parent_id = Column(Integer, nullable=True)
+    code_id = Column(Integer, ForeignKey("oidc_codes.id", ondelete="SET NULL"), nullable=True, index=True)
+    client_pk = Column(Integer, ForeignKey("oidc_clients.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    scopes = Column(JSONB, nullable=False)
+    auth_time = Column(DateTime(timezone=True), nullable=False)
+    amr = Column(JSONB, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
+    expires_at = Column(DateTime(timezone=True), nullable=False)           # idle limit, slides on rotation
+    absolute_expires_at = Column(DateTime(timezone=True), nullable=False)  # family hard limit, never extended
+    used_at = Column(DateTime(timezone=True), nullable=True)               # rotated away
+    revoked_at = Column(DateTime(timezone=True), nullable=True)

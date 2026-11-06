@@ -80,7 +80,7 @@ def _at_hash(access_token: str) -> str:
     return base64.urlsafe_b64encode(hashlib.sha256(access_token.encode()).digest()[:16]).rstrip(b"=").decode()
 
 
-def exchange_code(db: Session, client: OIDCClient, form: Dict[str, str], audit_replay) -> Tuple[Dict, User]:
+def exchange_code(db: Session, client: OIDCClient, form: Dict[str, str], audit) -> Tuple[Dict, User]:
     if form.get("grant_type") != "authorization_code":
         raise TokenError("unsupported_grant_type", "only authorization_code is supported")
     if "authorization_code" not in client.grant_types:
@@ -99,7 +99,10 @@ def exchange_code(db: Session, client: OIDCClient, form: Dict[str, str], audit_r
     ).rowcount
     db.commit()  # the claim must be durable now: key lookups below may roll the transaction back
     if spent != 1:
-        audit_replay(row)  # RFC 6749 §4.1.2: treat reuse as an attack signal (tokens from refresh families revoked in M3)
+        from backend.app.oidc import refresh
+
+        revoked = refresh.revoke_for_code(db, row.id)  # RFC 6749 §4.1.2: tokens already issued from this code die with it
+        audit("OIDC_CODE_REPLAY_DETECTED", row.user_id, {"client_id": client.client_id, "refresh_families_revoked": revoked})
         db.commit()
         raise TokenError("invalid_grant", "invalid or expired authorization code")
 
@@ -117,27 +120,30 @@ def exchange_code(db: Session, client: OIDCClient, form: Dict[str, str], audit_r
         db.commit()  # the code stays burned
         raise
 
-    return _issue(db, client, user, row), user
+    body = build_tokens(db, client, user, scopes=row.scopes, auth_time=row.auth_time, amr=row.amr, nonce=row.nonce)
+    if "offline_access" in row.scopes and "refresh_token" in client.grant_types:
+        from backend.app.oidc import refresh
+
+        body["refresh_token"] = refresh.issue_family(db, client, user, row, row.scopes)
+    return body, user
 
 
-def _issue(db: Session, client: OIDCClient, user: User, row: AuthorizationCode) -> Dict:
-    scopes = [s for s in row.scopes if s != "offline_access"]  # no refresh tokens until M3, so do not claim the scope
+def build_tokens(db: Session, client: OIDCClient, user: User, *, scopes, auth_time, amr, nonce: Optional[str]) -> Dict:
     t = int(datetime.now(timezone.utc).timestamp())
     tenant = db.get(Tenant, user.tenant_id)
-    acr = acr_for(row.amr)
-    auth_time = int(row.auth_time.timestamp())
+    auth_ts = int(auth_time.timestamp())
     access = keys.sign_jwt(db, {
         "iss": settings.OIDC_ISSUER, "sub": user.public_id, "aud": settings.OIDC_ISSUER,  # no resource registry yet
         "client_id": client.client_id, "scope": " ".join(scopes), "iat": t, "exp": t + settings.OIDC_ACCESS_TOKEN_TTL_SECONDS,
-        "jti": str(uuid.uuid4()), "auth_time": auth_time, "tenant": tenant.slug if tenant else None,
+        "jti": str(uuid.uuid4()), "auth_time": auth_ts, "tenant": tenant.slug if tenant else None,
     }, typ="at+jwt")
     idc = {
-        **user_claims(db, user, scopes),
+        **user_claims(db, user, list(scopes)),
         "iss": settings.OIDC_ISSUER, "aud": client.client_id, "iat": t, "exp": t + settings.OIDC_ID_TOKEN_TTL_SECONDS,
-        "auth_time": auth_time, "amr": list(row.amr), "acr": acr, "at_hash": _at_hash(access),
+        "auth_time": auth_ts, "amr": list(amr), "acr": acr_for(list(amr)), "at_hash": _at_hash(access),
     }
-    if row.nonce:
-        idc["nonce"] = row.nonce
+    if nonce:
+        idc["nonce"] = nonce
     return {
         "access_token": access, "token_type": "Bearer", "expires_in": settings.OIDC_ACCESS_TOKEN_TTL_SECONDS,
         "id_token": keys.sign_jwt(db, idc), "scope": " ".join(scopes),
