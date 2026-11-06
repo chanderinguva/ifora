@@ -48,6 +48,11 @@ class AuditAction(str, Enum):
     PASSKEY_POLICY_CHANGED = "PASSKEY_POLICY_CHANGED"
     PASSKEY_COUNTER_ANOMALY = "PASSKEY_COUNTER_ANOMALY"
     OIDC_KEY_CREATED = "OIDC_KEY_CREATED"
+    GROUP_RULE_CREATED = "GROUP_RULE_CREATED"
+    GROUP_RULE_UPDATED = "GROUP_RULE_UPDATED"
+    GROUP_RULE_ACTIVATED = "GROUP_RULE_ACTIVATED"
+    GROUP_RULE_DEACTIVATED = "GROUP_RULE_DEACTIVATED"
+    GROUP_RULE_DELETED = "GROUP_RULE_DELETED"
     OIDC_KEY_ROTATED = "OIDC_KEY_ROTATED"
 
 
@@ -148,6 +153,11 @@ class AuditEvent(TenantOwned, Base):
             AuditAction.GROUP_DELETED,
             AuditAction.GROUP_MEMBER_ADDED,
             AuditAction.GROUP_MEMBER_REMOVED,
+            AuditAction.GROUP_RULE_CREATED,
+            AuditAction.GROUP_RULE_UPDATED,
+            AuditAction.GROUP_RULE_ACTIVATED,
+            AuditAction.GROUP_RULE_DEACTIVATED,
+            AuditAction.GROUP_RULE_DELETED,
         }
 
         if action in auth_actions:

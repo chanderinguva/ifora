@@ -1,11 +1,14 @@
 """Admin user management API (deny-by-default: every route requires an admin)."""
 
 import re
-from typing import Any, Dict, Optional
+import secrets
+import string
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, EmailStr, Field, field_validator
-from sqlalchemy import or_, update
+from sqlalchemy import insert, or_, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -14,7 +17,8 @@ from backend.app.audit.service import record
 from backend.app.auth.deps import require_admin
 from backend.app.auth.sessions_util import revoke_user_sessions
 from backend.app.db import get_db
-from backend.app.groups.model import user_group_association
+from backend.app.groups import rules as group_rules
+from backend.app.groups.model import Group, user_group_association
 from backend.app.profiles.schemas import validate_attributes, validate_password
 from backend.app.users.model import User
 
@@ -28,14 +32,16 @@ class UserCreate(BaseModel):
     username: Optional[str] = None
     first_name: str = Field(..., min_length=1, max_length=100)
     last_name: str = Field(..., min_length=1, max_length=100)
-    password: str
+    password: Optional[str] = None
+    generate_password: bool = False
     is_admin: bool = False
     profile_attributes: Dict[str, Any] = Field(default_factory=dict)
+    group_ids: List[int] = Field(default_factory=list, max_length=20)
 
     @field_validator("password")
     @classmethod
     def _pw(cls, v):
-        return validate_password(v)
+        return validate_password(v) if v is not None else v
 
     @field_validator("username")
     @classmethod
@@ -94,6 +100,15 @@ def _guard_target(actor: User, target: User) -> None:
         raise HTTPException(status_code=403, detail="Only a super administrator can modify administrators")
 
 
+def _generate_password() -> str:
+    """Random 20-char password that satisfies the password policy (mixed case + digit)."""
+    alphabet = string.ascii_letters + string.digits
+    while True:
+        pw = "".join(secrets.choice(alphabet) for _ in range(20))
+        if any(c.islower() for c in pw) and any(c.isupper() for c in pw) and any(c.isdigit() for c in pw):
+            return pw
+
+
 def _unique_username(db: Session, base: str) -> str:
     base = re.sub(r"[^a-z0-9._-]", "", base.lower()) or "user"
     base = (base if len(base) >= 2 else base + "0")[:44]
@@ -142,6 +157,17 @@ def create_user(
 ):
     if body.is_admin and not actor.is_super_admin:
         raise HTTPException(status_code=403, detail="Only a super administrator can create administrators")
+    if body.generate_password == (body.password is not None):
+        raise HTTPException(status_code=422, detail="Provide a password, or ask for one to be generated (not both)")
+    groups = []
+    if body.group_ids:
+        ids = sorted(set(body.group_ids))
+        groups = db.query(Group).filter(Group.id.in_(ids)).all()
+        if len(groups) != len(ids):
+            raise HTTPException(status_code=422, detail="Unknown group")
+        if any(g.is_system_group for g in groups):
+            raise HTTPException(status_code=422, detail="System groups cannot be assigned here")
+    password = body.password if body.password is not None else _generate_password()
     email = body.email.lower()
     if db.query(User.id).filter(User.email == email).first():
         raise HTTPException(status_code=409, detail="Email already in use")
@@ -154,7 +180,7 @@ def create_user(
         username=username,
         first_name=body.first_name,
         last_name=body.last_name,
-        password=body.password,
+        password=password,
         is_admin=body.is_admin,
     )
     user.set_profile_attributes(body.profile_attributes)
@@ -165,9 +191,19 @@ def create_user(
         db.rollback()
         raise HTTPException(status_code=409, detail="User already exists")
     record(db, AuditAction.USER_CREATED, request, actor, user.id, "user", {"email": email, "is_admin": body.is_admin})
+    for g in groups:
+        db.execute(insert(user_group_association).values(
+            user_id=user.id, group_id=g.id, added_by_user_id=actor.id, added_at=datetime.now(timezone.utc)
+        ))
+        record(db, AuditAction.GROUP_MEMBER_ADDED, request, actor, g.id, "group", {"user_id": user.id})
+        group_rules._recount(db, g.id)
+    group_rules.evaluate_user(db, user, request, actor)
     db.commit()
     db.refresh(user)
-    return _detail(user)
+    out = _detail(user)
+    if body.generate_password:
+        out["temporary_password"] = password  # shown once; only the hash is stored
+    return out
 
 
 @router.get("/{user_id}")
@@ -223,6 +259,9 @@ def update_user(
 
     if deactivated or "is_admin" in changed:
         revoke_user_sessions(db, user.id)  # force re-login with current rights
+    if changed:
+        db.flush()
+        group_rules.evaluate_user(db, user, request, actor)  # attribute/status changes can move rule-based memberships
 
     if changed:
         action = AuditAction.USER_DEACTIVATED if deactivated else (

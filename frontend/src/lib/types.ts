@@ -27,7 +27,18 @@ export type Group = {
   is_system_group: boolean;
   member_count: number;
   created_at: string | null;
-  members?: { id: number; email: string; first_name: string; last_name: string }[];
+  members?: { id: number; email: string; first_name: string; last_name: string; via_rule?: number | null }[];
+};
+
+export type RuleCondition = { attribute: string; operator: string; value: string };
+export type GroupRule = {
+  id: number;
+  name: string;
+  status: "active" | "inactive";
+  match: "all" | "any";
+  conditions: RuleCondition[];
+  expression: string;
+  groups: { id: number; name: string }[];
 };
 
 export type AuditEvent = {

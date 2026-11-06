@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Badge, PageHeader, Pager, fieldClass, fmt, td, th } from "@/components/bits";
 import { useCurrentUser } from "@/components/auth-guard";
 import { http, qs, type Page } from "@/lib/http";
-import type { User } from "@/lib/types";
+import type { Group, User } from "@/lib/types";
 
 const PAGE_SIZE = 15;
 
@@ -129,19 +129,38 @@ export default function UsersPage() {
   );
 }
 
+const FIELD_NOTE = "Attributes set here are managed by administrators; users cannot change them, so group rules may use them.";
+
 function CreateUser({ canMakeAdmin, onDone }: { canMakeAdmin: boolean; onDone: () => void }) {
-  const [f, setF] = useState({ email: "", first_name: "", last_name: "", password: "", is_admin: false });
+  const [f, setF] = useState({ email: "", first_name: "", last_name: "", username: "", password: "", is_admin: false });
+  const [attrs, setAttrs] = useState({ department: "", employee_id: "", manager: "" });
+  const [pwMode, setPwMode] = useState<"set" | "generate">("generate");
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [picked, setPicked] = useState<number[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [created, setCreated] = useState<{ email: string; password: string } | null>(null);
   const set = (k: string, v: string | boolean) => setF((s) => ({ ...s, [k]: v }));
+
+  useEffect(() => {
+    http<Page<Group>>(`/admin/groups${qs({ page: 1, page_size: 100 })}`).then((r) => setGroups(r.items.filter((g) => !g.is_system_group))).catch(() => {});
+  }, []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      await http("/admin/users", { method: "POST", body: f });
-      onDone();
+      const body: Record<string, unknown> = {
+        email: f.email, first_name: f.first_name, last_name: f.last_name, is_admin: f.is_admin, group_ids: picked,
+        profile_attributes: Object.fromEntries(Object.entries(attrs).filter(([, v]) => v.trim() !== "")),
+      };
+      if (f.username.trim()) body.username = f.username.trim();
+      if (pwMode === "set") body.password = f.password;
+      else body.generate_password = true;
+      const r = await http<{ temporary_password?: string }>("/admin/users", { method: "POST", body });
+      if (r.temporary_password) setCreated({ email: f.email, password: r.temporary_password });
+      else onDone();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed");
     } finally {
@@ -149,10 +168,26 @@ function CreateUser({ canMakeAdmin, onDone }: { canMakeAdmin: boolean; onDone: (
     }
   }
 
+  if (created) {
+    return (
+      <Card className="mb-6" data-testid="created-user">
+        <CardHeader><CardTitle>User created</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm">Give <strong>{created.email}</strong> this temporary password through a secure channel. It is shown only once.</p>
+          <code className="block rounded bg-muted px-3 py-2 font-mono text-base" data-testid="temp-password">{created.password}</code>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => navigator.clipboard?.writeText(created.password)}>Copy</Button>
+            <Button onClick={onDone}>Done</Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card className="mb-6">
       <CardHeader>
-        <CardTitle>Create user</CardTitle>
+        <CardTitle>Add person</CardTitle>
       </CardHeader>
       <CardContent>
         {error && (
@@ -170,14 +205,63 @@ function CreateUser({ canMakeAdmin, onDone }: { canMakeAdmin: boolean; onDone: (
             <Input id="nu-last" required value={f.last_name} onChange={(e) => set("last_name", e.target.value)} />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="nu-email">Email</Label>
+            <Label htmlFor="nu-email">Primary email</Label>
             <Input id="nu-email" type="email" required value={f.email} onChange={(e) => set("email", e.target.value)} />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="nu-pw">Initial password</Label>
-            <Input id="nu-pw" type="password" required autoComplete="new-password" value={f.password} onChange={(e) => set("password", e.target.value)} />
-            <p className="text-xs text-muted-foreground">12+ characters, mixed case, with a digit.</p>
+            <Label htmlFor="nu-username">Username <span className="text-muted-foreground">(optional)</span></Label>
+            <Input id="nu-username" placeholder="defaults to the part before @" value={f.username} onChange={(e) => set("username", e.target.value)} />
           </div>
+
+          <fieldset className="space-y-2 sm:col-span-2">
+            <legend className="text-sm font-medium">Organisation</legend>
+            <div className="grid gap-3 sm:grid-cols-3">
+              {(["department", "employee_id", "manager"] as const).map((k) => (
+                <div key={k} className="space-y-1">
+                  <Label htmlFor={`nu-${k}`} className="capitalize">{k.replace("_", " ")}</Label>
+                  <Input id={`nu-${k}`} value={attrs[k]} onChange={(e) => setAttrs({ ...attrs, [k]: e.target.value })} />
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">{FIELD_NOTE}</p>
+          </fieldset>
+
+          <fieldset className="space-y-2 sm:col-span-2">
+            <legend className="text-sm font-medium">Groups</legend>
+            {groups.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No groups yet.</p>
+            ) : (
+              <div className="flex flex-wrap gap-3">
+                {groups.map((g) => (
+                  <label key={g.id} className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={picked.includes(g.id)} onChange={(e) => setPicked(e.target.checked ? [...picked, g.id] : picked.filter((x) => x !== g.id))} />
+                    {g.name}
+                  </label>
+                ))}
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">Group rules may add more groups automatically based on the attributes above.</p>
+          </fieldset>
+
+          <fieldset className="space-y-2 sm:col-span-2">
+            <legend className="text-sm font-medium">Password</legend>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="radio" name="pwmode" checked={pwMode === "generate"} onChange={() => setPwMode("generate")} />
+              Generate a random temporary password (shown once)
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="radio" name="pwmode" checked={pwMode === "set"} onChange={() => setPwMode("set")} />
+              I will set a password
+            </label>
+            {pwMode === "set" && (
+              <div className="space-y-1">
+                <Label htmlFor="nu-pw">Initial password</Label>
+                <Input id="nu-pw" type="password" required autoComplete="new-password" value={f.password} onChange={(e) => set("password", e.target.value)} />
+                <p className="text-xs text-muted-foreground">12+ characters, mixed case, with a digit.</p>
+              </div>
+            )}
+          </fieldset>
+
           {canMakeAdmin && (
             <label className="flex items-center gap-2 text-sm sm:col-span-2">
               <input type="checkbox" checked={f.is_admin} onChange={(e) => set("is_admin", e.target.checked)} />

@@ -19,6 +19,8 @@ user_group_association = Table(
     Column("group_id", Integer, ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True),
     Column("added_by_user_id", Integer, ForeignKey("users.id"), nullable=True),
     Column("added_at", DateTime(timezone=True), default=datetime.utcnow, nullable=False),
+    # set when a group rule created this membership (NULL = added by hand); see groups/rules.py
+    Column("rule_id", Integer, ForeignKey("group_rules.id", ondelete="CASCADE"), nullable=True, index=True),
 )
 
 

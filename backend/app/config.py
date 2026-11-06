@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     OIDC_ACCESS_TOKEN_TTL_SECONDS: int = Field(default=600)
     OIDC_CLOCK_SKEW_SECONDS: int = Field(default=60)
     OIDC_JWKS_CACHE_SECONDS: int = Field(default=300)
+    # Edition feature flag: attribute-based group rules (Okta-style).
+    GROUP_RULES_ENABLED: bool = Field(default=True)
     MFA_CHALLENGE_MINUTES: int = Field(default=5)
     MFA_CHALLENGE_MAX_ATTEMPTS: int = Field(default=5)
 

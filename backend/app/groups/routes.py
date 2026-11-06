@@ -6,7 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, insert
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from backend.app.audit.model import AuditAction
 from backend.app.audit.service import record
@@ -41,8 +41,19 @@ def _group_or_404(db: Session, group_id: int) -> Group:
 
 def _detail(g: Group) -> dict:
     d = g.to_dict()
+    via = {}
+    if g.members:
+        from sqlalchemy import select as _select
+
+        via = dict(
+            object_session(g).execute(
+                _select(user_group_association.c.user_id, user_group_association.c.rule_id).where(
+                    user_group_association.c.group_id == g.id
+                )
+            ).all()
+        )
     d["members"] = [
-        {"id": u.id, "email": u.email, "first_name": u.first_name, "last_name": u.last_name}
+        {"id": u.id, "email": u.email, "first_name": u.first_name, "last_name": u.last_name, "via_rule": via.get(u.id)}
         for u in sorted(g.members, key=lambda u: u.id)
     ]
     return d
@@ -184,6 +195,15 @@ def remove_member(
     actor: User = Depends(require_admin),
 ):
     g = _group_or_404(db, group_id)
+    managed = db.execute(
+        user_group_association.select().where(
+            user_group_association.c.group_id == g.id,
+            user_group_association.c.user_id == user_id,
+            user_group_association.c.rule_id.is_not(None),
+        )
+    ).first()
+    if managed:
+        raise HTTPException(status_code=409, detail="This membership is managed by a group rule; change or deactivate the rule instead")
     res = db.execute(
         delete(user_group_association).where(
             user_group_association.c.group_id == g.id, user_group_association.c.user_id == user_id

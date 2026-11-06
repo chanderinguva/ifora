@@ -15,6 +15,7 @@ from backend.app.auth.mfa_model import MFAChallenge, MFARecoveryCode, UserMFA  #
 from backend.app.auth.passkey_model import Passkey, WebAuthnChallenge  # noqa: F401
 from backend.app.auth.session import Session  # noqa: F401
 from backend.app.groups.model import Group  # noqa: F401
+from backend.app.groups.rules import GroupRule  # noqa: F401
 from backend.app.oidc.models import SigningKey  # noqa: F401
 from backend.app.users.model import User  # noqa: F401
 

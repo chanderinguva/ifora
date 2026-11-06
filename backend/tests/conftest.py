@@ -160,6 +160,9 @@ class Api:
     def patch(self, url, json=None, csrf=True):
         return self.c.patch("/api/v1" + url, json=json, headers=self._h(csrf))
 
+    def put(self, url, json=None, csrf=True):
+        return self.c.put("/api/v1" + url, json=json, headers=self._h(csrf))
+
     def delete(self, url, csrf=True):
         return self.c.delete("/api/v1" + url, headers=self._h(csrf))
 
