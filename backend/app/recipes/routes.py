@@ -138,7 +138,7 @@ def _audit(db, action, actor, r_id, meta=None, request=None):
 def status(_: User = Depends(require_admin)):
     ok = crypto.available()
     seen = engine.worker_last_seen()
-    return {"enabled": True, "connections_available": ok, "webhooks_available": ok,
+    return {"enabled": True, "email_available": bool(settings.SMTP_HOST and settings.SMTP_FROM), "connections_available": ok, "webhooks_available": ok,
             "egress_restricted": bool(settings.RECIPES_HTTP_ALLOWED_HOSTS.strip()),
             "worker_last_seen": seen.isoformat() if seen else None,
             "worker_running": bool(seen and (NOW() - seen).total_seconds() < engine.HEARTBEAT_STALE_SECONDS)}
@@ -165,7 +165,8 @@ STEP_INFO = {
     "add_to_group": ("Add user to group", "action"), "remove_from_group": ("Remove user from group", "action"),
     "set_attribute": ("Set a profile attribute", "action"), "activate_user": ("Activate user", "action"),
     "deactivate_user": ("Deactivate user", "action"), "http_request": ("Send an HTTP request", "action"),
-    "log": ("Write to the job log", "action"), "condition": ("If / else", "control"), "stop": ("Stop", "control"),
+    "log": ("Write to the job log", "action"),
+    "send_slack": ("Send a Slack message", "action"), "send_email": ("Send an email", "action"), "condition": ("If / else", "control"), "stop": ("Stop", "control"),
     "for_each_member": ("For each member of a group", "control"), "approval": ("Wait for approval", "control"),
 }
 
@@ -519,26 +520,54 @@ _FORBIDDEN = {"host", "content-length", "transfer-encoding", "connection", "upgr
 
 class ConnectionBody(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
-    kind: str = Field(..., pattern="^(bearer|header)$")
+    kind: str = Field(..., pattern="^(bearer|header|oauth2_client_credentials|slack_webhook)$")
     header_name: Optional[str] = Field(None, max_length=100)
-    allowed_host: str = Field(..., min_length=1, max_length=255)
+    allowed_host: str = Field("", max_length=255)
+    allowed_paths: Optional[List[str]] = Field(None, max_length=20)
+    client_id: Optional[str] = Field(None, max_length=255)
+    token_url: Optional[str] = Field(None, max_length=2000)
+    scope: Optional[str] = Field(None, max_length=500)
     secret: Optional[str] = Field(None, min_length=1, max_length=2000)
 
 
 def _conn_dict(c: RecipeConnection) -> dict:
     return {  # the secret is never part of any response
         "id": c.id, "name": c.name, "kind": c.kind, "header_name": c.header_name, "allowed_host": c.allowed_host,
+        "allowed_paths": c.allowed_paths or [], "client_id": c.client_id, "token_url": c.token_url, "scope": c.scope,
         "has_secret": True, "created_at": c.created_at.isoformat(), "updated_at": c.updated_at.isoformat(),
     }
 
 
+_PATH = re.compile(r"^/[A-Za-z0-9._~!$&'()*+,;=:@/%-]{0,199}$")
+SLACK_HOST = "hooks.slack.com"
+
+
 def _conn_checks(body: ConnectionBody) -> str:
-    host = body.allowed_host.strip().lower()
+    host = SLACK_HOST if body.kind == "slack_webhook" else body.allowed_host.strip().lower()
     if not _HOST.match(host):
         raise HTTPException(status_code=422, detail="allowed_host must be a bare host name such as api.example.com")
     if body.kind == "header":
         if not body.header_name or not _HEADER.match(body.header_name) or body.header_name.lower() in _FORBIDDEN:
             raise HTTPException(status_code=422, detail="header_name is required and must be a valid header name")
+    if body.kind == "slack_webhook":
+        if body.allowed_paths:
+            raise HTTPException(status_code=422, detail="path lists do not apply to Slack connections")
+        if body.secret and not body.secret.startswith("https://hooks.slack.com/services/"):
+            raise HTTPException(status_code=422, detail="the secret must be a Slack incoming webhook URL (https://hooks.slack.com/services/...)")
+    for p in body.allowed_paths or []:
+        if not _PATH.match(p) or ".." in p or "//" in p or re.search(r"%(2e|2f|5c)", p, re.I):
+            raise HTTPException(status_code=422, detail=f"invalid allowed path {p!r}: use plain path prefixes such as /api/v1/")
+    if body.kind == "oauth2_client_credentials":
+        if not body.client_id or not body.token_url:
+            raise HTTPException(status_code=422, detail="client_id and token_url are required for OAuth2 connections")
+        from urllib.parse import urlsplit
+        try:
+            u = urlsplit(body.token_url)
+            ok = u.scheme == "https" and (u.hostname or "").lower() == host and not u.username and not u.password
+        except ValueError:
+            ok = False
+        if not ok:
+            raise HTTPException(status_code=422, detail="token_url must be an https URL on the connection's allowed host")
     if body.secret and ("\r" in body.secret or "\n" in body.secret):
         raise HTTPException(status_code=422, detail="secret contains invalid characters")
     return host
@@ -547,6 +576,12 @@ def _conn_checks(body: ConnectionBody) -> str:
 def _need_key():
     if not crypto.available():
         raise HTTPException(status_code=409, detail="Connections are not available: RECIPE_ENCRYPTION_KEY is not configured")
+
+
+def _apply_extras(c: RecipeConnection, body: ConnectionBody) -> None:
+    c.allowed_paths = sorted(set(body.allowed_paths)) if body.allowed_paths else None
+    oauth = body.kind == "oauth2_client_credentials"
+    c.client_id, c.token_url, c.scope = (body.client_id, body.token_url, body.scope or None) if oauth else (None, None, None)
 
 
 @connections_router.get("")
@@ -562,6 +597,7 @@ def create_connection(body: ConnectionBody, request: Request, db: Session = Depe
         raise HTTPException(status_code=422, detail="secret is required")
     c = RecipeConnection(name=body.name.strip(), kind=body.kind, header_name=body.header_name if body.kind == "header" else None,
                          allowed_host=host, secret_enc=crypto.encrypt(body.secret), created_by=actor.id)
+    _apply_extras(c, body)
     db.add(c)
     try:
         db.flush()
@@ -582,6 +618,7 @@ def update_connection(cid: int, body: ConnectionBody, request: Request, db: Sess
     host = _conn_checks(body)
     c.name, c.kind, c.allowed_host = body.name.strip(), body.kind, host
     c.header_name = body.header_name if body.kind == "header" else None
+    _apply_extras(c, body)
     rotated = bool(body.secret)
     if body.secret:
         c.secret_enc = crypto.encrypt(body.secret)

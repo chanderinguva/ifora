@@ -51,10 +51,14 @@ class RecipeConnection(TenantOwned, Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(100), nullable=False)
-    kind = Column(String(16), nullable=False)  # bearer | header
+    kind = Column(String(32), nullable=False)  # bearer | header | oauth2_client_credentials | slack_webhook
     header_name = Column(String(100), nullable=True)
     allowed_host = Column(String(255), nullable=False)
-    secret_enc = Column(Text, nullable=False)
+    allowed_paths = Column(JSONB, nullable=True)  # path prefixes the credential may be sent to (None = any path on the host)
+    client_id = Column(String(255), nullable=True)  # oauth2_client_credentials
+    token_url = Column(String(2000), nullable=True)  # oauth2_client_credentials (must be on allowed_host)
+    scope = Column(String(500), nullable=True)
+    secret_enc = Column(Text, nullable=False)  # bearer/header secret, OAuth2 client secret, or Slack webhook URL
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=_now)

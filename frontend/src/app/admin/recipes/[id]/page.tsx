@@ -23,6 +23,7 @@ type Ctx = {
 };
 
 const USER_PILL = "{{trigger.user.id}}";
+const USER_EMAIL_PILL = "{{trigger.user.email}}";
 
 function defaultConfig(type: string, ctx: Ctx): Record<string, any> {
   switch (type) {
@@ -31,6 +32,8 @@ function defaultConfig(type: string, ctx: Ctx): Record<string, any> {
     case "activate_user": case "deactivate_user": return { user: USER_PILL };
     case "http_request": return { method: "POST", url: "https://", headers: {}, body: "", connection_id: null };
     case "log": return { message: "" };
+    case "send_slack": return { connection_id: ctx.connections.find((c) => c.kind === "slack_webhook")?.id ?? null, message: "" };
+    case "send_email": return { to: USER_EMAIL_PILL, subject: "", body: "" };
     case "condition": return { match: "all", conditions: [{ left: "trigger.event.type", operator: "is_set", value: "" }] };
     case "stop": return { outcome: "success", message: "" };
     case "for_each_member": return { group_id: ctx.groups[0]?.id ?? null, limit: 50 };
@@ -149,7 +152,7 @@ function StepForm({ step, ctx, onChange }: { step: StepNode; ctx: Ctx; onChange:
           </div>
           <div className="space-y-1"><Label>Connection (credentials)</Label>
             <Select label="Connection" value={cfg.connection_id ?? ""} onChange={(v) => set({ connection_id: v ? Number(v) : null })}>
-              <option value="">None (no credentials)</option>{ctx.connections.map((c) => <option key={c.id} value={c.id}>{c.name} → {c.allowed_host}</option>)}
+              <option value="">None (no credentials)</option>{ctx.connections.filter((c) => c.kind !== "slack_webhook").map((c) => <option key={c.id} value={c.id}>{c.name} → {c.allowed_host}</option>)}
             </Select>
             {!ctx.connectionsAvailable && <p className="text-xs text-muted-foreground">Connections are unavailable until RECIPE_ENCRYPTION_KEY is configured.</p>}
             <p className="text-xs text-muted-foreground">The secret is attached by the server and only sent to the connection’s own host. Requests to private or internal addresses are blocked.</p></div>
@@ -166,6 +169,29 @@ function StepForm({ step, ctx, onChange }: { step: StepNode; ctx: Ctx; onChange:
         </div>
       );
     }
+    case "send_slack":
+      return (
+        <div className="space-y-3">
+          <div className="space-y-1"><Label>Slack connection</Label>
+            <Select label="Slack connection" value={cfg.connection_id ?? ""} onChange={(v) => set({ connection_id: v ? Number(v) : null })}>
+              <option value="">Choose a connection…</option>{ctx.connections.filter((c) => c.kind === "slack_webhook").map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </Select>
+            {!ctx.connections.some((c) => c.kind === "slack_webhook") && <p className="text-xs text-muted-foreground">Add a “Slack incoming webhook” under Connections first.</p>}</div>
+          <div className="space-y-1"><Label>Message</Label><PillInput label="Slack message" multiline value={cfg.message ?? ""} onChange={(v) => set({ message: v })} pills={pills} payload={payload} />
+            <p className="text-xs text-muted-foreground">Plain text. Mentions and links are neutralised so user-supplied values cannot ping channels.</p></div>
+        </div>
+      );
+    case "send_email":
+      return (
+        <div className="space-y-3">
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-1"><Label>To</Label><PillInput label="Email recipient" value={cfg.to ?? ""} onChange={(v) => set({ to: v })} pills={pills} payload={payload} />
+              <p className="text-xs text-muted-foreground">One address. It must belong to an active user or to an allowed email domain.</p></div>
+            <div className="space-y-1"><Label>Subject</Label><PillInput label="Email subject" value={cfg.subject ?? ""} onChange={(v) => set({ subject: v })} pills={pills} payload={payload} /></div>
+          </div>
+          <div className="space-y-1"><Label>Message</Label><PillInput label="Email body" multiline value={cfg.body ?? ""} onChange={(v) => set({ body: v })} pills={pills} payload={payload} /></div>
+        </div>
+      );
     case "log":
       return <div className="space-y-1"><Label>Message</Label><PillInput label="Message" value={cfg.message ?? ""} onChange={(v) => set({ message: v })} pills={pills} payload={payload} /></div>;
     case "condition":

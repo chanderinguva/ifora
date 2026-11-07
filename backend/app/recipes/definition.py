@@ -35,6 +35,7 @@ EVENT_TRIGGERS = (
 TRIGGER_TYPES = EVENT_TRIGGERS + ("schedule", "manual", "webhook")
 ACTION_TYPES = (
     "add_to_group", "remove_from_group", "set_attribute", "activate_user", "deactivate_user", "http_request", "log",
+    "send_slack", "send_email",
 )
 STEP_TYPES = ACTION_TYPES + ("condition", "stop", "for_each_member", "approval")
 BRANCHING = ("condition", "approval")  # then/else steps
@@ -105,6 +106,17 @@ class _Http(_Cfg):
     connection_id: Optional[int] = None
 
 
+class _Slack(_Cfg):
+    connection_id: int
+    message: str = Field(..., min_length=1, max_length=3000)
+
+
+class _Email(_Cfg):
+    to: str = Field(..., min_length=3, max_length=320)
+    subject: str = Field(..., min_length=1, max_length=200)
+    body: str = Field(..., min_length=1, max_length=5000)
+
+
 class _Log(_Cfg):
     message: str = Field(..., min_length=1, max_length=1000)
 
@@ -132,6 +144,7 @@ class _Stop(_Cfg):
 STEP_CFG = {
     "add_to_group": _AddRemove, "remove_from_group": _AddRemove, "set_attribute": _SetAttr,
     "activate_user": _UserOnly, "deactivate_user": _UserOnly, "http_request": _Http, "log": _Log,
+    "send_slack": _Slack, "send_email": _Email,
     "condition": _Condition, "stop": _Stop, "for_each_member": _Loop, "approval": _Approval,
 }
 
@@ -170,7 +183,8 @@ STEP_OUTPUTS = {
     "add_to_group": ["user_id", "group_id", "changed"], "remove_from_group": ["user_id", "group_id", "changed"],
     "set_attribute": ["user_id", "attribute", "value", "changed"],
     "activate_user": ["user_id", "changed"], "deactivate_user": ["user_id", "changed"],
-    "http_request": ["status_code", "ok", "body", "json"], "log": ["message"], "condition": ["result"], "stop": [],
+    "http_request": ["status_code", "ok", "body", "json"], "log": ["message"],
+    "send_slack": ["ok"], "send_email": ["to", "sent"], "condition": ["result"], "stop": [],
     "for_each_member": ["total", "processed"], "approval": ["decision", "decided_by"],
 }
 _RECIPE_FIELDS = ["recipe.id", "recipe.name", "recipe.version", "job.id"]
@@ -406,7 +420,15 @@ def _check_step(db, stype, cfg, ttype, earlier, managed, taint, where, handler=F
             raise tpl.TemplateError(
                 f"'{cfg['attribute']}' is not an administrator-managed profile attribute; recipes can only set those"
             )
+    elif stype == "send_slack":
+        c = db.get(RecipeConnection, cfg["connection_id"])
+        if c is None or c.kind != "slack_webhook":
+            raise tpl.TemplateError("choose a Slack webhook connection")
     elif stype == "http_request":
+        if cfg.get("connection_id") is not None:
+            c = db.get(RecipeConnection, cfg["connection_id"])
+            if c is not None and c.kind == "slack_webhook":
+                raise tpl.TemplateError("Slack connections can only be used by the Slack step")
         for k in cfg["headers"]:
             if len(cfg["headers"]) > 10:
                 raise tpl.TemplateError("at most 10 headers")

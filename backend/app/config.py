@@ -59,6 +59,15 @@ class Settings(BaseSettings):
     RECIPES_WEBHOOK_MAX_BODY_BYTES: int = Field(default=65536)
     RECIPES_WEBHOOK_REPLAY_SECONDS: int = Field(default=300)
     RECIPES_MAX_RECIPES: int = Field(default=100)
+    # Outbound email for the send_email step (empty SMTP_HOST = disabled). Recipients must be existing users or in an allowed domain.
+    SMTP_HOST: str = Field(default="")
+    SMTP_PORT: int = Field(default=587)
+    SMTP_USERNAME: str = Field(default="")
+    SMTP_PASSWORD: str = Field(default="")
+    SMTP_FROM: str = Field(default="")
+    SMTP_STARTTLS: bool = Field(default=True)
+    RECIPES_EMAIL_ALLOWED_DOMAINS: str = Field(default="")  # comma separated, in addition to addresses of existing users
+    RECIPES_MAX_EMAILS_PER_JOB: int = Field(default=25)
     MFA_CHALLENGE_MINUTES: int = Field(default=5)
     MFA_CHALLENGE_MAX_ATTEMPTS: int = Field(default=5)
 
