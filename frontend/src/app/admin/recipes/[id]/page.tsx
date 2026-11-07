@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge, PageHeader, fieldClass } from "@/components/bits";
 import { JobView, PillInput, RecipeTabs } from "@/components/recipe-bits";
+import { FlowDiagram } from "@/components/recipe-flow";
 import { http, qs, type Page } from "@/lib/http";
 import {
   OPERATOR_LABELS, allSteps, decisionPills, nextStepId, stepPills, stepsBefore,
@@ -249,7 +250,7 @@ function StepList({ steps, ctx, onChange, depth }: { steps: StepNode[]; ctx: Ctx
         const isAction = info?.kind === "action";
         const replace = (n: StepNode) => onChange(steps.map((x) => (x.id === s.id ? n : x)));
         return (
-          <Card key={s.id} data-testid="step-card">
+          <Card key={s.id} id={`step-${s.id}`} data-testid="step-card">
             <CardHeader className="flex-row items-center justify-between space-y-0 py-3">
               <CardTitle className="text-base">{i + 1}. {info?.label ?? s.type} <code className="ml-1 text-xs font-normal text-muted-foreground">{s.id}</code></CardTitle>
               <div className="flex gap-1">
@@ -310,6 +311,7 @@ export default function RecipeBuilderPage() {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [connAvail, setConnAvail] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [view, setView] = useState<"steps" | "flow">("steps");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [secret, setSecret] = useState<string | null>(null);
   const [test, setTest] = useState({ user_id: "", group_id: "", payload: "{}" });
@@ -377,6 +379,13 @@ export default function RecipeBuilderPage() {
           ? <Button variant="outline" disabled={!canManage} onClick={() => act(async () => { adopt(await http<RecipeSummary>(`/admin/recipes/${id}/disable`, { method: "POST" })); load(); }, "Recipe disabled")}>Disable</Button>
           : <Button variant="outline" disabled={!recipe.published_version || !canManage} onClick={() => act(async () => { adopt(await http<RecipeSummary>(`/admin/recipes/${id}/enable`, { method: "POST" })); load(); }, "Recipe enabled")}>Enable</Button>}
         {recipe.published_trigger_type === "manual" && recipe.enabled && <Button variant="outline" disabled={!canManage} onClick={() => act(async () => { await http(`/admin/recipes/${id}/run`, { method: "POST", body: { payload: safeJson(test.payload), user_id: test.user_id ? Number(test.user_id) : null } }); load(); }, "Run queued; the worker will pick it up")}>Run now</Button>}
+        <Button variant="outline" onClick={() => act(async () => {
+          const doc = await http<unknown>(`/admin/recipes/${id}/export`);
+          const url = URL.createObjectURL(new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" }));
+          const a = document.createElement("a");
+          a.href = url; a.download = `${name.replace(/[^A-Za-z0-9_-]+/g, "-") || "recipe"}.recipe.json`; a.click();
+          URL.revokeObjectURL(url);
+        }, "Exported the saved draft (no secrets included)")}>Export</Button>
         {dirty && <span className="text-sm text-amber-600">Unsaved changes</span>}
         {!dirty && recipe.has_unpublished_changes && recipe.published_version && <span className="text-sm text-amber-600">Draft differs from the published version</span>}
       </div>
@@ -384,7 +393,16 @@ export default function RecipeBuilderPage() {
       {!canEdit && <Alert className="mb-4" data-testid="read-only-note"><AlertDescription>Read-only: only the owner ({recipe.owner?.email ?? "unassigned"}), listed editors and super admins can change this recipe.</AlertDescription></Alert>}
       <AccessCard recipe={recipe} admins={users.filter((u) => u.is_admin)} onSaved={(r) => { adopt(r); load(); }} setMsg={setMsg} />
 
-      <fieldset disabled={!canEdit} className="min-w-0 border-0 p-0">
+      <div className="mb-3 flex gap-1" role="tablist" aria-label="Builder view">
+        {(["steps", "flow"] as const).map((v) => (
+          <button key={v} type="button" role="tab" aria-selected={view === v} onClick={() => setView(v)}
+            className={"rounded-md border px-3 py-1 text-sm " + (view === v ? "bg-muted font-medium" : "text-muted-foreground")}>{v === "steps" ? "Steps" : "Flow diagram"}</button>
+        ))}
+      </div>
+      {view === "flow" && (
+        <div className="mb-6"><FlowDiagram def={def} meta={meta} onSelect={(sid) => { setView("steps"); setTimeout(() => document.getElementById(`step-${sid}`)?.scrollIntoView({ block: "center" }), 50); }} /></div>
+      )}
+      <fieldset disabled={!canEdit} className={"min-w-0 border-0 p-0 " + (view === "flow" ? "hidden" : "")}>
       <Card className="mb-4" data-testid="trigger-card">
         <CardHeader className="py-3"><CardTitle className="text-base">When this happens (trigger)</CardTitle></CardHeader>
         <CardContent className="space-y-3">
