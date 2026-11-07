@@ -70,7 +70,7 @@ def issue_enrollment_code(email: str, out=print) -> int:
         db.close()
 
 
-def rotate_signing_key(emergency: bool = False, assume_yes: bool = False, confirm=input, out=print) -> int:
+def rotate_signing_key(emergency: bool = False, assume_yes: bool = False, confirm=input, out=print, alg=None) -> int:
     """Rotate the OIDC signing key. --emergency signs with the new key immediately and revokes every old one."""
     from backend.app.oidc import keys
 
@@ -86,7 +86,7 @@ def rotate_signing_key(emergency: bool = False, assume_yes: bool = False, confir
             record(db, AuditAction(name), None, None, None, "signing_key", {**(meta or {}), "via": "cli"})
 
         try:
-            new = keys.rotate(db, emergency=emergency, audit=audit)
+            new = keys.rotate(db, emergency=emergency, alg=alg, audit=audit)
         except keys.KeyConfigError as e:
             out(f"error: {e}")
             return 1
@@ -133,6 +133,7 @@ def main(argv: Optional[list] = None) -> int:
     r = sub.add_parser("rotate-signing-key", help="rotate the OIDC token signing key")
     r.add_argument("--emergency", action="store_true", help="revoke all existing keys immediately (suspected compromise)")
     r.add_argument("--yes", "-y", action="store_true", help="do not prompt")
+    r.add_argument("--alg", choices=["RS256", "ES256"], help="algorithm of the new key (default: OIDC_SIGNING_ALG)")
     w = sub.add_parser("recipes-worker", help="run the recipe engine worker loop")
     w.add_argument("--once", action="store_true", help="process due work once and exit")
     w.add_argument("--interval", type=float, default=2.0, help="seconds between polls")
@@ -143,7 +144,7 @@ def main(argv: Optional[list] = None) -> int:
     if args.cmd == "recipes-worker":
         return recipes_worker(args.interval, args.once)
     if args.cmd == "rotate-signing-key":
-        return rotate_signing_key(args.emergency, args.yes)
+        return rotate_signing_key(args.emergency, args.yes, alg=args.alg)
     if args.cmd == "issue-enrollment-code":
         return issue_enrollment_code(args.email)
     return reset_factors(args.email, args.yes)

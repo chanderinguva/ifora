@@ -15,14 +15,14 @@ from typing import Optional
 from cryptography.fernet import Fernet, InvalidToken
 from joserfc import jwt
 from joserfc.errors import JoseError
-from joserfc.jwk import KeySet, RSAKey
+from joserfc.jwk import ECKey, KeySet, RSAKey
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.app.config import settings
 from backend.app.oidc.models import KeyStatus, SigningKey
 
-SUPPORTED_ALGS = ("RS256",)  # ES256 plugs in by adding an entry to _GENERATORS; verification allow-lists per call
+SUPPORTED_ALGS = ("RS256", "ES256")  # keys of both may coexist (rotation can switch algorithm); verifiers allow-list per call
 MIN_RSA_BITS = 2048
 
 
@@ -66,7 +66,12 @@ def _generate_rs256():
     return RSAKey.generate_key(bits)
 
 
-_GENERATORS = {"RS256": _generate_rs256}
+def _generate_es256():
+    return ECKey.generate_key("P-256")
+
+
+_GENERATORS = {"RS256": _generate_rs256, "ES256": _generate_es256}
+_KEY_CLASS = {"RS256": RSAKey, "ES256": ECKey}
 
 
 def _new_key_row(alg: str, status: str, activate_at: datetime) -> SigningKey:
@@ -125,7 +130,7 @@ def advance(db: Session, now: Optional[datetime] = None) -> None:
 def _bootstrap(db: Session, audit=None) -> None:
     """First use: create the initial signing key. The partial unique index makes a concurrent race safe."""
     try:
-        db.add(_new_key_row("RS256", KeyStatus.ACTIVE, _now()))
+        db.add(_new_key_row(settings.OIDC_SIGNING_ALG, KeyStatus.ACTIVE, _now()))
         if audit:
             audit("OIDC_KEY_CREATED")
         db.commit()
@@ -148,9 +153,12 @@ def signing_key(db: Session) -> SigningKey:
     return key
 
 
-def rotate(db: Session, *, emergency: bool = False, alg: str = "RS256", audit=None) -> SigningKey:
+def rotate(db: Session, *, emergency: bool = False, alg: Optional[str] = None, audit=None) -> SigningKey:
     """Create the next key. Normal: published now, signs after the publish delay. Emergency: signs
     immediately and every earlier key is revoked (tokens it signed stop verifying)."""
+    alg = alg or settings.OIDC_SIGNING_ALG
+    if alg not in _GENERATORS:
+        raise KeyConfigError(f"unsupported signing algorithm {alg!r}")
     advance(db)
     rows = db.query(SigningKey).filter(
         SigningKey.status.in_([KeyStatus.PENDING, KeyStatus.ACTIVE, KeyStatus.RETIRED])
@@ -194,7 +202,7 @@ def public_jwks(db: Session) -> dict:
 
 def sign_jwt(db: Session, claims: dict, *, typ: str = "JWT") -> str:
     row = signing_key(db)
-    key = RSAKey.import_key(
+    key = _KEY_CLASS[row.alg].import_key(
         _decrypt(row), parameters={"kid": row.kid, "use": "sig", "alg": row.alg}
     )
     header = {"alg": row.alg, "kid": row.kid, "typ": typ}
@@ -217,7 +225,7 @@ def verify_jwt(
     issuer: str,
     audience: Optional[str],
     typ: Optional[str] = None,
-    algorithms: tuple = ("RS256",),
+    algorithms: tuple = SUPPORTED_ALGS,
     allow_expired: bool = False,
 ) -> dict:
     """Validate signature (algorithm allow-list, key chosen by kid from our own JWKS), issuer, audience,
@@ -248,3 +256,8 @@ def verify_jwt(
     except (JoseError, ValueError, KeyError) as e:
         raise TokenError(f"invalid token: {type(e).__name__}") from e
     return decoded.claims
+
+
+def advertised_algs(db: Session) -> list:
+    """Algorithms of the keys currently published (what a relying party may meet in our tokens)."""
+    return sorted({k["alg"] for k in public_jwks(db)["keys"]})

@@ -27,6 +27,8 @@ class ClientCreate(BaseModel):
     post_logout_redirect_uris: List[str] = Field(default_factory=list)
     allowed_scopes: List[str] = Field(default_factory=lambda: ["openid", "profile", "email"])
     allowed_audiences: List[str] = Field(default_factory=list)  # service clients only
+    token_endpoint_auth_method: Optional[str] = None  # confidential/service: client_secret_basic (default) | private_key_jwt
+    jwks: Optional[dict] = None  # public keys, required for private_key_jwt
     first_party: bool = False
 
 
@@ -37,6 +39,7 @@ class ClientUpdate(BaseModel):
     post_logout_redirect_uris: Optional[List[str]] = None
     allowed_scopes: Optional[List[str]] = None
     allowed_audiences: Optional[List[str]] = None
+    jwks: Optional[dict] = None  # replaces the registered keys (private_key_jwt clients)
     status: Optional[str] = Field(None, pattern="^(active|disabled)$")
     first_party: Optional[bool] = None
 
@@ -78,6 +81,16 @@ def create_client(body: ClientCreate, request: Request, db: Session = Depends(ge
     if body.client_type not in svc.CLIENT_TYPES:
         raise HTTPException(status_code=422, detail="client_type must be public, confidential or service")
     service = body.client_type == "service"
+    if body.client_type == "public":
+        if body.token_endpoint_auth_method not in (None, "none") or body.jwks is not None:
+            raise HTTPException(status_code=422, detail="a public client has no client authentication")
+        method = "none"
+    else:
+        method = body.token_endpoint_auth_method or "client_secret_basic"
+        if method not in svc.AUTH_METHODS:
+            raise HTTPException(status_code=422, detail="token_endpoint_auth_method must be client_secret_basic or private_key_jwt")
+        if (method == "private_key_jwt") != (body.jwks is not None):
+            raise HTTPException(status_code=422, detail="jwks is required for private_key_jwt and not allowed otherwise")
     if body.first_party:
         _only_super_admin_sets_first_party(actor)
         if service:
@@ -98,6 +111,7 @@ def create_client(body: ClientCreate, request: Request, db: Session = Depends(ge
             logouts = svc.validate_uri_list(body.post_logout_redirect_uris, "post-logout redirect URI", required=False)
             scopes = svc.validate_scopes(body.allowed_scopes)
             audiences = []
+        jwks = svc.validate_jwks(body.jwks) if body.jwks is not None else None
     except svc.ClientError as e:
         _bad(e)
     client = OIDCClient(
@@ -105,7 +119,8 @@ def create_client(body: ClientCreate, request: Request, db: Session = Depends(ge
         name=body.name.strip(),
         description=body.description,
         client_type=body.client_type,
-        token_endpoint_auth_method="none" if body.client_type == "public" else "client_secret_basic",
+        token_endpoint_auth_method=method,
+        jwks=jwks,
         first_party=body.first_party,
         status="active",
         redirect_uris=redirects,
@@ -117,7 +132,7 @@ def create_client(body: ClientCreate, request: Request, db: Session = Depends(ge
     )
     db.add(client)
     db.flush()
-    raw = svc.add_secret(db, client) if client.client_type != "public" else None
+    raw = svc.add_secret(db, client) if method == "client_secret_basic" else None
     record(db, AuditAction.OIDC_CLIENT_CREATED, request, actor, client.id, "oidc_client",
            {"client_id": client.client_id, "name": client.name, "type": client.client_type, "first_party": client.first_party})
     db.commit()
@@ -144,6 +159,10 @@ def update_client(pk: int, body: ClientUpdate, request: Request, db: Session = D
         service = c.client_type == "service"
         if service and (body.redirect_uris or body.post_logout_redirect_uris):
             raise svc.ClientError("a service client has no redirect URIs")
+        if body.jwks is not None:
+            if c.token_endpoint_auth_method != "private_key_jwt":
+                raise svc.ClientError("jwks applies to private_key_jwt clients only")
+            c.jwks = svc.validate_jwks(body.jwks); changed["jwks"] = True
         if body.allowed_audiences is not None:
             if not service:
                 raise svc.ClientError("audiences apply to service clients only")

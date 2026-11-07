@@ -44,6 +44,8 @@ export type OidcClient = {
   post_logout_redirect_uris: string[];
   allowed_scopes: string[];
   allowed_audiences: string[];
+  token_endpoint_auth_method: "none" | "client_secret_basic" | "private_key_jwt";
+  jwks: { keys: { kid: string; kty: string; alg?: string }[] } | null;
   grant_types: string[];
   secrets: OidcSecret[];
   client_secret?: string;

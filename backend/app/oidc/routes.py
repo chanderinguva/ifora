@@ -4,7 +4,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.app.audit.model import AuditAction
@@ -50,6 +50,7 @@ def list_keys(user=Depends(_super_admin), db: Session = Depends(get_db)):
 
 class RotateBody(BaseModel):
     emergency: bool = False
+    alg: Optional[str] = Field(None, pattern="^(RS256|ES256)$")  # default: OIDC_SIGNING_ALG
     confirm: bool = False  # emergency rotation invalidates tokens already issued; require an explicit flag
 
 
@@ -62,7 +63,7 @@ def rotate_key(body: RotateBody, request: Request, user=Depends(_super_admin), d
         record(db, AuditAction(name), request, user, None, "signing_key", meta)
 
     try:
-        new = keys.rotate(db, emergency=body.emergency, audit=audit)
+        new = keys.rotate(db, emergency=body.emergency, alg=body.alg, audit=audit)
     except keys.KeyConfigError as e:
         raise HTTPException(status_code=409, detail=str(e))
     return new.to_admin_dict()

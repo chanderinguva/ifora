@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     RATE_LIMIT_TOKEN_FAILURES: int = Field(default=20)
     RATE_LIMIT_TOKEN_WINDOW_SECONDS: int = Field(default=300)
     OIDC_RSA_KEY_BITS: int = Field(default=3072)
+    OIDC_SIGNING_ALG: str = Field(default="RS256")  # algorithm of newly created signing keys: RS256 | ES256
     OIDC_ID_TOKEN_TTL_SECONDS: int = Field(default=600)
     OIDC_ACCESS_TOKEN_TTL_SECONDS: int = Field(default=600)
     OIDC_CLOCK_SKEW_SECONDS: int = Field(default=60)
