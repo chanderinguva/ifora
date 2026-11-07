@@ -18,7 +18,7 @@ _Last updated: 2026-11-05_
 | System audit events | Done | Recorded in the same transaction; viewer with filter |
 | Admin dashboard | Done | Real counts from the database, recent activity |
 | User dashboard | Done | Profile, groups, change password, active sessions |
-| Browser & API tests | Done | 148 API integration tests (real Postgres test DB) + 15 Playwright browser tests (the policy spec needs a throwaway admin, see below) (incl. a Chrome virtual authenticator) |
+| Browser & API tests | Done | 553 API integration tests (real Postgres test DB) + 27 Playwright browser tests (2 opt-in: demo app, admin MFA policy) (the policy spec needs a throwaway admin, see below) (incl. a Chrome virtual authenticator) |
 | Security review | **Partial** | Self-review recorded in ADR 003; no independent review yet |
 
 ## Hardening done after Phase 1
