@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     RECIPES_JOB_RETENTION_DAYS: int = Field(default=30)  # finished jobs and their step history are deleted after this many days (0 = keep)
     RECIPES_ENABLED: bool = Field(default=True)
     RECIPE_ENCRYPTION_KEY: str = Field(default="")
-    RECIPES_MAX_STEPS_PER_JOB: int = Field(default=50)
+    RECIPES_MAX_STEPS_PER_JOB: int = Field(default=500)  # executed steps, loop iterations included
     RECIPES_MAX_RUNTIME_SECONDS: int = Field(default=900)
     RECIPES_MAX_EVENT_DEPTH: int = Field(default=3)
     RECIPES_MAX_CONCURRENT_PER_RECIPE: int = Field(default=5)

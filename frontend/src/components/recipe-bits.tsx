@@ -83,6 +83,9 @@ export function JobView({ job }: { job: Job }) {
           {job.mode === "dry_run" ? "Test run (nothing was changed)" : `Version ${job.version ?? "?"}`} · {job.trigger_type} · started {fmt(job.created_at)}
         </span>
       </div>
+      {job.status === "waiting" && job.approval && (
+        <p className="rounded-md border p-2" data-testid="approval-note">Waiting for approval: {job.approval.message || "(no message)"}{job.approval.expires_at ? ` (gives up ${fmt(job.approval.expires_at)})` : ""}</p>
+      )}
       {job.error && <p className="rounded-md border border-destructive/50 p-2 text-destructive" role="alert">{job.error}</p>}
       <ol className="space-y-2">
         {(job.steps ?? []).map((s) => (

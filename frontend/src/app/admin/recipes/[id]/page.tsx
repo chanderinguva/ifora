@@ -19,7 +19,7 @@ import {
 import type { Group, User } from "@/lib/types";
 
 type Ctx = {
-  meta: RecipeMeta; groups: Group[]; connections: Connection[]; connectionsAvailable: boolean; trigger: string; root: StepNode[]; other?: StepNode[]; handler?: boolean;
+  meta: RecipeMeta; groups: Group[]; connections: Connection[]; connectionsAvailable: boolean; trigger: string; root: StepNode[]; other?: StepNode[]; handler?: boolean; inLoop?: boolean;
 };
 
 const USER_PILL = "{{trigger.user.id}}";
@@ -33,6 +33,8 @@ function defaultConfig(type: string, ctx: Ctx): Record<string, any> {
     case "log": return { message: "" };
     case "condition": return { match: "all", conditions: [{ left: "trigger.event.type", operator: "is_set", value: "" }] };
     case "stop": return { outcome: "success", message: "" };
+    case "for_each_member": return { group_id: ctx.groups[0]?.id ?? null, limit: 50 };
+    case "approval": return { message: "", timeout_hours: 24 };
     default: return {};
   }
 }
@@ -91,7 +93,12 @@ function StepForm({ step, ctx, onChange }: { step: StepNode; ctx: Ctx; onChange:
   const set = (patch: Record<string, any>) => onChange({ ...step, config: { ...cfg, ...patch } });
   const before = stepsBefore(ctx.root, step.id);
   const errorPills: Pill[] = ctx.handler ? [{ path: "error.message", label: "Error message" }, { path: "error.step_id", label: "Failed step" }] : [];
-  const pills = [...(ctx.meta.triggers.find((t) => t.type === ctx.trigger)?.fields ?? []), ...stepPills(ctx.meta, before), ...errorPills];
+  const loopPills: Pill[] = ctx.inLoop ? [
+    { path: "loop.user.id", label: "Current member: id" }, { path: "loop.user.email", label: "Current member: email" },
+    { path: "loop.user.username", label: "Current member: username" }, { path: "loop.user.status", label: "Current member: status" },
+    { path: "loop.index", label: "Loop: position (1-based)" }, { path: "loop.total", label: "Loop: member count" },
+  ] : [];
+  const pills = [...(ctx.meta.triggers.find((t) => t.type === ctx.trigger)?.fields ?? []), ...stepPills(ctx.meta, before), ...errorPills, ...loopPills];
   const payload = ctx.meta.triggers.find((t) => t.type === ctx.trigger)?.payload_pills ?? false;
   const userField = (
     <div className="space-y-1"><Label>Target user</Label><PillInput label="Target user" value={cfg.user ?? ""} onChange={(v) => set({ user: v })} pills={pills} payload={payload} /></div>
@@ -178,13 +185,35 @@ function StepForm({ step, ctx, onChange }: { step: StepNode; ctx: Ctx; onChange:
           <div className="space-y-1"><Label>Message</Label><PillInput label="Stop message" value={cfg.message ?? ""} onChange={(v) => set({ message: v })} pills={pills} payload={payload} /></div>
         </div>
       );
+    case "for_each_member":
+      return (
+        <div className="grid gap-3 md:grid-cols-[1fr_10rem]">
+          <div className="space-y-1"><Label>Group</Label>
+            <Select label="Loop group" value={cfg.group_id ?? ""} onChange={(v) => set({ group_id: v ? Number(v) : null })}>
+              <option value="">Choose a group…</option>{ctx.groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </Select>
+            <p className="text-xs text-muted-foreground">The steps below run once per member. Use “Current member” datapills inside. Loops cannot be nested.</p></div>
+          <div className="space-y-1"><Label>Max members (1–100)</Label>
+            <Input aria-label="Loop limit" type="number" min={1} max={100} className="h-10" value={cfg.limit ?? 50} onChange={(e) => set({ limit: Number(e.target.value) })} /></div>
+        </div>
+      );
+    case "approval":
+      return (
+        <div className="grid gap-3 md:grid-cols-[1fr_12rem]">
+          <div className="space-y-1"><Label>Question for the approver</Label><PillInput label="Approval message" value={cfg.message ?? ""} onChange={(v) => set({ message: v })} pills={pills} payload={payload} /></div>
+          <div className="space-y-1"><Label>Give up after (hours, 1–168)</Label>
+            <Input aria-label="Approval timeout hours" type="number" min={1} max={168} className="h-10" value={cfg.timeout_hours ?? 24} onChange={(e) => set({ timeout_hours: Number(e.target.value) })} />
+            <p className="text-xs text-muted-foreground">Approved runs “Then”; denied or timed out runs “Otherwise”.</p></div>
+        </div>
+      );
     default:
       return null;
   }
 }
 
 function StepList({ steps, ctx, onChange, depth }: { steps: StepNode[]; ctx: Ctx; onChange: (s: StepNode[]) => void; depth: number }) {
-  const addable = ctx.meta.steps.filter((s) => s.type !== "condition" || depth < ctx.meta.limits.max_nesting);
+  const addable = ctx.meta.steps.filter((s) => (s.type !== "condition" && s.type !== "approval") || depth < ctx.meta.limits.max_nesting)
+    .filter((s) => !(s.type === "for_each_member" && (depth > 0 || ctx.handler)) && !(s.type === "approval" && ctx.handler));
   const [type, setType] = useState("log");
   const root = ctx.root;
   return (
@@ -216,11 +245,15 @@ function StepList({ steps, ctx, onChange, depth }: { steps: StepNode[]; ctx: Ctx
                   </div>
                 </details>
               )}
-              {s.type === "condition" && (
+              {(s.type === "condition" || s.type === "approval") && (
                 <div className="space-y-3">
-                  <div><div className="mb-1 text-sm font-medium">Then</div><StepList steps={s.then ?? []} ctx={ctx} depth={depth + 1} onChange={(n) => replace({ ...s, then: n })} /></div>
-                  <div><div className="mb-1 text-sm font-medium">Otherwise</div><StepList steps={s.else ?? []} ctx={ctx} depth={depth + 1} onChange={(n) => replace({ ...s, else: n })} /></div>
+                  <div><div className="mb-1 text-sm font-medium">{s.type === "approval" ? "If approved" : "Then"}</div><StepList steps={s.then ?? []} ctx={ctx} depth={depth + 1} onChange={(n) => replace({ ...s, then: n })} /></div>
+                  <div><div className="mb-1 text-sm font-medium">{s.type === "approval" ? "If denied or no answer in time" : "Otherwise"}</div><StepList steps={s.else ?? []} ctx={ctx} depth={depth + 1} onChange={(n) => replace({ ...s, else: n })} /></div>
                 </div>
+              )}
+              {s.type === "for_each_member" && (
+                <div><div className="mb-1 text-sm font-medium">For each member</div>
+                  <StepList steps={s.then ?? []} ctx={{ ...ctx, inLoop: true }} depth={depth + 1} onChange={(n) => replace({ ...s, then: n })} /></div>
               )}
             </CardContent>
           </Card>
@@ -232,7 +265,7 @@ function StepList({ steps, ctx, onChange, depth }: { steps: StepNode[]; ctx: Ctx
           <optgroup label="Control">{addable.filter((m) => m.kind === "control").map((m) => <option key={m.type} value={m.type}>{m.label}</option>)}</optgroup>
         </Select>
         <Button type="button" variant="secondary" size="sm" disabled={allSteps(root).length >= ctx.meta.limits.max_steps}
-          onClick={() => { const n: StepNode = { id: nextStepId([...root, ...(ctx.other ?? [])]), type, config: defaultConfig(type, ctx), on_error: "fail", max_attempts: 3 }; if (type === "condition") { n.then = []; n.else = []; } onChange([...steps, n]); }}>
+          onClick={() => { const n: StepNode = { id: nextStepId([...root, ...(ctx.other ?? [])]), type, config: defaultConfig(type, ctx), on_error: "fail", max_attempts: 3 }; if (type === "condition" || type === "approval") { n.then = []; n.else = []; } if (type === "for_each_member") n.then = []; onChange([...steps, n]); }}>
           <Plus className="mr-1 h-4 w-4" /> Add step
         </Button>
       </div>
@@ -333,7 +366,11 @@ export default function RecipeBuilderPage() {
           )}
           {def.trigger.type === "user.attribute_changed" && (
             <div className="space-y-1"><Label>Attribute</Label>
-              <Select label="Attribute to watch" value={def.trigger.config.attribute ?? ""} onChange={(v) => tcfg({ attribute: v })}>{meta.managed_attributes.map((a) => <option key={a.key} value={a.key}>{a.display_name}</option>)}</Select></div>
+              <Select label="Attribute to watch" value={def.trigger.config.attribute ?? ""} onChange={(v) => tcfg({ attribute: v })}>{meta.managed_attributes.map((a) => <option key={a.key} value={a.key}>{a.display_name}</option>)}</Select>
+              <div className="grid gap-3 pt-2 md:grid-cols-2">
+                <div className="space-y-1"><Label htmlFor="t-from">Only when it changes from (optional)</Label><Input id="t-from" placeholder="any value" value={def.trigger.config.from_value ?? ""} onChange={(e) => tcfg({ from_value: e.target.value === "" ? null : e.target.value })} /></div>
+                <div className="space-y-1"><Label htmlFor="t-to">…to (optional)</Label><Input id="t-to" placeholder="any value" value={def.trigger.config.to_value ?? ""} onChange={(e) => tcfg({ to_value: e.target.value === "" ? null : e.target.value })} /></div>
+              </div></div>
           )}
           {def.trigger.type === "login.failed" && (
             <div className="space-y-1"><Label htmlFor="t-min">Minimum consecutive failures</Label><Input id="t-min" type="number" min={1} max={100} className="w-32" value={def.trigger.config.min_failures ?? 1} onChange={(e) => tcfg({ min_failures: Number(e.target.value) })} /></div>

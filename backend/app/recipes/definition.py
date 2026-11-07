@@ -30,12 +30,15 @@ _ID = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 EVENT_TRIGGERS = (
     "user.created", "user.activated", "user.deactivated", "user.updated", "user.attribute_changed",
     "group.member_added", "group.member_removed", "login.failed",
+    "user.deleted", "group.created", "group.deleted", "login.succeeded",
 )
 TRIGGER_TYPES = EVENT_TRIGGERS + ("schedule", "manual", "webhook")
 ACTION_TYPES = (
     "add_to_group", "remove_from_group", "set_attribute", "activate_user", "deactivate_user", "http_request", "log",
 )
-STEP_TYPES = ACTION_TYPES + ("condition", "stop")
+STEP_TYPES = ACTION_TYPES + ("condition", "stop", "for_each_member", "approval")
+BRANCHING = ("condition", "approval")  # then/else steps
+MAX_LOOP_MEMBERS = 100
 STATE_CHANGING = ("add_to_group", "remove_from_group", "set_attribute", "activate_user", "deactivate_user")
 
 
@@ -57,6 +60,8 @@ class _TrigGroup(_Cfg):
 
 class _TrigAttribute(_Cfg):
     attribute: str = Field(..., min_length=1, max_length=50)
+    from_value: Optional[str] = Field(None, max_length=500)  # only when the old value equals this ("" = it was unset)
+    to_value: Optional[str] = Field(None, max_length=500)    # only when the new value equals this ("" = it became unset)
 
 
 class _TrigLogin(_Cfg):
@@ -68,7 +73,8 @@ class _TrigSchedule(_Cfg):
 
 
 TRIGGER_CFG = {
-    **{t: _TrigNone for t in ("user.created", "user.activated", "user.deactivated", "user.updated", "manual", "webhook")},
+    **{t: _TrigNone for t in ("user.created", "user.activated", "user.deactivated", "user.updated", "manual", "webhook",
+                              "user.deleted", "group.created", "group.deleted", "login.succeeded")},
     "group.member_added": _TrigGroup, "group.member_removed": _TrigGroup,
     "user.attribute_changed": _TrigAttribute, "login.failed": _TrigLogin, "schedule": _TrigSchedule,
 }
@@ -108,6 +114,16 @@ class _Condition(_Cfg):
     conditions: List[Dict[str, Any]]
 
 
+class _Loop(_Cfg):
+    group_id: int
+    limit: int = Field(50, ge=1, le=MAX_LOOP_MEMBERS)  # at most this many members (lowest ids first); the rest are skipped
+
+
+class _Approval(_Cfg):
+    message: str = Field(..., min_length=1, max_length=500)
+    timeout_hours: int = Field(24, ge=1, le=168)  # no decision in time = "denied" branch
+
+
 class _Stop(_Cfg):
     outcome: Literal["success", "failed"] = "success"
     message: str = Field("", max_length=500)
@@ -116,7 +132,7 @@ class _Stop(_Cfg):
 STEP_CFG = {
     "add_to_group": _AddRemove, "remove_from_group": _AddRemove, "set_attribute": _SetAttr,
     "activate_user": _UserOnly, "deactivate_user": _UserOnly, "http_request": _Http, "log": _Log,
-    "condition": _Condition, "stop": _Stop,
+    "condition": _Condition, "stop": _Stop, "for_each_member": _Loop, "approval": _Approval,
 }
 
 # datapill catalog ------------------------------------------------------------------------------
@@ -135,6 +151,10 @@ TRIGGER_FIELDS = {
         ("trigger.attribute.key", "Attribute"), ("trigger.attribute.old", "Old value"), ("trigger.attribute.new", "New value")],
     "group.member_added": _COMMON + _USER + _GROUP,
     "group.member_removed": _COMMON + _USER + _GROUP,
+    "group.created": _COMMON + _GROUP,
+    "group.deleted": _COMMON + _GROUP,
+    "user.deleted": _COMMON + [("trigger.user.id", "User id"), ("trigger.user.email", "User email")],
+    "login.succeeded": _COMMON + _USER + [("trigger.login.method", "Sign-in method")],
     "login.failed": _COMMON + _USER + [("trigger.login.consecutive_failures", "Consecutive failures")],
     "schedule": _COMMON + [("trigger.schedule.scheduled_for", "Scheduled for")],
     "manual": _COMMON + _USER + [("trigger.manual.started_by", "Started by (admin id)")],
@@ -143,7 +163,7 @@ TRIGGER_FIELDS = {
 _DYNAMIC_PREFIXES = {  # any suffix is allowed below these
     "trigger.user.attributes.": ("user.created", "user.activated", "user.deactivated", "user.updated",
                                  "user.attribute_changed", "group.member_added", "group.member_removed",
-                                 "login.failed", "manual"),
+                                 "login.failed", "login.succeeded", "manual"),
     "trigger.payload.": ("manual", "webhook"),
 }
 STEP_OUTPUTS = {
@@ -151,6 +171,7 @@ STEP_OUTPUTS = {
     "set_attribute": ["user_id", "attribute", "value", "changed"],
     "activate_user": ["user_id", "changed"], "deactivate_user": ["user_id", "changed"],
     "http_request": ["status_code", "ok", "body", "json"], "log": ["message"], "condition": ["result"], "stop": [],
+    "for_each_member": ["total", "processed"], "approval": ["decision", "decided_by"],
 }
 _RECIPE_FIELDS = ["recipe.id", "recipe.name", "recipe.version", "job.id"]
 _SAFE_USER_FIELDS = {"id", "email", "username", "status"}
@@ -168,7 +189,7 @@ def taint_checker(db: Session) -> Callable[[str], None]:
         segs = path.split(".")
         if segs[0] == "error":  # may carry text from a remote system or a user-controlled value
             raise tpl.TemplateError(f"'{path}' cannot be used to change accounts or make decisions; use it in log or http steps")
-        if segs[:2] == ["trigger", "user"]:
+        if segs[:2] in (["trigger", "user"], ["loop", "user"]):
             ok = len(segs) == 3 and segs[2] in _SAFE_USER_FIELDS
             ok = ok or (len(segs) == 4 and segs[2] == "attributes" and segs[3] in managed)
             if not ok:
@@ -189,10 +210,17 @@ def trigger_field_paths(trigger_type: str, db: Session) -> List[Dict[str, str]]:
 
 
 ERROR_PILLS = ("error.message", "error.step_id")
+LOOP_PILLS = ("loop.index", "loop.total", "loop.user.id", "loop.user.email", "loop.user.username", "loop.user.status")
 
 
-def _pill_allowed(path: str, trigger_type: str, earlier_steps: Dict[str, str], db_keys: set, handler: bool = False) -> None:
+def _pill_allowed(path: str, trigger_type: str, earlier_steps: Dict[str, str], db_keys: set, handler: bool = False, in_loop: bool = False) -> None:
     segs = path.split(".")
+    if segs[0] == "loop":
+        if not in_loop:
+            raise tpl.TemplateError("loop datapills are only available inside a 'for each member' step")
+        if path in LOOP_PILLS or (path.startswith("loop.user.attributes.") and len(segs) == 4 and segs[3] in db_keys):
+            return
+        raise tpl.TemplateError(f"unknown datapill '{path}'")
     if segs[0] == "error":
         if handler and path in ERROR_PILLS:
             return
@@ -264,7 +292,7 @@ def validate_definition(db: Session, definition: Any, *, for_publish: bool = Fal
     seen: Dict[str, str] = {}
     used: set = set()
     count = [0]
-    mode = {"handler": False}
+    mode = {"handler": False, "loop": False}
 
     def walk(steps: Any, depth: int) -> List[dict]:
         if not isinstance(steps, list):
@@ -295,7 +323,7 @@ def validate_definition(db: Session, definition: Any, *, for_publish: bool = Fal
             if name is not None and (not isinstance(name, str) or len(name) > 100):
                 raise DefinitionError(f"{where}: name is too long")
             try:
-                _check_step(db, stype, cfg, ttype, dict(seen), managed, taint, where, mode["handler"])
+                _check_step(db, stype, cfg, ttype, dict(seen), managed, taint, where, mode["handler"], mode["loop"])
             except tpl.TemplateError as e:
                 raise DefinitionError(f"{where}: {e}")
             node = {"id": sid, "type": stype, "name": name, "config": cfg, "on_error": on_error, "max_attempts": attempts}
@@ -307,17 +335,38 @@ def validate_definition(db: Session, definition: Any, *, for_publish: bool = Fal
                 try:
                     cfg["conditions"] = cond.validate(cfg["match"], cfg["conditions"])
                     for c in cfg["conditions"]:
-                        _pill_allowed(c["left"], ttype, seen, managed, mode["handler"])
+                        _pill_allowed(c["left"], ttype, seen, managed, mode["handler"], mode["loop"])
                         taint(c["left"])
                         for p in tpl.pills_in(c["value"]):
-                            _pill_allowed(p, ttype, seen, managed, mode["handler"])
+                            _pill_allowed(p, ttype, seen, managed, mode["handler"], mode["loop"])
                             taint(p)
                 except tpl.TemplateError as e:
                     raise DefinitionError(f"{where}: {e}")
                 node["then"] = walk(st.get("then") or [], depth + 1)
                 node["else"] = walk(st.get("else") or [], depth + 1)
+            elif stype == "approval":
+                if depth >= MAX_NESTING:
+                    raise DefinitionError(f"branches can be nested at most {MAX_NESTING} deep")
+                if mode["handler"]:
+                    raise DefinitionError(f"{where}: the error handler cannot wait for approvals")
+                node["then"] = walk(st.get("then") or [], depth + 1)   # approved
+                node["else"] = walk(st.get("else") or [], depth + 1)   # denied or timed out
+            elif stype == "for_each_member":
+                if mode["loop"]:
+                    raise DefinitionError(f"{where}: loops cannot be nested")
+                if mode["handler"]:
+                    raise DefinitionError(f"{where}: the error handler cannot loop")
+                if st.get("else"):
+                    raise DefinitionError(f"{where}: a loop has only a body")
+                mode["loop"] = True
+                try:
+                    node["then"] = walk(st.get("then") or [], depth + 1)
+                finally:
+                    mode["loop"] = False
+                if for_publish and not node["then"]:
+                    raise DefinitionError(f"{where}: add at least one step inside the loop")
             elif st.get("then") or st.get("else"):
-                raise DefinitionError(f"{where}: only conditions have branches")
+                raise DefinitionError(f"{where}: only conditions, approvals and loops have nested steps")
             out.append(node)
         return out
 
@@ -335,11 +384,11 @@ def validate_definition(db: Session, definition: Any, *, for_publish: bool = Fal
     return out
 
 
-def _check_step(db, stype, cfg, ttype, earlier, managed, taint, where, handler=False) -> None:
+def _check_step(db, stype, cfg, ttype, earlier, managed, taint, where, handler=False, in_loop=False) -> None:
     if stype in ("condition",):
         return
     for p in tpl.all_pills({k: v for k, v in cfg.items() if k != "connection_id"}):
-        _pill_allowed(p, ttype, earlier, managed, handler)
+        _pill_allowed(p, ttype, earlier, managed, handler, in_loop)
         if stype in STATE_CHANGING:
             taint(p)
     if stype in ("add_to_group", "remove_from_group"):
@@ -348,6 +397,10 @@ def _check_step(db, stype, cfg, ttype, earlier, managed, taint, where, handler=F
             raise tpl.TemplateError("unknown group")
         if g.is_system_group:
             raise tpl.TemplateError("system groups cannot be changed by recipes")
+    elif stype == "for_each_member":
+        g = db.get(Group, cfg["group_id"])
+        if g is None:
+            raise tpl.TemplateError("unknown group")
     elif stype == "set_attribute":
         if cfg["attribute"] not in managed:
             raise tpl.TemplateError(
@@ -370,7 +423,15 @@ def compile_program(steps: List[dict]) -> List[dict]:
 
     def emit(items: List[dict]) -> None:
         for st in items:
-            if st["type"] != "condition":
+            if st["type"] == "for_each_member":
+                head_pc = len(prog)
+                head = {**st, "end_to": 0}
+                prog.append(head)
+                emit(st.get("then", []))
+                prog.append({"type": "loop_next", "id": "", "loop_pc": head_pc})
+                head["end_to"] = len(prog)
+                continue
+            if st["type"] not in BRANCHING:
                 prog.append(st)
                 continue
             instr = {**st, "true_to": 0, "false_to": 0}

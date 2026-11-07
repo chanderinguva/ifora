@@ -42,7 +42,7 @@ export default function JobHistoryPage() {
         </select>
         <select aria-label="Filter by status" className={fieldClass + " !w-44"} value={status} onChange={(e) => { setPage(1); setStatus(e.target.value); }}>
           <option value="">Any status</option>
-          {["queued", "running", "succeeded", "failed", "cancelled"].map((s) => <option key={s} value={s}>{s}</option>)}
+          {["queued", "running", "waiting", "succeeded", "failed", "cancelled"].map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
         <button className="rounded border px-3 text-sm" onClick={load}>Refresh</button>
       </div>
@@ -68,7 +68,13 @@ export default function JobHistoryPage() {
                   {j.mode === "live" && (j.status === "failed" || j.status === "cancelled") && (
                     <button className="underline underline-offset-4" onClick={() => { if (confirm("Run this job again? Steps that already took effect (HTTP calls, changes) will happen again.")) act(`/admin/recipes/jobs/${j.id}/rerun`, `Job #${j.id} queued again`); }}>Re-run</button>
                   )}
-                  {j.mode === "live" && (j.status === "queued" || j.status === "running") && !j.cancel_requested && (
+                  {j.mode === "live" && j.status === "waiting" && (
+                    <>
+                      <button className="underline underline-offset-4" onClick={() => act(`/admin/recipes/jobs/${j.id}/approve`, `Job #${j.id} approved`)}>Approve</button>
+                      <button className="underline underline-offset-4" onClick={() => act(`/admin/recipes/jobs/${j.id}/deny`, `Job #${j.id} denied`)}>Deny</button>
+                    </>
+                  )}
+                  {j.mode === "live" && (j.status === "queued" || j.status === "running" || j.status === "waiting") && !j.cancel_requested && (
                     <button className="underline underline-offset-4" onClick={() => act(`/admin/recipes/jobs/${j.id}/cancel`, `Job #${j.id} will stop`)}>Cancel</button>
                   )}
                   <button className="underline underline-offset-4" onClick={() => http<Job>(`/admin/recipes/jobs/${j.id}`).then(setOpen).catch((e) => setErr(e.message))}>Details</button></td>
