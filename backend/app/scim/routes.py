@@ -17,7 +17,8 @@ from backend.app.groups import rules as group_rules
 from backend.app.groups.model import Group, user_group_association as assoc
 from backend.app.oidc.models import RefreshToken
 from backend.app.profiles import catalog as profile_catalog
-from backend.app.scim import discovery, filter as flt, mapping
+from backend.app.config import settings
+from backend.app.scim import discovery, filter as flt, mapping, retention
 from backend.app.scim.auth import Ctx, audit, get_ctx
 from backend.app.scim.errors import (
     MEDIA_TYPE, ScimError, invalid_syntax, invalid_value, mutability, not_found, uniqueness,
@@ -312,6 +313,7 @@ def apply_user_update(ctx: Ctx, user: User, data: dict) -> None:
         user.status = "active"
         changed.append("active")
         action = AuditAction.SCIM_USER_ACTIVATED
+        retention.clear_deactivation(db, user)
     elif data["active"] is False and user.status != "inactive":
         user.status = "inactive"
         changed.append("active")
@@ -321,6 +323,9 @@ def apply_user_update(ctx: Ctx, user: User, data: dict) -> None:
         user.updated_at = datetime.now(timezone.utc)
         db.flush()
         group_rules.evaluate_user(db, user, ctx.request, None)
+        db.flush()
+        if user.status == "inactive" and action == AuditAction.SCIM_USER_DEACTIVATED:
+            retention.mark_deactivated(db, user, ctx.token)
         audit(db, action, ctx.request, ctx.token, user.id, "user", {"changed": changed})
     _commit(db)
     db.refresh(user)
@@ -371,6 +376,8 @@ def delete_user(uid: str, request: Request, ctx: Ctx = Depends(get_ctx)):
         _deactivate_side_effects(db, user)
         db.flush()
         group_rules.evaluate_user(db, user, request, None)
+        db.flush()
+        retention.mark_deactivated(db, user, ctx.token)
         audit(db, AuditAction.SCIM_USER_DEACTIVATED, request, ctx.token, user.id, "user", {"via": "delete"})
         _commit(db)
     return Response(status_code=204)
@@ -384,7 +391,7 @@ def _group_members_exists(pred):
 
 _ext_group = select(ScimLink.external_id).where(ScimLink.group_id == Group.id).correlate(Group).scalar_subquery()
 GROUP_FILTER_ATTRS = {
-    "id": flt.Attr("str", cast(Group.id, String)),
+    "id": flt.Attr("str", Group.public_id),
     "displayname": flt.Attr("str", Group.name),
     "externalid": flt.Attr("str", _ext_group),
     "members.value": flt.Attr("str", None, exists=_group_members_exists),
@@ -393,7 +400,10 @@ GROUP_FILTER_ATTRS = {
 
 def _get_group(db: Session, gid: str) -> Group:
     g = None
-    if gid.isdigit() and len(gid) < 10:
+    if len(gid) <= 36 and not gid.isdigit():
+        g = db.query(Group).filter(Group.public_id == gid).first()
+    elif gid.isdigit() and len(gid) < 10 and settings.SCIM_ACCEPT_LEGACY_GROUP_IDS:
+        # integer ids were what earlier versions handed out; IdPs that stored them keep working until switched off
         g = db.query(Group).filter(Group.id == int(gid)).first()
     if g is None or g.is_system_group:
         raise not_found("Group not found")

@@ -42,6 +42,7 @@ class Group(TenantOwned, Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
 
     # Core identity
+    public_id = Column(String(36), nullable=False, unique=True, default=lambda: str(__import__("uuid").uuid4()))  # opaque id used by SCIM
     name = Column(String(100), nullable=False)
     description = Column(String(500), nullable=True)
 

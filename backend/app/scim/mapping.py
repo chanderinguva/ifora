@@ -100,7 +100,7 @@ def render_user(db: Session, user, external_id: Optional[str]) -> Dict[str, Any]
         doc["schemas"].append(PROFILE_URN)
     visible = [g for g in user.groups if not g.is_system_group]
     doc["groups"] = [
-        {"value": str(g.id), "display": g.name, "$ref": f"{base_url()}/Groups/{g.id}"} for g in sorted(visible, key=lambda g: g.id)
+        {"value": g.public_id, "display": g.name, "$ref": f"{base_url()}/Groups/{g.public_id}"} for g in sorted(visible, key=lambda g: g.id)
     ]
     return doc
 
@@ -234,7 +234,7 @@ def ingest_user(db: Session, doc: Any, *, current_attrs: Dict[str, Any], current
 def render_group(group, members: List[Any], external_id: Optional[str]) -> Dict[str, Any]:
     doc: Dict[str, Any] = {
         "schemas": [GROUP_URN],
-        "id": str(group.id),
+        "id": group.public_id,
         "displayName": group.name,
         "members": [
             {"value": u.public_id, "display": f"{u.first_name} {u.last_name}", "type": "User",
@@ -252,6 +252,6 @@ def group_meta(group, member_ids: List[int], external_id: Optional[str]) -> Dict
         "resourceType": "Group",
         "created": group.created_at.isoformat() if group.created_at else None,
         "lastModified": group.updated_at.isoformat() if group.updated_at else None,
-        "location": f"{base_url()}/Groups/{group.id}",
+        "location": f"{base_url()}/Groups/{group.public_id}",
         "version": etag("g", group.updated_at, group.name, external_id, sorted(member_ids)),
     }

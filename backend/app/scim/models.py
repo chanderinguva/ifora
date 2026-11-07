@@ -3,8 +3,9 @@
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    CheckConstraint, Column, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint, text,
+    Boolean, CheckConstraint, Column, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint, text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 
 from backend.app.db import Base
 from backend.app.tenancy import TenantOwned
@@ -28,6 +29,11 @@ class ScimToken(TenantOwned, Base):
     expires_at = Column(DateTime(timezone=True), nullable=True)
     revoked_at = Column(DateTime(timezone=True), nullable=True)
     last_used_at = Column(DateTime(timezone=True), nullable=True)
+    read_only = Column(Boolean, nullable=False, default=False, server_default="false")  # GET/HEAD only
+    users_only = Column(Boolean, nullable=False, default=False, server_default="false")  # /Groups is off limits
+    allowed_cidrs = Column(JSONB, nullable=True)  # None/empty = any source address
+    replaced_by_id = Column(Integer, nullable=True)  # set when this token was rotated; it keeps working until its (shortened) expiry
+    hard_delete_after_days = Column(Integer, nullable=True)  # users this token deactivated are deleted after N days (None = never)
 
     @property
     def status(self) -> str:
@@ -48,7 +54,24 @@ class ScimToken(TenantOwned, Base):
             "expires_at": iso(self.expires_at),
             "revoked_at": iso(self.revoked_at),
             "last_used_at": iso(self.last_used_at),
+            "read_only": bool(self.read_only),
+            "users_only": bool(self.users_only),
+            "allowed_cidrs": list(self.allowed_cidrs or []),
+            "replaced_by_id": self.replaced_by_id,
+            "hard_delete_after_days": self.hard_delete_after_days,
         }
+
+
+class ScimDeprovisioned(TenantOwned, Base):
+    """Which token deactivated a user and when, so an optional per-token retention policy can delete them later (S6)."""
+
+    __tablename__ = "scim_deprovisioned"
+    __table_args__ = (UniqueConstraint("tenant_id", "user_id", name="uq_scim_deprovisioned_tenant_user"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    token_id = Column(Integer, ForeignKey("scim_tokens.id", ondelete="CASCADE"), nullable=False)
+    deactivated_at = Column(DateTime(timezone=True), nullable=False, default=_now)
 
 
 class ScimLink(TenantOwned, Base):

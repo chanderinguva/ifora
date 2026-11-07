@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     RECIPES_WEBHOOK_MAX_BODY_BYTES: int = Field(default=65536)
     RECIPES_WEBHOOK_REPLAY_SECONDS: int = Field(default=300)
     RECIPES_MAX_RECIPES: int = Field(default=100)
+    SCIM_ACCEPT_LEGACY_GROUP_IDS: bool = Field(default=True)  # accept integer group ids on lookup (new ids are opaque UUIDs)
     RECIPES_DEFAULT_RATE_PER_HOUR: int = Field(default=0)  # live jobs per recipe per rolling hour when the recipe sets none (0 = unlimited)
     RECIPES_ALERT_WINDOW_MINUTES: int = Field(default=60)
     RECIPES_ALERT_MIN_JOBS: int = Field(default=5)  # finished jobs in the window before a failure rate means anything
