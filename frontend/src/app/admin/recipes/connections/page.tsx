@@ -12,8 +12,10 @@ import { RecipeTabs } from "@/components/recipe-bits";
 import { http } from "@/lib/http";
 import type { Connection } from "@/lib/recipes";
 
-type Draft = { id?: number; name: string; kind: "bearer" | "header"; header_name: string; allowed_host: string; secret: string };
-const empty = (): Draft => ({ name: "", kind: "bearer", header_name: "X-Api-Key", allowed_host: "", secret: "" });
+type Kind = Connection["kind"];
+type Draft = { id?: number; name: string; kind: Kind; header_name: string; allowed_host: string; paths: string; client_id: string; token_url: string; scope: string; secret: string };
+const empty = (): Draft => ({ name: "", kind: "bearer", header_name: "X-Api-Key", allowed_host: "", paths: "", client_id: "", token_url: "", scope: "", secret: "" });
+const KIND_LABEL: Record<Kind, string> = { bearer: "Bearer token", header: "Custom header", oauth2_client_credentials: "OAuth2 client credentials", slack_webhook: "Slack webhook" };
 
 export default function ConnectionsPage() {
   const [items, setItems] = useState<Connection[] | null>(null);
@@ -49,18 +51,32 @@ export default function ConnectionsPage() {
         <Card className="mb-6" data-testid="connection-editor"><CardContent className="space-y-3 pt-6">
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1"><Label htmlFor="c-name">Name</Label><Input id="c-name" value={draft.name} maxLength={100} onChange={(e) => setDraft({ ...draft, name: e.target.value })} /></div>
-            <div className="space-y-1"><Label htmlFor="c-host">Only send to host</Label><Input id="c-host" placeholder="api.example.com" value={draft.allowed_host} onChange={(e) => setDraft({ ...draft, allowed_host: e.target.value })} /></div>
+            {draft.kind !== "slack_webhook" && <div className="space-y-1"><Label htmlFor="c-host">Only send to host</Label><Input id="c-host" placeholder="api.example.com" value={draft.allowed_host} onChange={(e) => setDraft({ ...draft, allowed_host: e.target.value })} /></div>}
             <div className="space-y-1"><Label htmlFor="c-kind">Send the secret as</Label>
               <select id="c-kind" className={fieldClass} value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value as Draft["kind"] })}>
                 <option value="bearer">Authorization: Bearer …</option><option value="header">A custom header</option>
+                <option value="oauth2_client_credentials">OAuth2 (client credentials)</option><option value="slack_webhook">Slack incoming webhook</option>
               </select></div>
             {draft.kind === "header" && <div className="space-y-1"><Label htmlFor="c-header">Header name</Label><Input id="c-header" value={draft.header_name} onChange={(e) => setDraft({ ...draft, header_name: e.target.value })} /></div>}
-            <div className="space-y-1 sm:col-span-2"><Label htmlFor="c-secret">{draft.id ? "New secret (leave empty to keep the current one)" : "Secret"}</Label>
+            {draft.kind === "oauth2_client_credentials" && <>
+              <div className="space-y-1"><Label htmlFor="c-client">Client ID</Label><Input id="c-client" value={draft.client_id} onChange={(e) => setDraft({ ...draft, client_id: e.target.value })} /></div>
+              <div className="space-y-1"><Label htmlFor="c-scope">Scope (optional)</Label><Input id="c-scope" value={draft.scope} onChange={(e) => setDraft({ ...draft, scope: e.target.value })} /></div>
+              <div className="space-y-1 sm:col-span-2"><Label htmlFor="c-token">Token URL (https, on the host above)</Label><Input id="c-token" placeholder="https://api.example.com/oauth/token" value={draft.token_url} onChange={(e) => setDraft({ ...draft, token_url: e.target.value })} /></div>
+            </>}
+            {draft.kind !== "slack_webhook" && (
+              <div className="space-y-1 sm:col-span-2"><Label htmlFor="c-paths">Only these paths (optional, one prefix per line, e.g. /api/v1/)</Label>
+                <textarea id="c-paths" rows={3} className={fieldClass} value={draft.paths} onChange={(e) => setDraft({ ...draft, paths: e.target.value })} />
+                <p className="text-xs text-muted-foreground">Empty = any path on the host. A prefix matches that path and everything below it.</p></div>
+            )}
+            <div className="space-y-1 sm:col-span-2"><Label htmlFor="c-secret">{draft.id ? "New secret (leave empty to keep the current one)" : draft.kind === "slack_webhook" ? "Webhook URL" : draft.kind === "oauth2_client_credentials" ? "Client secret" : "Secret"}</Label>
               <Input id="c-secret" type="password" autoComplete="off" value={draft.secret} onChange={(e) => setDraft({ ...draft, secret: e.target.value })} /></div>
           </div>
           <div className="flex gap-2">
-            <Button disabled={!draft.name.trim() || !draft.allowed_host.trim() || (!draft.id && !draft.secret)} onClick={() => run(async () => {
-              const body = { name: draft.name, kind: draft.kind, header_name: draft.kind === "header" ? draft.header_name : null, allowed_host: draft.allowed_host, secret: draft.secret || null };
+            <Button disabled={!draft.name.trim() || (draft.kind !== "slack_webhook" && !draft.allowed_host.trim()) || (!draft.id && !draft.secret)} onClick={() => run(async () => {
+              const body = { name: draft.name, kind: draft.kind, header_name: draft.kind === "header" ? draft.header_name : null, allowed_host: draft.allowed_host,
+                allowed_paths: draft.kind === "slack_webhook" ? null : draft.paths.split("\n").map((p) => p.trim()).filter(Boolean),
+                client_id: draft.kind === "oauth2_client_credentials" ? draft.client_id : null, token_url: draft.kind === "oauth2_client_credentials" ? draft.token_url : null,
+                scope: draft.kind === "oauth2_client_credentials" ? draft.scope || null : null, secret: draft.secret || null };
               if (draft.id) await http(`/admin/recipe-connections/${draft.id}`, { method: "PUT", body }); else await http("/admin/recipe-connections", { method: "POST", body });
               setDraft(null);
             }, "Connection saved")}>Save connection</Button>
@@ -76,10 +92,10 @@ export default function ConnectionsPage() {
             {items?.map((c) => (
               <tr key={c.id} className="border-b last:border-0">
                 <td className={td + " font-medium"}>{c.name}</td><td className={td}>{c.allowed_host}</td>
-                <td className={td}>{c.kind === "bearer" ? "Bearer token" : c.header_name}</td>
+                <td className={td}>{c.kind === "header" ? c.header_name : KIND_LABEL[c.kind]}{c.allowed_paths && c.allowed_paths.length > 0 && <div className="text-xs text-muted-foreground">paths: {c.allowed_paths.join(", ")}</div>}</td>
                 <td className={td}><Badge tone="good">stored, hidden</Badge></td>
                 <td className={td + " space-x-2 whitespace-nowrap text-right"}>
-                  <Button size="sm" variant="outline" onClick={() => setDraft({ id: c.id, name: c.name, kind: c.kind, header_name: c.header_name ?? "X-Api-Key", allowed_host: c.allowed_host, secret: "" })}>Edit</Button>
+                  <Button size="sm" variant="outline" onClick={() => setDraft({ id: c.id, name: c.name, kind: c.kind, header_name: c.header_name ?? "X-Api-Key", allowed_host: c.allowed_host, paths: (c.allowed_paths ?? []).join("\n"), client_id: c.client_id ?? "", token_url: c.token_url ?? "", scope: c.scope ?? "", secret: "" })}>Edit</Button>
                   <Button size="sm" variant="outline" onClick={() => { if (confirm(`Delete connection "${c.name}"? Recipes using it will fail until updated.`)) run(() => http(`/admin/recipe-connections/${c.id}`, { method: "DELETE" }), "Connection deleted"); }}>Delete</Button>
                 </td>
               </tr>

@@ -82,9 +82,13 @@ export type Job = {
 export type Connection = {
   id: number;
   name: string;
-  kind: "bearer" | "header";
+  kind: "bearer" | "header" | "oauth2_client_credentials" | "slack_webhook";
   header_name: string | null;
   allowed_host: string;
+  allowed_paths?: string[];
+  client_id?: string | null;
+  token_url?: string | null;
+  scope?: string | null;
   has_secret: boolean;
 };
 
