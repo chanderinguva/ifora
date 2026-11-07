@@ -74,6 +74,8 @@ _READ_METHODS = ("GET", "HEAD")
 
 def scope_violation(token: ScimToken, method: str, path: str) -> Optional[str]:
     rel = path.split("/scim/v2", 1)[-1].lstrip("/")
+    if rel.rstrip("/").lower().endswith(".search"):
+        method = "GET"  # POST search is a read
     if token.read_only and method.upper() not in _READ_METHODS:
         return "This token is read-only"
     if token.users_only and rel.split("/", 1)[0].lower().split(".")[0] == "groups":

@@ -312,3 +312,123 @@ def test_projection_applies_to_writes_and_groups_and_never_to_errors(db, super_a
     assert "members" not in s.get(f"/Groups/{g['id']}", excludedAttributes="members").json()
     err = s.get("/Users/does-not-exist", attributes="userName")
     assert err.status_code == 404 and err.json()["status"] == "404"
+
+
+# ---- S7: sorting, POST search, Bulk ---------------------------------------------------------------------------------
+
+SEARCH = "urn:ietf:params:scim:api:messages:2.0:SearchRequest"
+BULK = "urn:ietf:params:scim:api:messages:2.0:BulkRequest"
+
+
+def order(r):
+    assert r.status_code == 200, r.text
+    return [x["userName"] for x in r.json()["Resources"] if x["userName"] != "root"]
+
+
+def test_sorting(db, super_admin):
+    s = Scim(issue(super_admin)["token"])
+    users(s, "carol", "Alice", "bob")
+    assert order(s.get("/Users", sortBy="userName")) == ["alice", "bob", "carol"]
+    assert order(s.get("/Users", sortBy="userName", sortOrder="descending")) == ["carol", "bob", "alice"]
+    assert order(s.get("/Users", sortBy="meta.created", sortOrder="descending"))[0] == "bob"
+    assert order(s.get("/Users", sortBy="name.givenName"))                       # ties fall back to id
+    for bad in ({"sortBy": "password"}, {"sortBy": "emails.type"}, {"sortBy": "userName", "sortOrder": "sideways"}):
+        assert s.get("/Users", **bad).status_code == 400, bad
+    for n in ("zeta", "Alpha"):
+        s.post("/Groups", {"schemas": [GROUP], "displayName": n})
+    assert [g["displayName"] for g in s.get("/Groups", sortBy="displayName").json()["Resources"]] == ["Alpha", "zeta"]
+
+
+def test_post_search(db, super_admin):
+    s = Scim(issue(super_admin)["token"])
+    users(s, "alice", "bob", "carol")
+    r = s.post("/Users/.search", {"schemas": [SEARCH], "filter": 'userName sw "b" or userName sw "c"', "sortBy": "userName",
+                                  "sortOrder": "descending", "startIndex": 1, "count": 1, "attributes": ["userName"]})
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["totalResults"] == 2 and d["itemsPerPage"] == 1 and set(d["Resources"][0]) == {"schemas", "id", "userName"}
+    assert d["Resources"][0]["userName"] == "carol"
+    g = s.post("/Groups/.search", {"schemas": [SEARCH], "filter": 'displayName eq "x"'})
+    assert g.status_code == 200 and g.json()["totalResults"] == 0
+    for bad in ({}, {"schemas": [SEARCH], "count": "5"}, {"schemas": [SEARCH], "filter": 'bogus eq "x"'},
+                {"schemas": [SEARCH], "attributes": ["a"], "excludedAttributes": ["b"]}):
+        assert s.post("/Users/.search", bad).status_code == 400, bad
+
+
+def test_read_only_token_may_search_but_users_only_token_may_not_search_groups(db, super_admin):
+    ro = Scim(issue(super_admin, read_only=True)["token"])
+    assert ro.post("/Users/.search", {"schemas": [SEARCH]}).status_code == 200
+    uo = Scim(issue(super_admin, users_only=True)["token"])
+    assert uo.post("/Groups/.search", {"schemas": [SEARCH]}).status_code == 403
+
+
+def bulk(s, ops, **kw):
+    return s.post("/Bulk", {"schemas": [BULK], "Operations": ops, **kw})
+
+
+def test_bulk_create_reference_update_delete(db, super_admin):
+    s = Scim(issue(super_admin)["token"])
+    r = bulk(s, [
+        {"method": "POST", "path": "/Users", "bulkId": "u1", "data": user_body("bulk1")},
+        {"method": "POST", "path": "/Groups", "bulkId": "g1",
+         "data": {"schemas": [GROUP], "displayName": "Bulk group", "members": [{"value": "bulkId:u1"}]}},
+        {"method": "PATCH", "path": "/Users/bulkId:u1", "data": {"schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+                                                                  "Operations": [{"op": "replace", "path": "name.givenName", "value": "Zed"}]}},
+    ])
+    assert r.status_code == 200, r.text
+    ops = r.json()["Operations"]
+    assert [o["status"] for o in ops] == ["201", "201", "200"] and ops[0]["bulkId"] == "u1" and ops[0]["location"].endswith("/Users/" + ops[0]["location"].rsplit("/", 1)[1])
+    uid = ops[0]["location"].rsplit("/", 1)[1]
+    assert s.get(f"/Users/{uid}").json()["name"]["givenName"] == "Zed"
+    gid = ops[1]["location"].rsplit("/", 1)[1]
+    assert [m["value"] for m in s.get(f"/Groups/{gid}").json()["members"]] == [uid]
+    d = bulk(s, [{"method": "DELETE", "path": f"/Users/{uid}"}, {"method": "DELETE", "path": f"/Groups/{gid}"}])
+    assert [o["status"] for o in d.json()["Operations"]] == ["204", "204"]
+    assert s.get(f"/Users/{uid}").json()["active"] is False                          # SCIM delete = deactivate
+
+
+def test_bulk_errors_fail_on_errors_and_version(db, super_admin):
+    s = Scim(issue(super_admin)["token"])
+    u = mk(s, "dup")
+    ops = [
+        {"method": "POST", "path": "/Users", "bulkId": "a", "data": user_body("dup")},                  # 409 uniqueness
+        {"method": "POST", "path": "/Users", "bulkId": "b", "data": user_body("fresh")},
+        {"method": "POST", "path": "/Users", "bulkId": "c", "data": user_body("later")},
+    ]
+    r = bulk(s, ops).json()["Operations"]
+    assert [o["status"] for o in r] == ["409", "201", "201"] and r[0]["response"]["scimType"] == "uniqueness"
+    stop = bulk(s, [{"method": "POST", "path": "/Users", "bulkId": "a", "data": user_body("dup")},
+                    {"method": "POST", "path": "/Users", "bulkId": "z", "data": user_body("neverbuilt")}], failOnErrors=1).json()["Operations"]
+    assert [o["status"] for o in stop] == ["409"] and s.get("/Users", filter='userName eq "neverbuilt"').json()["totalResults"] == 0
+    stale = bulk(s, [{"method": "PUT", "path": f"/Users/{u['id']}", "version": 'W/"stale"', "data": user_body("dup")}]).json()["Operations"]
+    assert stale[0]["status"] == "412"
+    ok = bulk(s, [{"method": "PUT", "path": f"/Users/{u['id']}", "version": s.get(f"/Users/{u['id']}").headers["etag"], "data": user_body("dup")}]).json()["Operations"]
+    assert ok[0]["status"] == "200"
+
+
+def test_bulk_validation_and_limits(db, super_admin):
+    s = Scim(issue(super_admin)["token"])
+    assert s.post("/Bulk", {}).status_code == 400
+    assert bulk(s, []).status_code == 400
+    assert bulk(s, [{"method": "GET", "path": "/Users"}] * 101).status_code == 413
+    assert bulk(s, [], failOnErrors=-1).status_code == 400
+    bad = bulk(s, [
+        {"method": "GET", "path": "/Users"},
+        {"method": "POST", "path": "/Users/abc", "bulkId": "x", "data": {}},
+        {"method": "POST", "path": "/Users", "data": user_body("nobulkid")},
+        {"method": "PATCH", "path": "/Users/bulkId:ghost", "data": {}},
+        {"method": "POST", "path": "/Other", "bulkId": "y", "data": {}},
+        "junk",
+    ]).json()["Operations"]
+    assert [o["status"] for o in bad] == ["400"] * 6
+    assert s.get("/Users", filter='userName eq "nobulkid"').json()["totalResults"] == 0
+
+
+def test_bulk_respects_token_scopes_per_operation(db, super_admin):
+    ro = Scim(issue(super_admin, read_only=True)["token"])
+    assert bulk(ro, [{"method": "POST", "path": "/Users", "bulkId": "a", "data": user_body("x")}]).status_code == 403
+    uo = Scim(issue(super_admin, users_only=True)["token"])
+    r = bulk(uo, [{"method": "POST", "path": "/Groups", "bulkId": "g", "data": {"schemas": [GROUP], "displayName": "no"}},
+                  {"method": "POST", "path": "/Users", "bulkId": "u", "data": user_body("allowed")}]).json()["Operations"]
+    assert [o["status"] for o in r] == ["403", "201"]
+    assert uo.c.get("/scim/v2/ServiceProviderConfig", headers=uo.h).json()["bulk"]["supported"] is True

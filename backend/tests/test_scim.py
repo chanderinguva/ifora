@@ -673,8 +673,8 @@ def test_rule_managed_memberships_cannot_be_removed(scim, admin, db):
 
 def test_discovery_documents(scim):
     spc = scim.get("/ServiceProviderConfig").json()
-    assert spc["patch"]["supported"] is True and spc["bulk"]["supported"] is False
-    assert spc["sort"]["supported"] is False and spc["changePassword"]["supported"] is False
+    assert spc["patch"]["supported"] is True and spc["bulk"]["supported"] is True
+    assert spc["sort"]["supported"] is True and spc["changePassword"]["supported"] is False
     assert spc["filter"] == {"supported": True, "maxResults": 200} and spc["etag"]["supported"] is True
     assert spc["authenticationSchemes"][0]["type"] == "oauthbearertoken"
     assert {r["id"] for r in scim.get("/ResourceTypes").json()["Resources"]} == {"User", "Group"}
@@ -685,11 +685,11 @@ def test_discovery_documents(scim):
 
 
 def test_unsupported_features_say_so(scim):
-    assert scim.post("/Bulk", {}).status_code == 501
+    assert scim.get("/Bulk").status_code == 405
     assert scim.get("/Me").status_code == 501
-    assert scim.post("/Users/.search", {}).status_code == 501
+    assert scim.post("/.search", {}).status_code == 501
     assert scim.get("/Nope").json() == {"schemas": [ERR], "status": "404", "detail": "Resource not found"}
-    assert scim.get("/Users", sortBy="userName").status_code == 200  # ignored, advertised as unsupported
+    assert scim.get("/Users", sortBy="userName").status_code == 200
 
 
 def test_request_hygiene(scim):

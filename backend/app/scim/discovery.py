@@ -14,10 +14,10 @@ def service_provider_config() -> Dict[str, Any]:
         "schemas": [SPC_URN],
         "documentationUri": "https://github.com/chanderinguva/identityforge/blob/main/docs/architecture/007-scim-server.md",
         "patch": {"supported": True},
-        "bulk": {"supported": False, "maxOperations": 0, "maxPayloadSize": 0},
+        "bulk": {"supported": True, "maxOperations": 100, "maxPayloadSize": 1048576},
         "filter": {"supported": True, "maxResults": MAX_RESULTS},
         "changePassword": {"supported": False},
-        "sort": {"supported": False},
+        "sort": {"supported": True},
         "etag": {"supported": True},
         "authenticationSchemes": [{
             "type": "oauthbearertoken", "name": "Bearer token", "primary": True,

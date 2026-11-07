@@ -19,7 +19,7 @@ from backend.app.groups.model import Group, user_group_association as assoc
 from backend.app.oidc.models import RefreshToken
 from backend.app.profiles import catalog as profile_catalog
 from backend.app.config import settings
-from backend.app.scim import discovery, filter as flt, mapping, retention
+from backend.app.scim import discovery, filter as flt, mapping, projection, retention
 from backend.app.scim.auth import Ctx, audit, get_ctx
 from backend.app.scim.errors import (
     MEDIA_TYPE, ScimError, invalid_syntax, invalid_value, mutability, not_found, uniqueness,
@@ -173,9 +173,26 @@ def get_schema(sid: str, ctx: Ctx = Depends(get_ctx)):
     raise not_found()
 
 
-@router.api_route("/Bulk", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
-def bulk(ctx: Ctx = Depends(get_ctx)):
-    raise ScimError(501, "Bulk operations are not supported")
+@router.post("/Bulk")
+def bulk_endpoint(body: Any = Depends(read_json), ctx: Ctx = Depends(get_ctx)):
+    from backend.app.scim import bulk as bulk_mod
+
+    table = {
+        ("POST", "users", False): lambda c, r, i, d: create_user(r, d, c),
+        ("PUT", "users", True): lambda c, r, i, d: replace_user(i, r, d, c),
+        ("PATCH", "users", True): lambda c, r, i, d: patch_user(i, r, d, c),
+        ("DELETE", "users", True): lambda c, r, i, d: delete_user(i, r, c),
+        ("POST", "groups", False): lambda c, r, i, d: create_group(d, c),
+        ("PUT", "groups", True): lambda c, r, i, d: replace_group(i, r, d, c),
+        ("PATCH", "groups", True): lambda c, r, i, d: patch_group(i, r, d, c),
+        ("DELETE", "groups", True): lambda c, r, i, d: delete_group(i, r, c),
+    }
+    return respond(bulk_mod.execute(ctx, body, table, MAX_BODY))
+
+
+@router.api_route("/Bulk", methods=["GET", "PUT", "PATCH", "DELETE"])
+def bulk_method_not_allowed(ctx: Ctx = Depends(get_ctx)):
+    raise ScimError(405, "Bulk accepts POST only")
 
 
 @router.api_route("/Me", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
@@ -184,10 +201,62 @@ def me(ctx: Ctx = Depends(get_ctx)):
 
 
 @router.api_route("/.search", methods=["POST"])
-@router.api_route("/Users/.search", methods=["POST"])
-@router.api_route("/Groups/.search", methods=["POST"])
-def search(ctx: Ctx = Depends(get_ctx)):
-    raise ScimError(501, "POST search is not supported; use GET with a filter")
+def search_root(ctx: Ctx = Depends(get_ctx)):
+    raise ScimError(501, "Cross-resource search is not supported; POST to /Users/.search or /Groups/.search")
+
+
+SEARCH_URN = "urn:ietf:params:scim:api:messages:2.0:SearchRequest"
+
+
+def _search_params(body: Any) -> dict:
+    if not isinstance(body, dict) or SEARCH_URN not in (body.get("schemas") or []):
+        raise invalid_syntax("Body must be a SearchRequest")
+    out = {}
+    for k in ("filter", "sortBy", "sortOrder", "attributes", "excludedAttributes"):
+        v = body.get(k)
+        if v is not None and not isinstance(v, (str, list)):
+            raise invalid_syntax(f"{k} must be a string")
+        out[k] = ",".join(v) if isinstance(v, list) and k in ("attributes", "excludedAttributes") else v
+    for k in ("startIndex", "count"):
+        v = body.get(k)
+        if v is not None and (isinstance(v, bool) or not isinstance(v, int)):
+            raise invalid_syntax(f"{k} must be an integer")
+        out[k] = None if v is None else str(v)
+    return out
+
+
+def _search(kind: str, body: Any, ctx: Ctx):
+    p = _search_params(body)
+    fn = _users_page if kind == "users" else _groups_page
+    doc = fn(ctx, p["filter"], p["startIndex"], p["count"], p["sortBy"], p["sortOrder"])
+    attrs, excl = projection.parse(p["attributes"]), projection.parse(p["excludedAttributes"])
+    if attrs or excl:
+        doc = projection.apply(doc, attrs, excl)
+    return respond(doc)
+
+
+@router.post("/Users/.search")
+def search_users(body: Any = Depends(read_json), ctx: Ctx = Depends(get_ctx)):
+    return _search("users", body, ctx)
+
+
+@router.post("/Groups/.search")
+def search_groups(body: Any = Depends(read_json), ctx: Ctx = Depends(get_ctx)):
+    return _search("groups", body, ctx)
+
+
+def _order(attrs: dict, sort_by: Optional[str], sort_order: Optional[str], tiebreak):
+    """ORDER BY for sortBy/sortOrder. Strings sort case-insensitively; missing values last; id breaks ties."""
+    if sort_order is not None and sort_order.lower() not in ("ascending", "descending"):
+        raise invalid_value("sortOrder must be ascending or descending")
+    if not sort_by:
+        return [tiebreak]
+    attr = attrs.get(sort_by.strip().lower())
+    if attr is None or attr.expr is None or attr.kind not in ("str", "date", "bool") or sort_by.strip().lower().startswith(("emails.t", "emails.p")):
+        raise invalid_value(f"Cannot sort by '{sort_by[:60]}'")
+    col = func.lower(attr.expr) if attr.kind == "str" else attr.expr
+    desc_ = (sort_order or "ascending").lower() == "descending"
+    return [(col.desc() if desc_ else col.asc()).nulls_last(), tiebreak]
 
 
 # ---- users --------------------------------------------------------------------------------------
@@ -247,18 +316,24 @@ def _deactivate_side_effects(db: Session, user: User) -> None:
                .values(revoked_at=datetime.now(timezone.utc)))
 
 
-@router.get("/Users")
-def list_users(request: Request, filter: Optional[str] = None, startIndex: Optional[str] = None,
-               count: Optional[str] = None, ctx: Ctx = Depends(get_ctx)):
+def _users_page(ctx: Ctx, filter, startIndex, count, sortBy=None, sortOrder=None) -> dict:
     db = ctx.db
     start, cnt = page_params(startIndex, count)
     q = db.query(User)
     if filter is not None:
         q = q.filter(flt.build(filter, USER_FILTER_ATTRS))
+    order = _order(USER_FILTER_ATTRS, sortBy, sortOrder, User.id)
     total = q.count()
-    users = (q.options(selectinload(User.groups)).order_by(User.id).offset(start - 1).limit(cnt).all()) if cnt else []
+    users = (q.options(selectinload(User.groups)).order_by(*order).offset(start - 1).limit(cnt).all()) if cnt else []
     ext = _ext_ids(db, "user", [u.id for u in users])
-    return respond(list_response([render_user_resource(db, u, ext.get(u.id))[0] for u in users], total, start))
+    return list_response([render_user_resource(db, u, ext.get(u.id))[0] for u in users], total, start)
+
+
+@router.get("/Users")
+def list_users(request: Request, filter: Optional[str] = None, startIndex: Optional[str] = None,
+               count: Optional[str] = None, sortBy: Optional[str] = None, sortOrder: Optional[str] = None,
+               ctx: Ctx = Depends(get_ctx)):
+    return respond(_users_page(ctx, filter, startIndex, count, sortBy, sortOrder))
 
 
 @router.get("/Users/{uid}")
@@ -491,18 +566,23 @@ def _sync_members(ctx: Ctx, g: Group, public_ids: List[str]) -> Dict[str, int]:
     return {"added": len(added), "removed": len(gone)}
 
 
-@router.get("/Groups")
-def list_groups(filter: Optional[str] = None, startIndex: Optional[str] = None, count: Optional[str] = None,
-                ctx: Ctx = Depends(get_ctx)):
+def _groups_page(ctx: Ctx, filter, startIndex, count, sortBy=None, sortOrder=None) -> dict:
     db = ctx.db
     start, cnt = page_params(startIndex, count)
     q = db.query(Group).filter(Group.is_system_group.is_(False))
     if filter is not None:
         q = q.filter(flt.build(filter, GROUP_FILTER_ATTRS))
+    order = _order(GROUP_FILTER_ATTRS, sortBy, sortOrder, Group.id)
     total = q.count()
-    groups = q.order_by(Group.id).offset(start - 1).limit(cnt).all() if cnt else []
+    groups = q.order_by(*order).offset(start - 1).limit(cnt).all() if cnt else []
     ext = _ext_ids(db, "group", [g.id for g in groups])
-    return respond(list_response([render_group_resource(db, g, ext.get(g.id))[0] for g in groups], total, start))
+    return list_response([render_group_resource(db, g, ext.get(g.id))[0] for g in groups], total, start)
+
+
+@router.get("/Groups")
+def list_groups(filter: Optional[str] = None, startIndex: Optional[str] = None, count: Optional[str] = None,
+                sortBy: Optional[str] = None, sortOrder: Optional[str] = None, ctx: Ctx = Depends(get_ctx)):
+    return respond(_groups_page(ctx, filter, startIndex, count, sortBy, sortOrder))
 
 
 @router.get("/Groups/{gid}")
