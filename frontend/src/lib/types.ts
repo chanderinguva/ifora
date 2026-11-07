@@ -47,6 +47,7 @@ export type OidcClient = {
   token_endpoint_auth_method: "none" | "client_secret_basic" | "private_key_jwt";
   jwks: { keys: { kid: string; kty: string; alg?: string }[] } | null;
   grant_types: string[];
+  access_token_format?: "jwt" | "opaque";
   secrets: OidcSecret[];
   client_secret?: string;
 };

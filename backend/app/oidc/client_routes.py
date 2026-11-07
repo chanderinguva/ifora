@@ -30,6 +30,7 @@ class ClientCreate(BaseModel):
     token_endpoint_auth_method: Optional[str] = None  # confidential/service: client_secret_basic (default) | private_key_jwt
     jwks: Optional[dict] = None  # public keys, required for private_key_jwt
     first_party: bool = False
+    access_token_format: str = Field("jwt", pattern="^(jwt|opaque)$")  # opaque: revocable via /oauth/revoke, checked by introspection
 
 
 class ClientUpdate(BaseModel):
@@ -42,6 +43,7 @@ class ClientUpdate(BaseModel):
     jwks: Optional[dict] = None  # replaces the registered keys (private_key_jwt clients)
     status: Optional[str] = Field(None, pattern="^(active|disabled)$")
     first_party: Optional[bool] = None
+    access_token_format: Optional[str] = Field(None, pattern="^(jwt|opaque)$")
 
 
 class SecretCreate(BaseModel):
@@ -122,6 +124,7 @@ def create_client(body: ClientCreate, request: Request, db: Session = Depends(ge
         token_endpoint_auth_method=method,
         jwks=jwks,
         first_party=body.first_party,
+        access_token_format=body.access_token_format,
         status="active",
         redirect_uris=redirects,
         post_logout_redirect_uris=logouts,
@@ -184,6 +187,8 @@ def update_client(pk: int, body: ClientUpdate, request: Request, db: Session = D
     if body.first_party is not None and body.first_party != c.first_party:
         _only_super_admin_sets_first_party(actor)
         c.first_party = body.first_party; changed["first_party"] = body.first_party
+    if body.access_token_format is not None and body.access_token_format != c.access_token_format:
+        c.access_token_format = body.access_token_format; changed["access_token_format"] = body.access_token_format
     if body.status is not None and body.status != c.status:
         c.status = body.status; changed["status"] = body.status
     if changed:

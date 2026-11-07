@@ -14,7 +14,9 @@ from backend.app.db import get_db
 from backend.app.oidc import cors, introspect as intro, keys, refresh, tokens
 from backend.app.oidc.claims import user_claims
 from backend.app.oidc.clients import SUPPORTED_SCOPES
-from backend.app.oidc.models import OIDCClient
+from datetime import datetime, timezone
+
+from backend.app.oidc.models import AccessToken, OIDCClient
 from backend.app.users.model import User
 
 router = APIRouter(tags=["oidc"])
@@ -31,6 +33,11 @@ def _error(e: tokens.TokenError) -> JSONResponse:
 
 @router.options("/oauth/token")
 def token_preflight(request: Request, db: Session = Depends(get_db)):
+    return Response(status_code=204, headers=cors.preflight_token(db, request))
+
+
+@router.options("/oauth/revoke")
+def revoke_preflight(request: Request, db: Session = Depends(get_db)):
     return Response(status_code=204, headers=cors.preflight_token(db, request))
 
 
@@ -108,12 +115,18 @@ def _userinfo(request: Request, db: Session):
     auth = request.headers.get("authorization") or ""
     if not auth.lower().startswith("bearer ") or not auth[7:].strip():
         return _bearer_error(None, "a Bearer access token is required")  # header only: never a query parameter
-    try:
-        claims = keys.verify_jwt(db, auth[7:].strip(), issuer=settings.OIDC_ISSUER, audience=settings.OIDC_ISSUER, typ="at+jwt")
-    except keys.TokenError:
-        return _bearer_error("invalid_token", "the access token is invalid or expired")
-    except keys.KeyConfigError:
-        return JSONResponse({"error": "server_error"}, 503, headers=NO_STORE)
+    bearer = auth[7:].strip()
+    if bearer.startswith(tokens.OPAQUE_PREFIX):
+        claims = intro.opaque_claims(db, bearer, audience=settings.OIDC_ISSUER)
+        if claims is None:
+            return _bearer_error("invalid_token", "the access token is invalid or expired")
+    else:
+        try:
+            claims = keys.verify_jwt(db, bearer, issuer=settings.OIDC_ISSUER, audience=settings.OIDC_ISSUER, typ="at+jwt")
+        except keys.TokenError:
+            return _bearer_error("invalid_token", "the access token is invalid or expired")
+        except keys.KeyConfigError:
+            return JSONResponse({"error": "server_error"}, 503, headers=NO_STORE)
     scopes = str(claims.get("scope", "")).split(" ")
     if "openid" not in scopes:
         return _bearer_error("insufficient_scope", "the openid scope is required", 403)
@@ -190,8 +203,20 @@ async def introspect(request: Request, db: Session = Depends(get_db)):
 
 @router.post("/oauth/revoke")
 async def revoke(request: Request, db: Session = Depends(get_db)):
-    """RFC 7009. Revoking a refresh token ends its whole family. Access tokens are short-lived self-contained JWTs
-    and cannot be recalled, which the response says honestly instead of pretending."""
+    resp = await _revoke(request, db)
+    cid = None
+    try:
+        cid = (await request.form()).get("client_id")  # public clients (browser apps) identify themselves in the body
+    except Exception:
+        pass
+    if isinstance(cid, str):
+        resp.headers.update(cors.token_headers(db, request, cid))
+    return resp
+
+
+async def _revoke(request: Request, db: Session):
+    """RFC 7009. Revoking a refresh token ends its whole family; an opaque access token is revoked at once. JWT access
+    tokens are self-contained and cannot be recalled, which the response says honestly instead of pretending."""
     ident = ratelimit.client_ip(request)
     ratelimit.check("oauth_token", ident, settings.RATE_LIMIT_TOKEN_FAILURES)
     try:
@@ -205,8 +230,15 @@ async def revoke(request: Request, db: Session = Depends(get_db)):
         raw = form.get("token")
         if not raw or len(raw) > 4096:
             raise tokens.TokenError("invalid_request", "token is required")
+        if raw.startswith(tokens.OPAQUE_PREFIX):
+            at = db.query(AccessToken).filter(AccessToken.token_hash == refresh._h(raw)).first()
+            if at is not None and at.client_pk == client.id and at.revoked_at is None:  # someone else's token: silent no-op
+                at.revoked_at = datetime.now(timezone.utc)
+                record(db, AuditAction.OIDC_TOKEN_REVOKED, request, None, at.user_id, "user", {"client_id": client.client_id, "kind": "access_token"})
+            db.commit()
+            return JSONResponse({}, headers=NO_STORE)
         if form.get("token_type_hint") == "access_token" or raw.count(".") == 2:
-            raise tokens.TokenError("unsupported_token_type", "access tokens are short-lived and cannot be revoked; revoke the refresh token")
+            raise tokens.TokenError("unsupported_token_type", "this access token is a self-contained JWT and cannot be recalled; revoke the refresh token, or register the client with opaque access tokens")
         row = db.query(refresh.RefreshToken).filter(refresh.RefreshToken.token_hash == refresh._h(raw)).first()
         if row is not None and row.client_pk == client.id:  # someone else's token: succeed silently, change nothing
             n = refresh.revoke_family(db, row.family_id)

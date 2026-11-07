@@ -183,6 +183,7 @@ def client_to_dict(c: OIDCClient, secrets_: Optional[List[OIDCClientSecret]] = N
         "allowed_scopes": c.allowed_scopes,
         "allowed_audiences": c.allowed_audiences or [],
         "jwks": c.jwks,
+        "access_token_format": c.access_token_format,
         "grant_types": c.grant_types,
         "created_at": c.created_at.isoformat(),
         "updated_at": c.updated_at.isoformat(),

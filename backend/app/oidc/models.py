@@ -71,6 +71,7 @@ class OIDCClient(TenantOwned, Base):
     allowed_scopes = Column(JSONB, nullable=False)
     jwks = Column(JSONB, nullable=True)  # public keys of a private_key_jwt client (inline: no remote fetching, so no SSRF)
     allowed_audiences = Column(JSONB, nullable=False, default=list, server_default="[]")  # service clients: resources they may request
+    access_token_format = Column(String(8), nullable=False, default="jwt", server_default="jwt")  # jwt | opaque (opaque = revocable, introspect only)
     grant_types = Column(JSONB, nullable=False)
     created_by = Column(Integer, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
@@ -173,4 +174,23 @@ class RefreshToken(TenantOwned, Base):
     expires_at = Column(DateTime(timezone=True), nullable=False)           # idle limit, slides on rotation
     absolute_expires_at = Column(DateTime(timezone=True), nullable=False)  # family hard limit, never extended
     used_at = Column(DateTime(timezone=True), nullable=True)               # rotated away
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class AccessToken(TenantOwned, Base):
+    """Opaque access token (clients with access_token_format = "opaque"). Only a hash is stored. Unlike a JWT it can be
+    revoked at once (/oauth/revoke) and is verified by looking it up (userinfo, introspection)."""
+
+    __tablename__ = "oidc_access_tokens"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    token_hash = Column(String(64), nullable=False, unique=True)
+    client_pk = Column(Integer, ForeignKey("oidc_clients.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)  # null: client credentials
+    sub = Column(String(64), nullable=False)
+    audience = Column(String(255), nullable=False)
+    scopes = Column(JSONB, nullable=False)
+    auth_time = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
+    expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
     revoked_at = Column(DateTime(timezone=True), nullable=True)

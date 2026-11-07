@@ -9,8 +9,9 @@ import base64
 import hashlib
 import hmac
 import re
+import secrets
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional, Tuple
 from urllib.parse import unquote_plus
 
@@ -23,7 +24,7 @@ from backend.app.oidc import keys
 from backend.app.oidc.authorize import _h, now
 from backend.app.oidc.claims import user_claims
 from backend.app.oidc.clients import authenticate_client
-from backend.app.oidc.models import AuthorizationCode, OIDCClient
+from backend.app.oidc.models import AccessToken, AuthorizationCode, OIDCClient
 from backend.app.tenancy import Tenant
 from backend.app.users.model import User
 
@@ -137,15 +138,42 @@ def exchange_code(db: Session, client: OIDCClient, form: Dict[str, str], audit) 
     return body, user
 
 
+OPAQUE_PREFIX = "idf_at_"
+
+
+def _store_opaque(db: Session, client: OIDCClient, raw: str, *, sub, user_id, aud, scopes, auth_time) -> None:
+    db.add(AccessToken(token_hash=_h(raw), client_pk=client.id, user_id=user_id, sub=sub, audience=aud, scopes=list(scopes), auth_time=auth_time,
+                       expires_at=datetime.now(timezone.utc) + timedelta(seconds=settings.OIDC_ACCESS_TOKEN_TTL_SECONDS)))
+    db.flush()
+
+
+def mint_access(db: Session, client: OIDCClient, *, sub: str, user_id: Optional[int], aud: str, scopes, auth_time, claims: Dict,
+                defer: bool = False):
+    """A JWT, or for clients registered with access_token_format = "opaque" a random reference token (hash stored).
+    With defer=True an opaque token is returned with a `store()` callback instead of being persisted yet (signing the ID
+    token can commit/rollback, so the row is written after it)."""
+    if client.access_token_format == "opaque":
+        raw = OPAQUE_PREFIX + secrets.token_urlsafe(32)
+        store = lambda: _store_opaque(db, client, raw, sub=sub, user_id=user_id, aud=aud, scopes=scopes, auth_time=auth_time)  # noqa: E731
+        if defer:
+            return raw, store
+        store()
+        return raw
+    ts = int(datetime.now(timezone.utc).timestamp())
+    jwt_ = keys.sign_jwt(db, {
+        "iss": settings.OIDC_ISSUER, "sub": sub, "aud": aud, "client_id": client.client_id, "scope": " ".join(scopes),
+        "iat": ts, "exp": ts + settings.OIDC_ACCESS_TOKEN_TTL_SECONDS, "jti": str(uuid.uuid4()), **claims,
+    }, typ="at+jwt")
+    return (jwt_, lambda: None) if defer else jwt_
+
+
 def build_tokens(db: Session, client: OIDCClient, user: User, *, scopes, auth_time, amr, nonce: Optional[str]) -> Dict:
     t = int(datetime.now(timezone.utc).timestamp())
     tenant = db.get(Tenant, user.tenant_id)
     auth_ts = int(auth_time.timestamp())
-    access = keys.sign_jwt(db, {
-        "iss": settings.OIDC_ISSUER, "sub": user.public_id, "aud": settings.OIDC_ISSUER,  # no resource registry yet
-        "client_id": client.client_id, "scope": " ".join(scopes), "iat": t, "exp": t + settings.OIDC_ACCESS_TOKEN_TTL_SECONDS,
-        "jti": str(uuid.uuid4()), "auth_time": auth_ts, "tenant": tenant.slug if tenant else None,
-    }, typ="at+jwt")
+    access, store_access = mint_access(db, client, sub=user.public_id, user_id=user.id, aud=settings.OIDC_ISSUER,  # no resource registry yet
+                                       scopes=scopes, auth_time=auth_time, claims={"auth_time": auth_ts, "tenant": tenant.slug if tenant else None},
+                                       defer=True)
     idc = {
         **user_claims(db, user, list(scopes)),
         "iss": settings.OIDC_ISSUER, "aud": client.client_id, "iat": t, "exp": t + settings.OIDC_ID_TOKEN_TTL_SECONDS,
@@ -153,9 +181,11 @@ def build_tokens(db: Session, client: OIDCClient, user: User, *, scopes, auth_ti
     }
     if nonce:
         idc["nonce"] = nonce
+    id_token = keys.sign_jwt(db, idc)
+    store_access()  # after signing: key handling may commit or roll back the transaction
     return {
         "access_token": access, "token_type": "Bearer", "expires_in": settings.OIDC_ACCESS_TOKEN_TTL_SECONDS,
-        "id_token": keys.sign_jwt(db, idc), "scope": " ".join(scopes),
+        "id_token": id_token, "scope": " ".join(scopes),
     }
 
 
@@ -181,11 +211,7 @@ def client_credentials(db: Session, client: OIDCClient, form: Dict[str, str]) ->
         resource = audiences[0]
     elif resource not in audiences:
         raise TokenError("invalid_target", "resource is not allowed for this client")
-    t = int(datetime.now(timezone.utc).timestamp())
     tenant = db.get(Tenant, client.tenant_id)
-    access = keys.sign_jwt(db, {
-        "iss": settings.OIDC_ISSUER, "sub": client.client_id, "aud": resource, "client_id": client.client_id,
-        "scope": " ".join(scopes), "iat": t, "exp": t + settings.OIDC_ACCESS_TOKEN_TTL_SECONDS,
-        "jti": str(uuid.uuid4()), "tenant": tenant.slug if tenant else None,
-    }, typ="at+jwt")
+    access = mint_access(db, client, sub=client.client_id, user_id=None, aud=resource, scopes=scopes, auth_time=None,
+                         claims={"tenant": tenant.slug if tenant else None})
     return {"access_token": access, "token_type": "Bearer", "expires_in": settings.OIDC_ACCESS_TOKEN_TTL_SECONDS, "scope": " ".join(scopes)}
