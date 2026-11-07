@@ -18,6 +18,7 @@ logger = structlog.get_logger(__name__)
 EVENT_TYPES = (
     "user.created", "user.activated", "user.deactivated", "user.updated", "user.attribute_changed",
     "group.member_added", "group.member_removed", "login.failed",
+    "user.deleted", "group.created", "group.deleted", "login.succeeded",
 )
 _AUDIT_TO_EVENT = {
     "USER_CREATED": "user.created",
@@ -27,6 +28,10 @@ _AUDIT_TO_EVENT = {
     "GROUP_MEMBER_ADDED": "group.member_added",
     "GROUP_MEMBER_REMOVED": "group.member_removed",
     "LOGIN_FAILURE": "login.failed",
+    "USER_DELETED": "user.deleted",
+    "GROUP_CREATED": "group.created",
+    "GROUP_DELETED": "group.deleted",
+    "LOGIN_SUCCESS": "login.succeeded",
 }
 
 
@@ -91,7 +96,18 @@ def emit_from_audit(db: Session, action, actor, target_id, target_type, metadata
 
     metadata = metadata or {}
     try:
-        if event_type.startswith("user.") and target_id is not None:
+        if event_type == "user.deleted" and target_id is not None:
+            # the row is gone (or going) in this transaction: the snapshot is what the audit event knew
+            data = {"user": {"id": int(target_id), "email": metadata.get("email", ""), "username": "", "first_name": "",
+                             "last_name": "", "status": "deleted", "attributes": {}}}
+        elif event_type in ("group.created", "group.deleted") and target_id is not None:
+            data = {"group": {"id": int(target_id), "name": metadata.get("name", "")}}
+        elif event_type == "login.succeeded" and target_id is not None:
+            user = db.get(User, int(target_id))
+            if user is None:
+                return
+            data = {"user": user_snapshot(user), "login": {"method": str(metadata.get("method", ""))}}
+        elif event_type.startswith("user.") and target_id is not None:
             user = db.get(User, int(target_id))
             if user is None:
                 return

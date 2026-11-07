@@ -71,6 +71,7 @@ export type Job = {
   error: string | null;
   executed_steps: number;
   in_handler?: boolean;
+  approval?: { message: string; step_id: string; requested_at: string; expires_at?: string; decision: string | null } | null;
   cancel_requested?: boolean;
   rerun_of?: number | null;
   created_at: string;
@@ -152,5 +153,5 @@ export function decisionPills(meta: RecipeMeta, triggerType: string, before: Ste
 }
 
 export function statusTone(s: string): "good" | "bad" | "info" | "neutral" {
-  return s === "succeeded" ? "good" : s === "failed" ? "bad" : s === "running" || s === "queued" || s === "retrying" ? "info" : "neutral";
+  return s === "succeeded" ? "good" : s === "failed" ? "bad" : s === "running" || s === "queued" || s === "retrying" || s === "waiting" ? "info" : "neutral";
 }

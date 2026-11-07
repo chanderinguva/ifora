@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import structlog
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -18,6 +18,8 @@ from backend.app.recipes import templates as tpl
 from backend.app.recipes.definition import ACTION_TYPES, compile_program, taint_checker
 from backend.app.recipes.models import Recipe, RecipeJob, RecipeJobStep, RecipeOutbox, RecipeVersion
 from backend.app.recipes.redact import redact
+from backend.app.groups.model import Group, user_group_association
+from backend.app.users.model import User
 from backend.app.tenancy import Tenant, tenant_session, unscoped
 
 logger = structlog.get_logger(__name__)
@@ -81,8 +83,13 @@ def trigger_matches(db: Session, trigger: dict, ctx: dict) -> bool:
     if ttype in ("group.member_added", "group.member_removed") and cfg.get("group_id") is not None:
         if ctx.get("group", {}).get("id") != cfg["group_id"]:
             return False
-    if ttype == "user.attribute_changed" and ctx.get("attribute", {}).get("key") != cfg.get("attribute"):
-        return False
+    if ttype == "user.attribute_changed":
+        a = ctx.get("attribute", {})
+        if a.get("key") != cfg.get("attribute"):
+            return False
+        for field, want in (("old", cfg.get("from_value")), ("new", cfg.get("to_value"))):
+            if want is not None and ("" if a.get(field) is None else str(a.get(field))) != want:
+                return False
     if ttype == "login.failed" and ctx.get("login", {}).get("consecutive_failures", 0) < cfg.get("min_failures", 1):
         return False
     flt = trigger.get("filter") or []
@@ -207,6 +214,18 @@ def _end(db: Session, job: RecipeJob, status: str, now: datetime, error: Optiona
     return status
 
 
+def _loop_ctx(db: Session, job: RecipeJob) -> dict:
+    loops = (job.step_outputs or {}).get("_loops") or {}
+    active = loops.get("active")
+    if not active:
+        return {}
+    from backend.app.recipes.events import user_snapshot
+
+    st = loops[active]
+    user = db.get(User, st["members"][st["index"]])
+    return {"index": st["index"] + 1, "total": st["total"], "user": user_snapshot(user) if user else {}}
+
+
 def _step_row(job: RecipeJob, seq: int, instr: dict, status: str, attempt: int, inp, out, err, started, finished):
     return RecipeJobStep(
         job_id=job.id, seq=seq, step_id=instr["id"], type=instr["type"], status=status, attempt=attempt,
@@ -232,12 +251,31 @@ def execute_job(db: Session, job_id: int, now: datetime) -> str:
         if job.executed_steps >= settings.RECIPES_MAX_STEPS_PER_JOB:
             _finish(db, job, "failed", now, f"stopped: more than {settings.RECIPES_MAX_STEPS_PER_JOB} steps executed")
             return "failed"
-        if (now - job.created_at).total_seconds() > settings.RECIPES_MAX_RUNTIME_SECONDS:
+        paused = job.paused_seconds or 0
+        if job.approval:  # resuming from a wait that is not credited yet (done when the step completes)
+            paused += max(int((now - datetime.fromisoformat(job.approval["requested_at"])).total_seconds()), 0)
+        if (now - job.created_at).total_seconds() - paused > settings.RECIPES_MAX_RUNTIME_SECONDS:
             _finish(db, job, "failed", now, "stopped: maximum runtime exceeded")
             return "failed"
         program = compile_program(job.definition.get("on_error", []) if job.in_handler else job.definition["steps"])
-        while job.pc < len(program) and program[job.pc]["type"] == "jump":
-            job.pc = program[job.pc]["to"]
+        while job.pc < len(program) and program[job.pc]["type"] in ("jump", "loop_next"):
+            ins = program[job.pc]
+            if ins["type"] == "jump":
+                job.pc = ins["to"]
+                continue
+            loops = dict((job.step_outputs or {}).get("_loops") or {})  # loop_next: next member, or leave the loop
+            lid = program[ins["loop_pc"]]["id"]
+            st = dict(loops[lid])
+            st["index"] += 1
+            loops[lid] = st
+            if st["index"] < st["total"]:
+                job.pc = ins["loop_pc"] + 1
+            else:
+                loops["active"], job.pc = None, job.pc + 1
+            outputs = dict(job.step_outputs or {})
+            outputs["_loops"] = loops
+            outputs[lid] = {"total": st["total"], "processed": min(st["index"], st["total"])}
+            job.step_outputs = outputs
         if job.pc >= len(program):
             return _end(db, job, "succeeded", now)
         instr = program[job.pc]
@@ -249,10 +287,14 @@ def execute_job(db: Session, job_id: int, now: datetime) -> str:
             "recipe": {"id": job.recipe_id, "name": recipe.name if recipe else "", "version": job.version or 0},
             "job": {"id": job.id},
             "error": (job.step_outputs or {}).get("_error", {}),
+            "loop": _loop_ctx(db, job),
         }
         rc = actions.RunCtx(db, job.recipe_id, job.id, instr["id"], data, job.mode == "dry_run", taint)
         db.info["recipe_origin"] = {"recipe_id": job.recipe_id, "job_id": job.id, "depth": job.depth}
         inp = out = None
+        extra: Dict[str, Any] = {}
+        waiting = False
+        decided_approval = False
         err: Optional[actions.StepError] = None
         stop: Optional[tuple] = None
         next_pc = job.pc + 1
@@ -266,6 +308,38 @@ def execute_job(db: Session, job_id: int, now: datetime) -> str:
                         raise actions.StepError(str(e))
                     inp, out = {"conditions": c["conditions"], "match": c["match"]}, {"result": result}
                     next_pc = instr["true_to"] if result else instr["false_to"]
+                elif instr["type"] == "for_each_member":
+                    c = instr["config"]
+                    if db.get(Group, c["group_id"]) is None:
+                        raise actions.StepError("the group no longer exists")
+                    ids = [r[0] for r in db.execute(
+                        select(user_group_association.c.user_id).where(user_group_association.c.group_id == c["group_id"])
+                        .order_by(user_group_association.c.user_id).limit(c["limit"]))]
+                    loops = dict((job.step_outputs or {}).get("_loops") or {})
+                    loops[instr["id"]] = {"members": ids, "index": 0, "total": len(ids)}
+                    loops["active"] = instr["id"] if ids else None
+                    extra["_loops"] = loops
+                    inp, out = {"group_id": c["group_id"], "limit": c["limit"]}, {"total": len(ids), "processed": 0}
+                    next_pc = job.pc + 1 if ids else instr["end_to"]
+                elif instr["type"] == "approval":
+                    ap = job.approval if (job.approval or {}).get("step_id") == instr["id"] else None
+                    if ap is None and job.mode == "dry_run":
+                        inp, out = {"message": rc.render(instr["config"]["message"], tainted_ok=True)}, {"decision": "approved", "decided_by": "dry run"}
+                        next_pc = instr["true_to"]
+                    elif ap is None:
+                        msg = str(rc.render(instr["config"]["message"], tainted_ok=True))[:500]
+                        expires = now + timedelta(hours=instr["config"]["timeout_hours"])
+                        job.approval = {"step_id": instr["id"], "message": msg, "requested_at": now.isoformat(),
+                                        "expires_at": expires.isoformat(), "decision": None, "decided_by": None}
+                        job.status, job.locked_until, job.next_run_at = "waiting", None, expires
+                        inp, waiting = {"message": msg, "expires_at": expires.isoformat()}, True
+                    else:
+                        decision = ap.get("decision")
+                        if decision is None and now >= datetime.fromisoformat(ap["expires_at"]):
+                            decision = "timeout"
+                        inp, out = {"message": ap["message"]}, {"decision": decision, "decided_by": ap.get("decided_by") or ""}
+                        next_pc = instr["true_to"] if decision == "approved" else instr["false_to"]
+                        decided_approval = True
                 elif instr["type"] == "stop":
                     msg = rc.render(instr["config"].get("message", ""), tainted_ok=True)
                     inp, out = {"outcome": instr["config"]["outcome"], "message": msg}, {}
@@ -281,9 +355,19 @@ def execute_job(db: Session, job_id: int, now: datetime) -> str:
             db.info.pop("recipe_origin", None)
         job = db.get(RecipeJob, job_id)
         started = now
+        if err is None and waiting:
+            db.add(_step_row(job, seq, instr, "waiting", attempt, inp, None, None, started, None))
+            job.executed_steps = seq
+            db.commit()
+            return "waiting"
         if err is None:
             outputs = dict(job.step_outputs or {})
+            outputs.update(extra)
             outputs[instr["id"]] = out
+            if decided_approval:
+                waited = int((now - datetime.fromisoformat(job.approval["requested_at"])).total_seconds())
+                job.paused_seconds = (job.paused_seconds or 0) + max(waited, 0)
+                job.approval = None
             job.step_outputs = outputs
             job.executed_steps, job.attempt, job.pc = seq, 0, next_pc
             job.locked_until = now + timedelta(seconds=settings.RECIPES_LEASE_SECONDS) if job.mode == "live" else job.locked_until
@@ -349,7 +433,7 @@ def claim_jobs(db: Session, now: datetime) -> List[int]:
         .filter(
             RecipeJob.mode == "live",
             or_(
-                and_(RecipeJob.status == "queued", RecipeJob.next_run_at <= now),
+                and_(RecipeJob.status.in_(("queued", "waiting")), RecipeJob.next_run_at <= now),
                 and_(RecipeJob.status == "running", RecipeJob.locked_until < now),
             ),
         )

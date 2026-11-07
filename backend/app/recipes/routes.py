@@ -77,7 +77,7 @@ def _job_dict(j: RecipeJob, name: Optional[str] = None) -> dict:
     return {
         "id": j.id, "recipe_id": j.recipe_id, "recipe_name": name, "version": j.version, "mode": j.mode,
         "status": j.status, "trigger_type": j.trigger_type, "depth": j.depth, "executed_steps": j.executed_steps,
-        "attempt": j.attempt, "error": j.error, "in_handler": j.in_handler, "cancel_requested": j.cancel_requested,
+        "attempt": j.attempt, "error": j.error, "in_handler": j.in_handler, "approval": ({k: v for k, v in (j.approval or {}).items() if k != "decided_by"} or None), "cancel_requested": j.cancel_requested,
         "rerun_of": j.rerun_of,
         "created_at": j.created_at.isoformat(),
         "started_at": j.started_at.isoformat() if j.started_at else None,
@@ -153,6 +153,10 @@ TRIGGER_INFO = {
     "group.member_added": ("A member is added to a group", "Optionally limited to one group."),
     "group.member_removed": ("A member is removed from a group", "Optionally limited to one group."),
     "login.failed": ("A sign-in fails", "Fires on a wrong password; set a minimum number of consecutive failures."),
+    "user.deleted": ("A user is deleted", "Fires after an administrator deletes a user; only id and email are available."),
+    "group.created": ("A group is created", "Fires when an administrator creates a group."),
+    "group.deleted": ("A group is deleted", "Fires when an administrator deletes a group."),
+    "login.succeeded": ("A sign-in succeeds", "Fires after a completed sign-in (password and any second factor)."),
     "schedule": ("On a schedule", "Runs every N minutes (5 to 1440)."),
     "manual": ("Run manually", "Started by an administrator with the Run button."),
     "webhook": ("An external system calls a webhook", "Signed with a per-recipe secret (HMAC-SHA256)."),
@@ -162,6 +166,7 @@ STEP_INFO = {
     "set_attribute": ("Set a profile attribute", "action"), "activate_user": ("Activate user", "action"),
     "deactivate_user": ("Deactivate user", "action"), "http_request": ("Send an HTTP request", "action"),
     "log": ("Write to the job log", "action"), "condition": ("If / else", "control"), "stop": ("Stop", "control"),
+    "for_each_member": ("For each member of a group", "control"), "approval": ("Wait for approval", "control"),
 }
 
 
@@ -192,7 +197,7 @@ def meta(db: Session = Depends(get_db), _: User = Depends(require_admin)):
 @router.get("/jobs")
 def list_jobs(
     recipe_id: Optional[int] = None,
-    status: Optional[str] = Query(None, pattern="^(queued|running|succeeded|failed|cancelled)$"),
+    status: Optional[str] = Query(None, pattern="^(queued|waiting|running|succeeded|failed|cancelled)$"),
     page: int = Query(1, ge=1, le=100000),
     page_size: int = Query(25, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -236,16 +241,47 @@ def rerun_job(job_id: int, request: Request, db: Session = Depends(get_db), acto
     return _job_dict(new, r.name)
 
 
+class DecisionBody(BaseModel):
+    comment: Optional[str] = Field(None, max_length=500)
+
+
+def _decide(job_id: int, decision: str, request: Request, db: Session, actor: User) -> dict:
+    j = db.query(RecipeJob).filter(RecipeJob.id == job_id).with_for_update().first()
+    if j is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if j.status != "waiting" or not j.approval or j.approval.get("decision") is not None:
+        raise HTTPException(status_code=409, detail="This job is not waiting for a decision")
+    r = db.get(Recipe, j.recipe_id)
+    if r is None or not r.enabled:
+        raise HTTPException(status_code=409, detail="The recipe is disabled; enable it or cancel the job")
+    j.approval = {**j.approval, "decision": decision, "decided_by": str(actor.id)}
+    j.status, j.next_run_at = "queued", NOW()
+    _audit(db, AuditAction.RECIPE_APPROVAL_DECIDED, actor, j.recipe_id,
+           {"job_id": j.id, "decision": decision, "step_id": j.approval["step_id"]}, request)
+    db.commit()
+    return _job_dict(j, r.name)
+
+
+@router.post("/jobs/{job_id}/approve")
+def approve_job(job_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    return _decide(job_id, "approved", request, db, actor)
+
+
+@router.post("/jobs/{job_id}/deny")
+def deny_job(job_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    return _decide(job_id, "denied", request, db, actor)
+
+
 @router.post("/jobs/{job_id}/cancel")
 def cancel_job(job_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
     """Queued jobs are cancelled at once; a running job stops before its next step (a step already in flight finishes)."""
     j = (db.query(RecipeJob).filter(RecipeJob.id == job_id).with_for_update().first())
     if j is None:
         raise HTTPException(status_code=404, detail="Job not found")
-    if j.status not in ("queued", "running"):
+    if j.status not in ("queued", "waiting", "running"):
         raise HTTPException(status_code=409, detail="The job has already finished")
     r = db.get(Recipe, j.recipe_id)
-    if j.status == "queued":
+    if j.status in ("queued", "waiting"):
         engine._finish(db, j, "cancelled", NOW(), "cancelled by an administrator")
         db.commit()
     else:
