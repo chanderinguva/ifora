@@ -62,6 +62,11 @@ export type ScimToken = {
   last_used_at: string | null;
   /** Only present in the create response; shown once. */
   token?: string;
+  read_only?: boolean;
+  users_only?: boolean;
+  allowed_cidrs?: string[];
+  replaced_by_id?: number | null;
+  hard_delete_after_days?: number | null;
 };
 
 export type ProfileAttribute = {
