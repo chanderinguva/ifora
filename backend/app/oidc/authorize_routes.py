@@ -50,9 +50,12 @@ def authorize(request: Request, db: Session = Depends(get_db)):
 
     ctx = _optional_session(request, db)
     prompt_none = bool(p.prompt and p.prompt == "none")
+    reauth = az.needs_reauth(p, ctx[0] if ctx else None)
     if ctx is not None:
         session, user, _ = ctx
-        if not az.consent_required(db, user.id, p.client, p.scopes, p.prompt):
+        if reauth and prompt_none:
+            return _err_redirect(p.redirect_uri, az.AuthzError("login_required", "re-authentication is required"), p.state)
+        if not reauth and not az.consent_required(db, user.id, p.client, p.scopes, p.prompt):
             # Single sign-on: already authenticated and nothing to ask, so no UI hop.
             if p.client.first_party:
                 az.record_consent(db, user.id, p.client, p.scopes, "first_party")
@@ -60,24 +63,25 @@ def authorize(request: Request, db: Session = Depends(get_db)):
                                 nonce=p.nonce, code_challenge=p.code_challenge, auth_time=session.auth_time, amr=session.amr)
             db.commit()
             return RedirectResponse(az.redirect_with(p.redirect_uri, {"code": code, "state": p.state}), status_code=303, headers=NO_STORE)
-        if prompt_none:
+        if prompt_none and not reauth:
             return _err_redirect(p.redirect_uri, az.AuthzError("consent_required", "consent is required"), p.state)
     elif prompt_none:
         return _err_redirect(p.redirect_uri, az.AuthzError("login_required", "the user is not signed in"), p.state)
 
-    raw = az.park(db, p)
+    raw = az.park(db, p, auth_after=az.now() if reauth else None)
     db.commit()
     return RedirectResponse(f"{settings.OIDC_LOGIN_UI_URL}?{urlencode({'request_id': raw})}", status_code=303, headers=NO_STORE)
 
 
 # ---- JSON API used by the consent page (cookie session + CSRF, like every other UI call) ----------------
 
-def _view(db: Session, pending, user) -> dict:
+def _view(db: Session, pending, user, session) -> dict:
     client = db.get(OIDCClient, pending.client_pk)
     return {
         "client": {"name": client.name, "description": client.description, "first_party": client.first_party},
         "scopes": [{"name": s, "description": az.SCOPE_DESCRIPTIONS[s]} for s in pending.scopes],
         "user": {"email": user.email},
+        "reauth_required": bool(pending.auth_after and session.auth_time < pending.auth_after),
         "consent_required": az.consent_required(db, user.id, client, pending.scopes, pending.prompt),
         "redirect_host": urlsplit(pending.redirect_uri).netloc,
     }
@@ -88,7 +92,7 @@ def get_request(request_id: str, ctx=Depends(get_session_and_user), db: Session 
     pending = az.peek_pending(db, request_id)
     if pending is None:
         raise HTTPException(status_code=404, detail="This sign-in request has expired. Return to the application and try again.")
-    return JSONResponse(_view(db, pending, ctx[1]), headers=NO_STORE)
+    return JSONResponse(_view(db, pending, ctx[1], ctx[0]), headers=NO_STORE)
 
 
 class Decision(BaseModel):
@@ -98,6 +102,10 @@ class Decision(BaseModel):
 @api_router.post("/authorization-requests/{request_id}/decision")
 def decide(request_id: str, body: Decision, request: Request, ctx=Depends(get_session_and_user), db: Session = Depends(get_db)):
     session, user, _ = ctx
+    peeked = az.peek_pending(db, request_id)
+    if peeked is not None and peeked.auth_after and session.auth_time < peeked.auth_after:
+        # the sign-in that existed when the request was made is not fresh enough; the request stays usable after re-login
+        raise HTTPException(status_code=403, detail="reauthentication_required")
     pending = az.claim_pending(db, request_id)  # single use; a replay or an expired request gets nothing
     if pending is None:
         db.rollback()

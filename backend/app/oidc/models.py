@@ -111,6 +111,8 @@ class PendingAuthRequest(TenantOwned, Base):
     created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
     expires_at = Column(DateTime(timezone=True), nullable=False)
     decided_at = Column(DateTime(timezone=True), nullable=True)  # single use: set atomically on the first decision
+    # prompt=login / max_age / acr_values: the session used to decide must have authenticated at or after this instant
+    auth_after = Column(DateTime(timezone=True), nullable=True)
 
 
 class OIDCConsent(TenantOwned, Base):

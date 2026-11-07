@@ -90,9 +90,9 @@ def test_repeated_parameters_are_rejected(super_admin, anon):
     ({"scope": "openid made_up"}, "invalid_scope"),
     ({"request": "eyJ..."}, "request_not_supported"),
     ({"request_uri": "https://x/y"}, "request_not_supported"),
-    ({"max_age": "0"}, "request_not_supported"),
-    ({"prompt": "login"}, "request_not_supported"),
     ({"prompt": "bogus"}, "invalid_request"),
+    ({"max_age": "abc"}, "invalid_request"),
+    ({"max_age": "-1"}, "invalid_request"),
     ({"prompt": "none consent"}, "invalid_request"),
 ])
 def test_validation_errors_redirect_with_state_and_iss(super_admin, anon, override, error):
