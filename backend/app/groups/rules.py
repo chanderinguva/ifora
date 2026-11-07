@@ -7,7 +7,8 @@ Security design (memberships may later drive authorization, so this must not bec
 - Conditions may only use attributes the *user cannot edit themselves*: email, username, status and
   admin-managed profile attributes. Self-editable fields (names, phone, title, location, timezone, locale, bio)
   are refused, otherwise a user could edit their way into a group.
-- Conditions are structured data evaluated by this module; there is no expression language and no eval.
+- Conditions are structured data evaluated by this module (basic rules), or an Okta Expression Language subset
+  parsed and evaluated by okta_el (no eval, whitelisted functions, same self-editable-attribute restriction).
 - Memberships created by a rule are tagged with the rule id. Manual memberships are never touched by rules,
   and a rule-managed membership cannot be removed by hand (change the rule or the user instead).
 - Deactivating or deleting a rule removes the memberships it created (deny by default).
@@ -18,7 +19,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Table, UniqueConstraint, delete, insert, select
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Table, Text, UniqueConstraint, delete, insert, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Session
 
@@ -26,6 +27,7 @@ from backend.app.audit.model import AuditAction
 from backend.app.audit.service import record
 from backend.app.config import settings
 from backend.app.db import Base
+from backend.app.groups import okta_el
 from backend.app.groups.model import Group, user_group_association
 from backend.app.profiles import catalog as profile_catalog
 from backend.app.tenancy import TenantOwned
@@ -54,6 +56,9 @@ class GroupRule(TenantOwned, Base):
     status = Column(String(16), nullable=False, default="inactive")  # inactive | active
     match = Column(String(3), nullable=False, default="all")  # all | any
     conditions = Column(JSONB, nullable=False)
+    # "basic": structured conditions. "expression": an Okta Expression Language boolean (okta_el).
+    kind = Column(String(12), nullable=False, default="basic", server_default="basic")
+    expression_text = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
 
@@ -68,8 +73,9 @@ class GroupRule(TenantOwned, Base):
             "name": self.name,
             "status": self.status,
             "match": self.match,
+            "kind": self.kind,
             "conditions": self.conditions,
-            "expression": describe(self.match, self.conditions),
+            "expression": self.expression_text if self.kind == "expression" else describe(self.match, self.conditions),
             "groups": [{"id": g.id, "name": g.name} for g in groups],
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
@@ -113,6 +119,29 @@ def validate_conditions(db: Session, match: str, conditions: List[Dict[str, Any]
     return out
 
 
+def validate_expression(db: Session, text: str) -> str:
+    """Parse an Okta-EL rule and check it only reads attributes users cannot edit themselves. Returns the clean text."""
+    text = (text or "").strip()
+    try:
+        ast = okta_el.parse(text)
+    except okta_el.ElError as e:
+        raise ValueError(f"Expression error: {e}")
+    if not okta_el.is_boolean(ast):
+        raise ValueError("Expression must evaluate to true or false, e.g. user.department == \"Sales\"")
+    defs = profile_catalog.by_key(db)
+    for attr in sorted(okta_el.attributes(ast)):
+        if attr in ("first_name", "last_name"):
+            raise ValueError(f"'{attr}' can be edited by users themselves, so it cannot be used in a rule")
+        if attr in FIXED_ATTRIBUTES:
+            continue
+        defn = defs.get(attr)
+        if defn is None:
+            raise ValueError(f"unknown attribute 'user.{attr}'; define it in the Profile editor first")
+        if defn.user_editable:
+            raise ValueError(f"'{attr}' can be edited by users themselves, so it cannot be used in a rule")
+    return text
+
+
 def describe(match: str, conditions: List[Dict[str, str]]) -> str:
     """Human-readable form, e.g.  user.department equals "Sales" AND user.status equals "active"."""
     parts = []
@@ -147,6 +176,24 @@ def _cond_matches(user: User, c: Dict[str, str]) -> bool:
     if actual is None:
         return False
     return {"starts_with": have.startswith, "ends_with": have.endswith, "contains": lambda w: w in have}[op](want)
+
+
+def _raw(user: User, attribute: str) -> Any:
+    v = getattr(user, attribute, None) if attribute in FIXED_ATTRIBUTES else user.get_profile_attributes().get(attribute)
+    return None if v == "" else v
+
+
+def rule_matches(rule, user: User) -> bool:
+    """Does this rule (either kind) put the user in its groups? Only active users ever match."""
+    if user.status != "active":
+        return False
+    if rule.kind == "expression":
+        try:
+            ast = okta_el.parse(rule.expression_text or "")
+        except okta_el.ElError:
+            return False
+        return okta_el.matches(ast, lambda a: _raw(user, a))
+    return matches(rule.match, rule.conditions, user)
 
 
 def matches(rule_match: str, conditions: List[Dict[str, str]], user: User) -> bool:
@@ -197,7 +244,7 @@ def evaluate_user(db: Session, user: User, request=None, actor=None) -> None:
     if not feature_enabled():
         return
     for rule in db.query(GroupRule).filter(GroupRule.status == "active").all():
-        _reconcile(db, rule, user, matches(rule.match, rule.conditions, user), request, actor)
+        _reconcile(db, rule, user, rule_matches(rule, user), request, actor)
 
 
 def evaluate_rule(db: Session, rule: GroupRule, request=None, actor=None) -> Dict[str, int]:
@@ -206,7 +253,7 @@ def evaluate_rule(db: Session, rule: GroupRule, request=None, actor=None) -> Dic
     if rule.status != "active":
         return total
     for user in db.query(User).yield_per(200):
-        r = _reconcile(db, rule, user, matches(rule.match, rule.conditions, user), request, actor)
+        r = _reconcile(db, rule, user, rule_matches(rule, user), request, actor)
         total["added"] += r["added"]
         total["removed"] += r["removed"]
     return total
@@ -239,8 +286,9 @@ def remove_all_memberships(db: Session, user: User, request=None, actor=None) ->
     return len(gids)
 
 
-def preview(db: Session, match: str, conditions: List[Dict[str, str]], limit: int = 10) -> Dict[str, Any]:
-    hits = [u for u in db.query(User).all() if matches(match, conditions, u)]
+def preview(db: Session, match: str, conditions: List[Dict[str, str]], limit: int = 10, expression: Optional[str] = None) -> Dict[str, Any]:
+    probe = GroupRule(kind="expression" if expression else "basic", match=match, conditions=conditions, expression_text=expression)
+    hits = [u for u in db.query(User).all() if rule_matches(probe, u)]
     return {
         "count": len(hits),
         "sample": [{"id": u.id, "email": u.email, "first_name": u.first_name, "last_name": u.last_name} for u in hits[:limit]],

@@ -74,6 +74,7 @@ export type GroupRule = {
   id: number;
   name: string;
   status: "active" | "inactive";
+  kind: "basic" | "expression";
   match: "all" | "any";
   conditions: RuleCondition[];
   expression: string;

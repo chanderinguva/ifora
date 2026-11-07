@@ -22,3 +22,9 @@ Memberships may later drive authorization, so a rule must never be steerable by 
 
 ## Also in this change
 Add person form (groups, organisation attributes, generated one-time temporary password). "Must change password at first login" is **not** implemented (needs a user flag and login enforcement).
+
+
+## Addendum: expression rules, templates, lifecycle
+- **Two rule kinds.** `basic` (structured conditions) and `expression` (an Okta Expression Language subset, `groups/okta_el.py`): hand-written parser, no eval, whitelisted functions (`String.*`, `Arrays.contains/isEmpty/size`, `Convert.toInt`), operators `== != < <= > >= && || ! ?:` plus `eq/ne/lt/le/gt/ge/and/or/not`, `user.<attr>` in Okta camelCase or snake_case (`user.login` = username). Limits: 1000 chars, 150 nodes, depth 20. The self-editable-attribute restriction applies to expressions too. A runtime evaluation error means "no match". Not supported: `isMemberOfGroup*` functions, app-user attributes, array literals. Comparisons are case-sensitive (as in Okta); basic rules stay case-insensitive.
+- **Template / export / import.** `GET /admin/group-rules/template` (starter file with both kinds), `GET /export`, `POST /import` (`format: identityforge.group-rules`, v1, groups by name, optional `create_missing_groups`, `dry_run`). All-or-nothing validation; imported rules are always inactive.
+- **Lifecycle.** User statuses follow Okta (`staged, provisioned, active, recovery, password_expired, locked_out, suspended, deprovisioned`); only `active` signs in and matches rules. Entering `deprovisioned` removes the user from every group (default, not a recipe).

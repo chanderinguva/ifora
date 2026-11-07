@@ -48,7 +48,7 @@ Consequence: the server is liberal in what it accepts (case-insensitive `op`, st
 | `emails[primary or first work]` | `users.email` | Unique per tenant; if absent and `userName` is a valid email it is used; otherwise 400 `invalidValue`. Only one email is stored |
 | `name.givenName` / `name.familyName` | `first_name` / `last_name` | Required (not blank) |
 | `displayName` | computed | Read-only; accepted and ignored on write |
-| `active` | `status` | `true` -> `active`, `false` -> `inactive` (see D6). Strings `"True"/"False"` (any case) are accepted |
+| `active` | `status` | `true` -> `active`, `false` -> `deprovisioned` (see D6). Strings `"True"/"False"` (any case) are accepted |
 | `externalId` | `scim_links.external_id` | Per tenant and per resource type; unique (409 `uniqueness`) |
 | `title`, `locale`, `timezone` | profile `title`, `locale`, `timezone` | Core attributes, types validated by the catalog |
 | `phoneNumbers[work]` | profile `phone` | |
@@ -70,7 +70,7 @@ How admin is determined (checked in code): `users.is_admin` / `users.is_super_ad
 - Known gap: there is no "invite / set password by email" flow yet, so SCIM users cannot sign in until an admin resets the password or SSO exists.
 
 ### D6. Deprovisioning (**REVIEW**)
-`active: false`, and `DELETE /Users/{id}`, both **deactivate** (`status = inactive`), revoke all sessions and OIDC refresh tokens, and keep the row, audit trail and group memberships. `DELETE` returns 204 and is idempotent. Hard delete via SCIM is not implemented; an admin can still delete a user in the admin UI. Reactivation (`active: true`) restores `active` status and re-runs group rules. Rationale: IdPs often send DELETE for "unassign from app", which must be reversible; hard delete destroys the audit link.
+`active: false`, and `DELETE /Users/{id}`, both **deactivate** (`status = deprovisioned`), revoke all sessions and OIDC refresh tokens, **remove the user from every group** (the platform-wide offboarding rule, `users/lifecycle.py`), and keep the row and audit trail. `DELETE` returns 204 and is idempotent. Hard delete via SCIM is not implemented; an admin can still delete a user in the admin UI. Reactivation (`active: true`) restores `active` status and re-runs group rules; manual memberships are not restored. Rationale: IdPs often send DELETE for "unassign from app", which must be reversible; hard delete destroys the audit link.
 
 ### D7. Groups
 - `id` = the group's integer id as a string (groups have no public id yet; they are tenant-scoped and token-protected). `displayName` = `groups.name` (case-insensitive unique, 409 `uniqueness`), `externalId` via `scim_links`, `members` = users (`value`, `display`, `$ref`).
