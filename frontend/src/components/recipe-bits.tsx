@@ -13,6 +13,7 @@ export function RecipeTabs() {
   const tabs = [
     { href: "/admin/recipes", label: "Recipes", active: path === "/admin/recipes" || /^\/admin\/recipes\/\d+/.test(path) },
     { href: "/admin/recipes/jobs", label: "Job history", active: path.startsWith("/admin/recipes/jobs") },
+    { href: "/admin/recipes/health", label: "Health", active: path.startsWith("/admin/recipes/health") },
     { href: "/admin/recipes/connections", label: "Connections", active: path.startsWith("/admin/recipes/connections") },
   ];
   return (

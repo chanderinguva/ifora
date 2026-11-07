@@ -73,26 +73,27 @@ export default function RecipesPage() {
 
       <Card><CardContent className="overflow-x-auto p-0">
         <table className="w-full" data-testid="recipes-table">
-          <thead className="border-b"><tr><th className={th}>Recipe</th><th className={th}>Trigger</th><th className={th}>Version</th><th className={th}>Last run</th><th className={th}>Status</th><th className={th}></th></tr></thead>
+          <thead className="border-b"><tr><th className={th}>Recipe</th><th className={th}>Owner</th><th className={th}>Trigger</th><th className={th}>Version</th><th className={th}>Last run</th><th className={th}>Status</th><th className={th}></th></tr></thead>
           <tbody>
             {items?.map((r) => (
               <tr key={r.id} className="border-b align-top last:border-0">
                 <td className={td + " font-medium"}><Link className="underline-offset-4 hover:underline" href={`/admin/recipes/${r.id}`}>{r.name}</Link></td>
+                <td className={td}>{r.owner?.email ?? "—"}{r.last_alert_at && <div><Badge tone="bad">failure alert</Badge></div>}</td>
                 <td className={td}>{trig(r.trigger_type)}</td>
                 <td className={td}>{r.published_version ? `v${r.published_version}` : "unpublished"}{r.has_unpublished_changes && r.published_version ? <span className="ml-1 text-xs text-amber-600">draft changes</span> : null}</td>
                 <td className={td}>{r.last_job ? <><Badge tone={statusTone(r.last_job.status)}>{r.last_job.status}</Badge> <span className="text-xs text-muted-foreground">{fmt(r.last_job.created_at)}</span></> : "—"}</td>
                 <td className={td}><Badge tone={r.enabled ? "good" : "neutral"}>{r.enabled ? "enabled" : "disabled"}</Badge></td>
                 <td className={td + " space-x-2 whitespace-nowrap text-right"}>
                   {r.enabled ? (
-                    <Button size="sm" variant="outline" onClick={() => run(() => http(`/admin/recipes/${r.id}/disable`, { method: "POST" }), "Recipe disabled")}>Disable</Button>
+                    <Button size="sm" variant="outline" disabled={!r.can_manage} onClick={() => run(() => http(`/admin/recipes/${r.id}/disable`, { method: "POST" }), "Recipe disabled")}>Disable</Button>
                   ) : (
-                    <Button size="sm" disabled={!r.published_version} title={r.published_version ? undefined : "Publish first"} onClick={() => run(() => http(`/admin/recipes/${r.id}/enable`, { method: "POST" }), "Recipe enabled")}>Enable</Button>
+                    <Button size="sm" disabled={!r.published_version || !r.can_manage} title={r.published_version ? undefined : "Publish first"} onClick={() => run(() => http(`/admin/recipes/${r.id}/enable`, { method: "POST" }), "Recipe enabled")}>Enable</Button>
                   )}
-                  <Button size="sm" variant="outline" onClick={() => { if (confirm(`Delete recipe "${r.name}" and its job history?`)) run(() => http(`/admin/recipes/${r.id}`, { method: "DELETE" }), "Recipe deleted"); }}>Delete</Button>
+                  <Button size="sm" variant="outline" disabled={!r.can_manage} onClick={() => { if (confirm(`Delete recipe "${r.name}" and its job history?`)) run(() => http(`/admin/recipes/${r.id}`, { method: "DELETE" }), "Recipe deleted"); }}>Delete</Button>
                 </td>
               </tr>
             ))}
-            {items && items.length === 0 && <tr><td className={td} colSpan={6}>No recipes yet. Create one to automate group membership, attributes or outbound calls.</td></tr>}
+            {items && items.length === 0 && <tr><td className={td} colSpan={7}>No recipes yet. Create one to automate group membership, attributes or outbound calls.</td></tr>}
           </tbody>
         </table>
       </CardContent></Card>

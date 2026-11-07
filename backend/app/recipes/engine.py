@@ -3,11 +3,12 @@
 outbox --dispatch--> job (idempotent) --claim (SKIP LOCKED + lease)--> step by step, one transaction per step.
 """
 
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import structlog
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -104,12 +105,41 @@ def trigger_matches(db: Session, trigger: dict, ctx: dict) -> bool:
 
 # ---- job creation ---------------------------------------------------------------------------------
 
+class RateLimited(Exception):
+    """The recipe already started its allowed number of jobs this hour."""
+
+
+def rate_limit_for(recipe: Recipe) -> int:
+    return recipe.rate_limit_per_hour if recipe.rate_limit_per_hour is not None else settings.RECIPES_DEFAULT_RATE_PER_HOUR
+
+
+def _check_rate(db: Session, recipe: Recipe, now: datetime) -> None:
+    limit = rate_limit_for(recipe)
+    if limit <= 0:
+        return
+    started = db.query(func.count(RecipeJob.id)).filter(
+        RecipeJob.recipe_id == recipe.id, RecipeJob.mode == "live", RecipeJob.created_at > now - timedelta(hours=1)).scalar()
+    if started < limit:
+        return
+    first = recipe.last_throttled_at is None or recipe.last_throttled_at < now - timedelta(minutes=10)
+    recipe.throttled_count, recipe.last_throttled_at = (recipe.throttled_count or 0) + 1, now
+    if first:  # one audit line per burst, not one per dropped event
+        db.add(AuditEvent(action=AuditAction.RECIPE_RATE_LIMITED, actor_id=f"recipe:{recipe.id}", actor_type="recipe",
+                          target_id=str(recipe.id), target_type="recipe", metadata={"limit_per_hour": limit}))
+        logger.warning("recipe.rate_limited", recipe_id=recipe.id, limit_per_hour=limit)
+    raise RateLimited()
+
+
 def create_job(
     db: Session, recipe: Recipe, definition: dict, version: Optional[int], trigger: dict, key: str,
     *, depth: int = 0, mode: str = "live", event_id: Optional[int] = None, now: Optional[datetime] = None,
+    enforce_rate: bool = True,
 ) -> Optional[RecipeJob]:
-    """Insert a job; returns None when the idempotency key already exists (duplicate delivery)."""
+    """Insert a job; returns None when the idempotency key already exists (duplicate delivery).
+    Raises RateLimited for automatic triggers over the recipe's hourly limit (explicit admin actions pass enforce_rate=False)."""
     now = now or utcnow()
+    if mode == "live" and enforce_rate:
+        _check_rate(db, recipe, now)
     job = RecipeJob(
         recipe_id=recipe.id, version=version, mode=mode, status="queued" if mode == "live" else "running",
         definition=definition, trigger=trigger, trigger_type=definition["trigger"]["type"], event_id=event_id,
@@ -158,9 +188,12 @@ def dispatch_outbox(db: Session, now: datetime, batch: int = 100) -> Dict[str, i
                 definition = _published(db, r, cache)
                 if definition is None or not trigger_matches(db, definition["trigger"], ctx):
                     continue
-                if create_job(db, r, definition, r.published_version, ctx, f"evt:{ev.id}",
-                              depth=ev.depth, event_id=ev.id, now=now):
-                    stats["jobs"] += 1
+                try:
+                    if create_job(db, r, definition, r.published_version, ctx, f"evt:{ev.id}",
+                                  depth=ev.depth, event_id=ev.id, now=now):
+                        stats["jobs"] += 1
+                except RateLimited:
+                    stats["throttled"] = stats.get("throttled", 0) + 1
         ev.dispatched_at = now
     db.commit()
     return stats
@@ -181,8 +214,11 @@ def schedule_due(db: Session, now: datetime) -> int:
         when = datetime.fromtimestamp(slot * interval, timezone.utc).isoformat()
         trig = {"event": {"id": 0, "type": "schedule", "occurred_at": now.isoformat()},
                 "actor": {"type": "", "id": ""}, "schedule": {"scheduled_for": when}}
-        if create_job(db, r, definition, r.published_version, trig, key, now=now):
-            created += 1
+        try:
+            if create_job(db, r, definition, r.published_version, trig, key, now=now):
+                created += 1
+        except RateLimited:
+            pass
     db.commit()
     return created
 
@@ -474,6 +510,45 @@ def prune_jobs(db: Session, now: datetime) -> int:
     return n
 
 
+_alert_gate: Dict[object, float] = {}
+
+
+def check_alerts(db: Session, now: datetime, force: bool = False) -> int:
+    """Raise an alert (audit event + warning log) for each enabled recipe whose recent failure rate is too high.
+    At most one alert per recipe per window; evaluated at most every 30 s per tenant by the worker."""
+    gate_key = db.info.get("tenant_id")
+    if not force:
+        mono = time.monotonic()
+        if mono - _alert_gate.get(gate_key, -1e9) < 30:
+            return 0
+        _alert_gate[gate_key] = mono
+    window = timedelta(minutes=settings.RECIPES_ALERT_WINDOW_MINUTES)
+    rows = (
+        db.query(RecipeJob.recipe_id, RecipeJob.status, func.count(RecipeJob.id))
+        .filter(RecipeJob.mode == "live", RecipeJob.status.in_(("succeeded", "failed")), RecipeJob.finished_at > now - window)
+        .group_by(RecipeJob.recipe_id, RecipeJob.status).all()
+    )
+    counts: Dict[int, Dict[str, int]] = {}
+    for rid, st, n in rows:
+        counts.setdefault(rid, {})[st] = n
+    raised = 0
+    for rid, c in counts.items():
+        failed, total = c.get("failed", 0), c.get("failed", 0) + c.get("succeeded", 0)
+        if total < settings.RECIPES_ALERT_MIN_JOBS or failed / total < settings.RECIPES_ALERT_FAILURE_RATE:
+            continue
+        r = db.get(Recipe, rid)
+        if r is None or not r.enabled or (r.last_alert_at and r.last_alert_at > now - window):
+            continue
+        r.last_alert_at = now
+        db.add(AuditEvent(action=AuditAction.RECIPE_FAILURE_ALERT, actor_id=f"recipe:{r.id}", actor_type="recipe",
+                          target_id=str(r.id), target_type="recipe",
+                          metadata={"failed": failed, "finished": total, "window_minutes": settings.RECIPES_ALERT_WINDOW_MINUTES}))
+        logger.warning("recipe.failure_alert", recipe_id=r.id, failed=failed, finished=total)
+        raised += 1
+    db.commit()
+    return raised
+
+
 def process_tenant(db: Session, now: datetime) -> Dict[str, int]:
     stats = dispatch_outbox(db, now)
     stats["scheduled"] = schedule_due(db, now)
@@ -483,6 +558,7 @@ def process_tenant(db: Session, now: datetime) -> Dict[str, int]:
         execute_job(db, jid, now)
         stats["ran"] += 1
     prune_jobs(db, now)
+    check_alerts(db, now)
     db.query(RecipeOutbox).filter(
         RecipeOutbox.dispatched_at.is_not(None), RecipeOutbox.dispatched_at < now - timedelta(days=OUTBOX_RETENTION_DAYS)
     ).delete(synchronize_session=False)

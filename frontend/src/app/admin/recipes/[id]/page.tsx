@@ -339,6 +339,8 @@ export default function RecipeBuilderPage() {
   const edit = (d: Definition) => { setDef(d); setDirty(true); };
   const setTrigger = (patch: Partial<Definition["trigger"]>) => edit({ ...def, trigger: { ...def.trigger, ...patch } });
   const tcfg = (patch: Record<string, any>) => setTrigger({ config: { ...def.trigger.config, ...patch } });
+  const canEdit = recipe.can_edit !== false;
+  const canManage = recipe.can_manage !== false;
   const triggerPills = trig.fields;
   const filterPills = decisionPills(meta, def.trigger.type, []);
   const needsUser = !["schedule", "webhook"].includes(def.trigger.type);
@@ -369,16 +371,20 @@ export default function RecipeBuilderPage() {
 
       <div className="mb-4 flex flex-wrap items-end gap-3">
         <div className="space-y-1"><Label htmlFor="rb-name">Recipe name</Label><Input id="rb-name" className="w-72" maxLength={100} value={name} onChange={(e) => { setName(e.target.value); setDirty(true); }} /></div>
-        <Button disabled={!dirty || !name.trim()} onClick={() => act(save, "Draft saved")}>Save draft</Button>
-        <Button variant="secondary" disabled={def.steps.length === 0} onClick={() => act(async () => { if (dirty) await save(); const r = await http<RecipeSummary>(`/admin/recipes/${id}/publish`, { method: "POST" }); adopt(r); if (r.webhook_secret) setSecret(r.webhook_secret); load(); }, "Published as a new immutable version")}>Publish</Button>
+        <Button disabled={!dirty || !name.trim() || !canEdit} onClick={() => act(save, "Draft saved")}>Save draft</Button>
+        <Button variant="secondary" disabled={def.steps.length === 0 || !canManage} onClick={() => act(async () => { if (dirty) await save(); const r = await http<RecipeSummary>(`/admin/recipes/${id}/publish`, { method: "POST" }); adopt(r); if (r.webhook_secret) setSecret(r.webhook_secret); load(); }, "Published as a new immutable version")}>Publish</Button>
         {recipe.enabled
-          ? <Button variant="outline" onClick={() => act(async () => { adopt(await http<RecipeSummary>(`/admin/recipes/${id}/disable`, { method: "POST" })); load(); }, "Recipe disabled")}>Disable</Button>
-          : <Button variant="outline" disabled={!recipe.published_version} onClick={() => act(async () => { adopt(await http<RecipeSummary>(`/admin/recipes/${id}/enable`, { method: "POST" })); load(); }, "Recipe enabled")}>Enable</Button>}
-        {recipe.published_trigger_type === "manual" && recipe.enabled && <Button variant="outline" onClick={() => act(async () => { await http(`/admin/recipes/${id}/run`, { method: "POST", body: { payload: safeJson(test.payload), user_id: test.user_id ? Number(test.user_id) : null } }); load(); }, "Run queued; the worker will pick it up")}>Run now</Button>}
+          ? <Button variant="outline" disabled={!canManage} onClick={() => act(async () => { adopt(await http<RecipeSummary>(`/admin/recipes/${id}/disable`, { method: "POST" })); load(); }, "Recipe disabled")}>Disable</Button>
+          : <Button variant="outline" disabled={!recipe.published_version || !canManage} onClick={() => act(async () => { adopt(await http<RecipeSummary>(`/admin/recipes/${id}/enable`, { method: "POST" })); load(); }, "Recipe enabled")}>Enable</Button>}
+        {recipe.published_trigger_type === "manual" && recipe.enabled && <Button variant="outline" disabled={!canManage} onClick={() => act(async () => { await http(`/admin/recipes/${id}/run`, { method: "POST", body: { payload: safeJson(test.payload), user_id: test.user_id ? Number(test.user_id) : null } }); load(); }, "Run queued; the worker will pick it up")}>Run now</Button>}
         {dirty && <span className="text-sm text-amber-600">Unsaved changes</span>}
         {!dirty && recipe.has_unpublished_changes && recipe.published_version && <span className="text-sm text-amber-600">Draft differs from the published version</span>}
       </div>
 
+      {!canEdit && <Alert className="mb-4" data-testid="read-only-note"><AlertDescription>Read-only: only the owner ({recipe.owner?.email ?? "unassigned"}), listed editors and super admins can change this recipe.</AlertDescription></Alert>}
+      <AccessCard recipe={recipe} admins={users.filter((u) => u.is_admin)} onSaved={(r) => { adopt(r); load(); }} setMsg={setMsg} />
+
+      <fieldset disabled={!canEdit} className="min-w-0 border-0 p-0">
       <Card className="mb-4" data-testid="trigger-card">
         <CardHeader className="py-3"><CardTitle className="text-base">When this happens (trigger)</CardTitle></CardHeader>
         <CardContent className="space-y-3">
@@ -420,6 +426,7 @@ export default function RecipeBuilderPage() {
       <div data-testid="error-handler">
         <StepList steps={def.on_error ?? []} ctx={{ ...ctx, root: def.on_error ?? [], other: def.steps, handler: true }} depth={0} onChange={(s) => edit({ ...def, on_error: s })} />
       </div>
+      </fieldset>
 
       <Card className="mt-6" data-testid="test-card">
         <CardHeader className="py-3"><CardTitle className="text-base">Test (dry run of the draft)</CardTitle></CardHeader>
@@ -450,6 +457,45 @@ export default function RecipeBuilderPage() {
         </CardContent></Card>
       </div>
     </div>
+  );
+}
+
+function AccessCard({ recipe, admins, onSaved, setMsg }: { recipe: RecipeSummary; admins: User[]; onSaved: (r: RecipeSummary) => void; setMsg: (m: { ok: boolean; text: string } | null) => void }) {
+  const [owner, setOwner] = useState<number>(recipe.owner?.id ?? 0);
+  const [editors, setEditors] = useState<number[]>((recipe.editors ?? []).map((e) => e.id));
+  const [limit, setLimit] = useState<string>(recipe.rate_limit_per_hour == null ? "" : String(recipe.rate_limit_per_hour));
+  const can = recipe.can_manage !== false;
+  const save = async () => {
+    setMsg(null);
+    try {
+      const body: Record<string, unknown> = { editors, owner_id: owner || null };
+      if (limit === "") body.clear_rate_limit = true; else body.rate_limit_per_hour = Number(limit);
+      onSaved(await http<RecipeSummary>(`/admin/recipes/${recipe.id}/settings`, { method: "PUT", body }));
+      setMsg({ ok: true, text: "Access and limits saved" });
+    } catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : "Failed" }); }
+  };
+  return (
+    <details className="mb-4 rounded-md border p-3" data-testid="access-card">
+      <summary className="cursor-pointer text-sm font-medium">Owner, editors and limits</summary>
+      <div className="mt-3 grid gap-3 md:grid-cols-3">
+        <div className="space-y-1"><Label htmlFor="ac-owner">Owner</Label>
+          <select id="ac-owner" className={fieldClass} disabled={!can} value={owner} onChange={(e) => setOwner(Number(e.target.value))}>
+            {!admins.some((a) => a.id === owner) && <option value={owner}>{recipe.owner?.email ?? "unassigned"}</option>}
+            {admins.map((a) => <option key={a.id} value={a.id}>{a.email}</option>)}
+          </select>
+          <p className="text-xs text-muted-foreground">Owners publish, enable, run, delete and control jobs.</p></div>
+        <div className="space-y-1"><Label htmlFor="ac-editors">Editors</Label>
+          <select id="ac-editors" multiple size={4} className={fieldClass + " h-auto"} disabled={!can} value={editors.map(String)}
+            onChange={(e) => setEditors(Array.from(e.target.selectedOptions).map((o) => Number(o.value)))}>
+            {admins.filter((a) => a.id !== owner).map((a) => <option key={a.id} value={a.id}>{a.email}</option>)}
+          </select>
+          <p className="text-xs text-muted-foreground">Editors change the draft and dry-run it; they cannot publish.</p></div>
+        <div className="space-y-1"><Label htmlFor="ac-rate">Max automatic jobs per hour</Label>
+          <Input id="ac-rate" type="number" min={0} disabled={!can} placeholder={`server default (${recipe.effective_rate_limit_per_hour || "unlimited"})`} value={limit} onChange={(e) => setLimit(e.target.value)} />
+          <p className="text-xs text-muted-foreground">0 = unlimited. Manual runs and re-runs are never limited.{(recipe.throttled_count ?? 0) > 0 ? ` ${recipe.throttled_count} event(s) dropped so far.` : ""}</p></div>
+      </div>
+      <Button className="mt-3" size="sm" disabled={!can} onClick={save}>Save access and limits</Button>
+    </details>
   );
 }
 

@@ -35,6 +35,26 @@ export type RecipeSummary = {
   updated_at: string;
   draft?: Definition;
   webhook_secret?: string;
+  owner?: { id: number; email: string } | null;
+  editors?: { id: number; email: string }[];
+  rate_limit_per_hour?: number | null;
+  effective_rate_limit_per_hour?: number;
+  throttled_count?: number;
+  last_throttled_at?: string | null;
+  last_alert_at?: string | null;
+  can_edit?: boolean | null;
+  can_manage?: boolean | null;
+};
+
+export type RecipeHealth = {
+  recipe_id: number; name: string; enabled: boolean; total: number; by_status: Record<string, number>;
+  failure_rate: number | null; p50_seconds: number | null; p95_seconds: number | null; throttled_count: number;
+  alerting: boolean; last_alert_at: string | null;
+};
+export type Metrics = {
+  window_hours: number; items: RecipeHealth[];
+  queue: { queued: number; waiting: number; oldest_queued_age_seconds: number | null };
+  alert_rule: { min_jobs: number; failure_rate: number; window_minutes: number };
 };
 
 export type Pill = { path: string; label: string };
