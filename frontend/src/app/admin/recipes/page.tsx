@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge, PageHeader, fmt, td, th } from "@/components/bits";
 import { RecipeTabs } from "@/components/recipe-bits";
+import { ImportCard, TemplatePicker } from "@/components/recipe-starters";
 import { http } from "@/lib/http";
 import { blankDefinition, statusTone, type RecipeMeta, type RecipeSummary } from "@/lib/recipes";
 
@@ -20,6 +21,7 @@ export default function RecipesPage() {
   const [meta, setMeta] = useState<RecipeMeta | null>(null);
   const [enabled, setEnabled] = useState(true);
   const [name, setName] = useState<string | null>(null);
+  const [panel, setPanel] = useState<"template" | "import" | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const load = useCallback(() => {
@@ -48,7 +50,9 @@ export default function RecipesPage() {
   return (
     <div>
       <PageHeader title="Recipes">
-        <Button onClick={() => setName("")}><Plus className="mr-1 h-4 w-4" /> New recipe</Button>
+        <Button variant="outline" onClick={() => { setPanel("import"); setName(null); }}>Import</Button>
+        <Button variant="outline" onClick={() => { setPanel("template"); setName(null); }}>From template</Button>
+        <Button onClick={() => { setName(""); setPanel(null); }}><Plus className="mr-1 h-4 w-4" /> New recipe</Button>
       </PageHeader>
       <RecipeTabs />
       <p className="mb-4 max-w-2xl text-sm text-muted-foreground">
@@ -57,6 +61,8 @@ export default function RecipesPage() {
       </p>
       {msg && <Alert variant={msg.ok ? "default" : "destructive"} className="mb-4" role="status"><AlertDescription>{msg.text}</AlertDescription></Alert>}
 
+      {panel === "template" && <TemplatePicker meta={meta} onCancel={() => setPanel(null)} onError={(t) => setMsg({ ok: false, text: t })} onCreated={(r) => router.push(`/admin/recipes/${r.id}`)} />}
+      {panel === "import" && <ImportCard onCancel={() => setPanel(null)} onError={(t) => setMsg({ ok: false, text: t })} onCreated={(r) => router.push(`/admin/recipes/${r.id}`)} />}
       {name !== null && (
         <Card className="mb-6" data-testid="new-recipe"><CardContent className="space-y-3 pt-6">
           <Label htmlFor="rc-name">Recipe name</Label>

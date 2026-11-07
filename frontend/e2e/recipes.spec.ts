@@ -26,19 +26,19 @@ test("build, dry-run, publish and enable a recipe with typed selects and datapil
   await expect(page.getByRole("heading", { name: recipeName })).toBeVisible();
 
   // trigger: a user is created (default). Step 1: add the user to the group (typed select, not free text)
-  await page.getByLabel("New step type").selectOption("add_to_group");
-  await page.getByRole("button", { name: "Add step" }).click();
+  await page.getByLabel("New step type").first().selectOption("add_to_group");
+  await page.getByRole("button", { name: "Add step" }).first().click();
   await page.getByLabel("Group", { exact: true }).selectOption({ label: groupName });
 
   // step 2: log a message built with the datapill picker
-  await page.getByLabel("New step type").selectOption("log");
-  await page.getByRole("button", { name: "Add step" }).click();
+  await page.getByLabel("New step type").first().selectOption("log");
+  await page.getByRole("button", { name: "Add step" }).first().click();
   await page.getByLabel("Insert datapill into Message").selectOption("trigger.user.email");
   await expect(page.getByLabel("Message", { exact: true })).toHaveValue("{{trigger.user.email}}");
 
   // the condition editor offers no self-editable fields
-  await page.getByLabel("New step type").selectOption("condition");
-  await page.getByRole("button", { name: "Add step" }).click();
+  await page.getByLabel("New step type").first().selectOption("condition");
+  await page.getByRole("button", { name: "Add step" }).first().click();
   const fieldOptions = await page.getByLabel("Field").first().locator("option").allTextContents();
   expect(fieldOptions.join("|")).not.toContain("First name");
 

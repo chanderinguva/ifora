@@ -25,7 +25,7 @@ from backend.app.db import get_db
 from backend.app.groups.model import Group
 from backend.app.profiles import catalog as profile_catalog
 from backend.app.recipes import conditions as cond
-from backend.app.recipes import crypto, definition as defn, engine
+from backend.app.recipes import crypto, definition as defn, engine, portable
 from backend.app.recipes.models import (
     Recipe, RecipeConnection, RecipeJob, RecipeJobStep, RecipeVersion,
 )
@@ -388,21 +388,97 @@ def list_recipes(db: Session = Depends(get_db), actor: User = Depends(require_ad
     return {"items": [_recipe_dict(db, r, viewer=actor) for r in db.query(Recipe).order_by(Recipe.id).all()]}
 
 
-@router.post("", status_code=201)
-def create_recipe(body: RecipeBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+def _create(db: Session, actor: User, request: Request, name: str, description: Optional[str], definition: Any, meta: Optional[dict] = None) -> Recipe:
     if db.query(func.count(Recipe.id)).scalar() >= settings.RECIPES_MAX_RECIPES:
         raise HTTPException(status_code=409, detail=f"At most {settings.RECIPES_MAX_RECIPES} recipes")
-    d = _validated(db, body.definition if body.definition is not None else defn.blank_definition())
-    r = Recipe(public_id=secrets.token_urlsafe(16).replace("-", "a").replace("_", "b")[:22], name=body.name.strip(),
-               description=body.description, enabled=False, draft=d, created_by=actor.id, owner_id=actor.id, editors=[])
+    d = _validated(db, definition)
+    r = Recipe(public_id=secrets.token_urlsafe(16).replace("-", "a").replace("_", "b")[:22], name=name.strip(),
+               description=description, enabled=False, draft=d, created_by=actor.id, owner_id=actor.id, editors=[])
     db.add(r)
     try:
         db.flush()
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="Recipe name already in use")
-    _audit(db, AuditAction.RECIPE_CREATED, actor, r.id, {"name": r.name}, request)
+    _audit(db, AuditAction.RECIPE_CREATED, actor, r.id, {"name": r.name, **(meta or {})}, request)
     db.commit()
+    return r
+
+
+@router.post("", status_code=201)
+def create_recipe(body: RecipeBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    r = _create(db, actor, request, body.name, body.description, body.definition if body.definition is not None else defn.blank_definition())
+    return _recipe_dict(db, r, detail=True, viewer=actor)
+
+
+# ---- templates, import, export (declared before /{recipe_id}) -------------------------------------------------------
+
+@router.get("/templates")
+def list_templates(_: User = Depends(require_admin)):
+    return {"items": portable.public_catalog()}
+
+
+class FromTemplateBody(BaseModel):
+    template_id: str = Field(..., max_length=60)
+    name: str = Field(..., min_length=1, max_length=100)
+    params: Dict[str, Any] = Field(default_factory=dict)
+
+
+@router.post("/from-template", status_code=201)
+def from_template(body: FromTemplateBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    t = portable.BY_ID.get(body.template_id)
+    if t is None:
+        raise HTTPException(status_code=404, detail="Unknown template")
+    p: Dict[str, Any] = {}
+    managed = defn.admin_managed_keys(db)
+    for spec in t["params"]:
+        k, v = spec["key"], body.params.get(spec["key"])
+        bad = HTTPException(status_code=422, detail=f"'{spec['label']}' is missing or invalid")
+        if spec["type"] == "group":
+            g = db.get(Group, v) if isinstance(v, int) and not isinstance(v, bool) else None
+            if g is None or g.is_system_group:
+                raise bad
+        elif spec["type"] == "slack_connection":
+            c = db.get(RecipeConnection, v) if isinstance(v, int) and not isinstance(v, bool) else None
+            if c is None or c.kind != "slack_webhook":
+                raise bad
+        elif spec["type"] == "attribute":
+            if v not in managed:
+                raise bad
+        elif spec["type"] == "number":
+            if isinstance(v, bool) or not isinstance(v, int) or not 1 <= v <= 100:
+                raise bad
+        elif not isinstance(v, str) or not 1 <= len(v) <= 200:
+            raise bad
+        p[k] = v
+    r = _create(db, actor, request, body.name, t["description"], t["build"](p), {"template": t["id"]})
+    return _recipe_dict(db, r, detail=True, viewer=actor)
+
+
+@router.get("/{recipe_id}/export")
+def export_recipe(recipe_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    """The DRAFT as a portable document. No secrets, no ids that only mean something here."""
+    r = _get(db, recipe_id)
+    doc = portable.export_document(db, r)
+    _audit(db, AuditAction.RECIPE_EXPORTED, actor, r.id, None, request)
+    db.commit()
+    return doc
+
+
+class ImportBody(BaseModel):
+    document: Dict[str, Any]
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+
+
+@router.post("/import", status_code=201)
+def import_recipe(body: ImportBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    if len(json.dumps(body.document)) > portable.MAX_IMPORT_BYTES:
+        raise HTTPException(status_code=413, detail="The file is too large")
+    try:
+        name, desc, d, _ = portable.resolve_import(db, body.document)
+    except portable.ImportError_ as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    r = _create(db, actor, request, body.name or name, desc, d, {"imported": True})
     return _recipe_dict(db, r, detail=True, viewer=actor)
 
 
