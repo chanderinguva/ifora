@@ -14,7 +14,7 @@ export async function ensureCsrfToken(): Promise<string> {
 }
 
 /** Step 1. Returns an MFA challenge token when a second factor is required, otherwise null (logged in). */
-export async function login(email: string, password: string): Promise<{ mfaToken: string } | null> {
+export async function login(email: string, password: string): Promise<{ mfaToken: string } | { passwordChange: true } | null> {
   const response = await fetch(`${API_URL}/api/v1/login`, {
     method: "POST",
     headers: {
@@ -30,6 +30,9 @@ export async function login(email: string, password: string): Promise<{ mfaToken
   }
 
   const data = await response.json();
+  if (data.password_change_required) {
+    return { passwordChange: true };
+  }
   if (data.mfa_required) {
     return { mfaToken: data.mfa_token };
   }

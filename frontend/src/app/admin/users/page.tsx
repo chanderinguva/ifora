@@ -135,7 +135,7 @@ function CreateUser({ canMakeAdmin, onDone }: { canMakeAdmin: boolean; onDone: (
   const [f, setF] = useState({ email: "", first_name: "", last_name: "", username: "", password: "", is_admin: false });
   const [schema, setSchema] = useState<ProfileAttribute[]>([]);
   const [attrs, setAttrs] = useState<Record<string, string>>({});
-  const [pwMode, setPwMode] = useState<"set" | "generate">("generate");
+  const [pwMode, setPwMode] = useState<"set" | "generate" | "invite">("generate");
   const [groups, setGroups] = useState<Group[]>([]);
   const [picked, setPicked] = useState<number[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -159,9 +159,11 @@ function CreateUser({ canMakeAdmin, onDone }: { canMakeAdmin: boolean; onDone: (
       };
       if (f.username.trim()) body.username = f.username.trim();
       if (pwMode === "set") body.password = f.password;
+      else if (pwMode === "invite") body.send_invite = true;
       else body.generate_password = true;
-      const r = await http<{ temporary_password?: string }>("/admin/users", { method: "POST", body });
-      if (r.temporary_password) setCreated({ email: f.email, password: r.temporary_password });
+      const r = await http<{ temporary_password?: string; invitation_sent?: boolean }>("/admin/users", { method: "POST", body });
+      if (r.invitation_sent === false) setError("The user was created, but the invitation email could not be sent. Use “Send invite” on their page to retry.");
+      else if (r.temporary_password) setCreated({ email: f.email, password: r.temporary_password });
       else onDone();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed");
@@ -254,6 +256,10 @@ function CreateUser({ canMakeAdmin, onDone }: { canMakeAdmin: boolean; onDone: (
             <label className="flex items-center gap-2 text-sm">
               <input type="radio" name="pwmode" checked={pwMode === "set"} onChange={() => setPwMode("set")} />
               I will set a password
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="radio" name="pwmode" checked={pwMode === "invite"} onChange={() => setPwMode("invite")} />
+              Email an invitation (the person chooses their own password; needs SMTP configured)
             </label>
             {pwMode === "set" && (
               <div className="space-y-1">

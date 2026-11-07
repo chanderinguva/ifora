@@ -16,6 +16,8 @@ from backend.app.audit.model import AuditAction
 from backend.app.audit.service import record
 from backend.app.auth.deps import require_admin
 from backend.app.auth.sessions_util import revoke_user_sessions
+from backend.app import mailer
+from backend.app.auth import password_tokens, recovery_routes
 from backend.app.users import lifecycle
 from backend.app.db import get_db
 from backend.app.groups import rules as group_rules
@@ -40,6 +42,7 @@ class UserCreate(BaseModel):
     is_admin: bool = False
     profile_attributes: Dict[str, Any] = Field(default_factory=dict)
     group_ids: List[int] = Field(default_factory=list, max_length=20)
+    send_invite: bool = False  # email a one-time set-password link; the account starts as "provisioned"
 
     @field_validator("password")
     @classmethod
@@ -75,6 +78,7 @@ class UserUpdate(BaseModel):
 
 class PasswordReset(BaseModel):
     new_password: str
+    require_change: bool = False  # Okta PASSWORD_EXPIRED: the user must choose their own password at next sign-in
 
     @field_validator("new_password")
     @classmethod
@@ -171,7 +175,13 @@ def create_user(
 ):
     if body.is_admin and not actor.is_super_admin:
         raise HTTPException(status_code=403, detail="Only a super administrator can create administrators")
-    if body.generate_password == (body.password is not None):
+    if body.send_invite:
+        if body.password is not None:
+            raise HTTPException(status_code=422, detail="An invited user chooses their own password; do not set one")
+        if not mailer.configured():
+            raise HTTPException(status_code=409, detail="Email is not configured on this server (SMTP_HOST / SMTP_FROM)")
+        body.generate_password = True  # unknown placeholder; the invitation link is the only way in
+    elif body.generate_password == (body.password is not None):
         raise HTTPException(status_code=422, detail="Provide a password, or ask for one to be generated (not both)")
     groups = []
     if body.group_ids:
@@ -211,11 +221,20 @@ def create_user(
         ))
         record(db, AuditAction.GROUP_MEMBER_ADDED, request, actor, g.id, "group", {"user_id": user.id})
         group_rules._recount(db, g.id)
+    invited = None
+    if body.send_invite:
+        user.status = "provisioned"
+        raw = password_tokens.issue(db, user, "invite")
+        record(db, AuditAction.USER_INVITED, request, actor, user.id, "user", {})
     group_rules.evaluate_user(db, user, request, actor)
     db.commit()
     db.refresh(user)
+    if body.send_invite:
+        invited = recovery_routes.send_link(user, "invite", raw)
     out = _detail(user)
-    if body.generate_password:
+    if invited is not None:
+        out["invitation_sent"] = invited
+    if body.generate_password and not body.send_invite:
         out["temporary_password"] = password  # shown once; only the hash is stored
     return out
 
@@ -302,8 +321,56 @@ def reset_password(
     user.failed_login_attempts = 0
     user.lockout_until = None
     revoked = revoke_user_sessions(db, user.id)
-    record(db, AuditAction.USER_PASSWORD_CHANGED, request, actor, user.id, "user", {"by": "admin", "sessions_revoked": revoked})
+    if body.require_change and user.status == "active":
+        user.status = "password_expired"
+    record(db, AuditAction.USER_PASSWORD_CHANGED, request, actor, user.id, "user",
+           {"by": "admin", "sessions_revoked": revoked, "require_change": body.require_change})
     db.commit()
+    return {"success": True}
+
+
+@router.post("/{user_id}/send-invite")
+def send_invite(
+    user_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_admin),
+):
+    """(Re)send the set-password email. Moves a staged account to provisioned. Not for active accounts."""
+    user = _get_or_404(db, user_id)
+    _guard_target(actor, user)
+    if user.status not in ("staged", "provisioned"):
+        raise HTTPException(status_code=409, detail="Only staged or provisioned accounts can be invited")
+    if not mailer.configured():
+        raise HTTPException(status_code=409, detail="Email is not configured on this server (SMTP_HOST / SMTP_FROM)")
+    user.status = "provisioned"
+    raw = password_tokens.issue(db, user, "invite")
+    record(db, AuditAction.USER_INVITED, request, actor, user.id, "user", {"resend": True})
+    db.commit()
+    if not recovery_routes.send_link(user, "invite", raw):
+        raise HTTPException(status_code=502, detail="The mail server did not accept the message")
+    return {"success": True}
+
+
+@router.post("/{user_id}/send-reset")
+def send_reset(
+    user_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_admin),
+):
+    """Email the user a password-reset link (the admin never sees or sets the password)."""
+    user = _get_or_404(db, user_id)
+    _guard_target(actor, user)
+    if user.status not in recovery_routes.RESETTABLE:
+        raise HTTPException(status_code=409, detail="This account's status does not allow a password reset")
+    if not mailer.configured():
+        raise HTTPException(status_code=409, detail="Email is not configured on this server (SMTP_HOST / SMTP_FROM)")
+    raw = password_tokens.issue(db, user, "reset")
+    record(db, AuditAction.PASSWORD_RESET_REQUESTED, request, actor, user.id, "user", {"by": "admin"})
+    db.commit()
+    if not recovery_routes.send_link(user, "reset", raw):
+        raise HTTPException(status_code=502, detail="The mail server did not accept the message")
     return {"success": True}
 
 

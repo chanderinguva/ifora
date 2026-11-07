@@ -94,6 +94,9 @@ def create_app() -> FastAPI:
     # Include auth routes (defined in backend/app/auth/routes.py)
     from backend.app.auth.routes import router as auth_router
     app.include_router(auth_router, prefix="/api/v1")
+    from backend.app.auth.recovery_routes import router as recovery_router
+
+    app.include_router(recovery_router, prefix="/api/v1")
 
     from backend.app.audit.routes import router as audit_router
     from backend.app.auth.mfa_routes import router as mfa_router

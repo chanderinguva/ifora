@@ -71,6 +71,10 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str = Field(default="")
     SMTP_FROM: str = Field(default="")
     SMTP_STARTTLS: bool = Field(default=True)
+    # Links in invite / password-reset emails point here (the web app's public URL).
+    PUBLIC_APP_URL: str = Field(default="http://localhost:3000")
+    PASSWORD_RESET_MINUTES: int = Field(default=30)
+    INVITE_HOURS: int = Field(default=72)
     RECIPES_EMAIL_ALLOWED_DOMAINS: str = Field(default="")  # comma separated, in addition to addresses of existing users
     RECIPES_MAX_EMAILS_PER_JOB: int = Field(default=25)
     MFA_CHALLENGE_MINUTES: int = Field(default=5)

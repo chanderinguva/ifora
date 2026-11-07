@@ -26,6 +26,7 @@ export default function UserDetail() {
   const [attrs, setAttrs] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [newPw, setNewPw] = useState("");
+  const [requireChange, setRequireChange] = useState(false);
 
   const apply = useCallback((u: User) => {
     setUser(u);
@@ -55,7 +56,7 @@ export default function UserDetail() {
 
   const resetPw = () =>
     run(async () => {
-      await http(`/admin/users/${id}/password`, { method: "POST", body: { new_password: newPw } });
+      await http(`/admin/users/${id}/password`, { method: "POST", body: { new_password: newPw, require_change: requireChange } });
       setNewPw("");
     }, "Password reset; all of the user's sessions were ended");
 
@@ -230,9 +231,25 @@ export default function UserDetail() {
             >
             <Label htmlFor="newpw">New password</Label>
             <Input id="newpw" type="password" autoComplete="new-password" value={newPw} onChange={(e) => setNewPw(e.target.value)} />
-            <Button type="submit" variant="outline" disabled={!newPw}>
-              Reset password
-            </Button>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={requireChange} onChange={(e) => setRequireChange(e.target.checked)} />
+              Require the user to choose a new password at next sign-in
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" variant="outline" disabled={!newPw}>
+                Reset password
+              </Button>
+              {(user.status === "staged" || user.status === "provisioned") && (
+                <Button type="button" variant="outline" onClick={() => run(() => http(`/admin/users/${id}/send-invite`, { method: "POST" }), "Invitation email sent")}>
+                  Send invite
+                </Button>
+              )}
+              {["active", "provisioned", "recovery", "password_expired", "locked_out"].includes(user.status) && (
+                <Button type="button" variant="outline" onClick={() => run(() => http(`/admin/users/${id}/send-reset`, { method: "POST" }), "Password reset email sent")}>
+                  Email a reset link
+                </Button>
+              )}
+            </div>
             </form>
           </CardContent>
         </Card>

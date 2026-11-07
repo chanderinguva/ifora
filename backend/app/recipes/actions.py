@@ -360,18 +360,10 @@ def _slack(rc: RunCtx, cfg: dict):
 
 
 _ADDR = re.compile(r"^[A-Za-z0-9._%+'-]{1,64}@([A-Za-z0-9-]{1,63}\.)+[A-Za-z]{2,24}$")
-mail_overrides: Dict[str, Any] = {}  # test seam: {"send": callable(EmailMessage)}
-
+from backend.app import mailer  # noqa: E402
 
 def _smtp_send(msg: EmailMessage) -> None:
-    if "send" in mail_overrides:
-        return mail_overrides["send"](msg)
-    with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=settings.RECIPES_HTTP_TIMEOUT_SECONDS) as smtp:
-        if settings.SMTP_STARTTLS:
-            smtp.starttls()
-        if settings.SMTP_USERNAME:
-            smtp.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
-        smtp.send_message(msg)
+    mailer.send(msg, timeout=settings.RECIPES_HTTP_TIMEOUT_SECONDS)
 
 
 def _email(rc: RunCtx, cfg: dict):
@@ -389,7 +381,7 @@ def _email(rc: RunCtx, cfg: dict):
     inp = {"to": to, "subject": subject[:200], "body": body[:2000]}
     if rc.dry:
         return inp, {"to": to, "sent": False, "dry_run": True}
-    if not (settings.SMTP_HOST and settings.SMTP_FROM) and "send" not in mail_overrides:
+    if not mailer.configured():
         raise StepError("email is not configured on this server")
     from backend.app.recipes.models import RecipeJobStep
     done = rc.db.query(RecipeJobStep).filter(RecipeJobStep.job_id == rc.job_id, RecipeJobStep.type == "send_email",

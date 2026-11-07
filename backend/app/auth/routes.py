@@ -201,6 +201,10 @@ async def login_endpoint(
         logger.warning("login.attempt_failed", reason="invalid_password", user_id=user.id)
         raise fail()
 
+    if user.status == "password_expired":
+        # Only someone who already knows the password learns this; the UI then offers the change-password form.
+        return {"success": False, "password_change_required": True}
+
     if user.status != "active":
         logger.warning("login.attempt_failed", reason="inactive", user_id=user.id)
         raise fail()

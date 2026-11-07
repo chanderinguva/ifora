@@ -8,6 +8,7 @@ import pytest
 
 from backend.app.audit.model import AuditEvent
 from backend.app.config import settings
+from backend.app import mailer
 from backend.app.recipes import actions
 from backend.app.recipes.models import RecipeConnection
 from tests.recipe_helpers import (  # noqa: F401
@@ -22,7 +23,7 @@ HOOK = "https://hooks.slack.com/services/T000/B000/XXXXSECRETXXXX"
 @pytest.fixture(autouse=True)
 def _clean(monkeypatch):
     actions._token_cache.clear()
-    monkeypatch.setattr(actions, "mail_overrides", {})
+    monkeypatch.setattr(mailer, "overrides", {})
     yield
     actions._token_cache.clear()
 
@@ -204,7 +205,7 @@ def test_slack_connection_rules(admin, rkey):
 @pytest.fixture
 def outbox(monkeypatch):
     sent = []
-    monkeypatch.setattr(actions, "mail_overrides", {"send": sent.append})
+    monkeypatch.setattr(mailer, "overrides", {"send": sent.append})
     monkeypatch.setattr(settings, "SMTP_FROM", "noreply@idp.example")
     monkeypatch.setattr(settings, "RECIPES_EMAIL_ALLOWED_DOMAINS", "")
     return sent
@@ -255,7 +256,7 @@ def test_email_cap_per_job_and_dry_run_and_unconfigured(db, admin, outbox, monke
     rid = admin.post("/admin/recipes", {"name": "dry", "definition": definition("manual", [mail_step("pat@example.com")])}).json()["id"]
     r = admin.post(f"/admin/recipes/{rid}/test", {})
     assert r.json()["status"] == "succeeded" and outbox == []
-    monkeypatch.setattr(actions, "mail_overrides", {})
+    monkeypatch.setattr(mailer, "overrides", {})
     monkeypatch.setattr(settings, "SMTP_HOST", "")
     assert admin.get("/admin/recipes/status").json()["email_available"] is False
     j2 = last_job(db, run_manual(admin, [mail_step("pat@example.com")], name="r3"))
@@ -273,7 +274,7 @@ def test_email_transient_failures_retry(db, admin, outbox, monkeypatch):
             raise smtplib.SMTPServerDisconnected("boom")
         outbox.append(msg)
 
-    monkeypatch.setattr(actions, "mail_overrides", {"send": flaky})
+    monkeypatch.setattr(mailer, "overrides", {"send": flaky})
     rid = make_recipe(admin, definition("manual", [step("m", "send_email", {"to": "pat@example.com", "subject": "s", "body": "b"}, max_attempts=3)]))
     admin.post(f"/admin/recipes/{rid}/run", {})
     from datetime import timedelta
