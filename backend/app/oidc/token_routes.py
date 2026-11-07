@@ -1,10 +1,9 @@
-"""/oauth/token, /oauth/userinfo and discovery. No CORS headers are added here: browser-based public clients on
-other origins are not supported yet (a non-credentialed policy for these endpoints is a later change)."""
+"""/oauth/token, /oauth/userinfo and discovery. CORS is non-credentialed and narrow (see oidc/cors.py)."""
 
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from sqlalchemy.orm import Session
 
 from backend.app import ratelimit
@@ -12,7 +11,7 @@ from backend.app.audit.model import AuditAction
 from backend.app.audit.service import record
 from backend.app.config import settings
 from backend.app.db import get_db
-from backend.app.oidc import keys, refresh, tokens
+from backend.app.oidc import cors, keys, refresh, tokens
 from backend.app.oidc.claims import user_claims
 from backend.app.oidc.clients import SUPPORTED_SCOPES
 from backend.app.oidc.models import OIDCClient
@@ -30,8 +29,30 @@ def _error(e: tokens.TokenError) -> JSONResponse:
     return JSONResponse({"error": e.error, "error_description": e.description}, status_code=e.status, headers=headers)
 
 
+@router.options("/oauth/token")
+def token_preflight(request: Request, db: Session = Depends(get_db)):
+    return Response(status_code=204, headers=cors.preflight_token(db, request))
+
+
+@router.options("/oauth/userinfo")
+def userinfo_preflight():
+    return Response(status_code=204, headers=cors.USERINFO_PREFLIGHT)
+
+
 @router.post("/oauth/token")
 async def token(request: Request, db: Session = Depends(get_db)):
+    resp = await _token(request, db)
+    cid = None
+    try:
+        cid = (await request.form()).get("client_id")  # cached by the first read
+    except Exception:
+        pass
+    if isinstance(cid, str):
+        resp.headers.update(cors.token_headers(db, request, cid))
+    return resp
+
+
+async def _token(request: Request, db: Session):
     ident = ratelimit.client_ip(request)
     ratelimit.check("oauth_token", ident, settings.RATE_LIMIT_TOKEN_FAILURES)  # failures only are counted below
     try:
@@ -72,6 +93,12 @@ def _bearer_error(error: Optional[str], desc: str = "", status: int = 401) -> JS
 
 @router.api_route("/oauth/userinfo", methods=["GET", "POST"])
 def userinfo(request: Request, db: Session = Depends(get_db)):
+    resp = _userinfo(request, db)
+    resp.headers.update(cors.USERINFO)
+    return resp
+
+
+def _userinfo(request: Request, db: Session):
     auth = request.headers.get("authorization") or ""
     if not auth.lower().startswith("bearer ") or not auth[7:].strip():
         return _bearer_error(None, "a Bearer access token is required")  # header only: never a query parameter
