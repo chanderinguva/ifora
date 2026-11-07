@@ -108,7 +108,16 @@ def reset_password(body: SetPasswordBody, request: Request, db: Session = Depend
         ratelimit.hit("pwtoken_ip", ip, 3600)
         raise HTTPException(status_code=400, detail="This link is invalid or has expired")
     now = datetime.now(timezone.utc)
-    token.used_at = now
+    # claim atomically: of two concurrent requests with the same token only one may win
+    claimed = (
+        db.query(password_tokens.PasswordToken)
+        .filter(password_tokens.PasswordToken.id == token.id, password_tokens.PasswordToken.used_at.is_(None))
+        .update({"used_at": now}, synchronize_session=False)
+    )
+    if claimed != 1:
+        db.rollback()
+        ratelimit.hit("pwtoken_ip", ip, 3600)
+        raise HTTPException(status_code=400, detail="This link is invalid or has expired")
     user.set_password(body.new_password)
     user.failed_login_attempts = 0
     user.lockout_until = None

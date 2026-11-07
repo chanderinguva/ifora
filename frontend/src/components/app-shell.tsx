@@ -130,7 +130,7 @@ export function AppShell({ title, nav, children }: { title: string; nav: NavGrou
           </button>
           <LogoLink href={home} className="md:hidden" />
           <Breadcrumbs groups={nav} className="hidden sm:block" />
-          <div className="ml-auto flex items-center gap-3">
+          <div className="ml-auto flex items-center gap-2 sm:gap-3">
             {user.is_admin && !user.acting_as_user && (
               <button className={cn(iconButton, "w-auto gap-2 px-3 text-sm text-muted-foreground")} aria-label="Search" data-testid="open-search"
                 onClick={() => window.dispatchEvent(new Event("open-command-palette"))}>

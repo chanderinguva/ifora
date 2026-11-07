@@ -65,7 +65,8 @@ test("authorize: sign in on the way, consent screen, allow and deny return to th
   const apps = p.getByTestId("connected-apps");
   await expect(apps).toContainText(name);
   await apps.getByRole("button", { name: `Withdraw access for ${name}` }).click();
-  await expect(p.getByTestId("connected-apps")).toHaveCount(0);
+  await expect(p.getByTestId("connected-apps")).toContainText("can no longer access your account");
+  await expect(p.getByRole("button", { name: `Withdraw access for ${name}` })).toHaveCount(0);
   await p.goto(url("s-after"));
   await expect(p.getByTestId("consent-card")).toContainText(`${name} wants access`);
   await ctx.close();
