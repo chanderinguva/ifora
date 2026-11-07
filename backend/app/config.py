@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     RECIPES_WEBHOOK_MAX_BODY_BYTES: int = Field(default=65536)
     RECIPES_WEBHOOK_REPLAY_SECONDS: int = Field(default=300)
     RECIPES_MAX_RECIPES: int = Field(default=100)
+    RECIPES_DEFAULT_RATE_PER_HOUR: int = Field(default=0)  # live jobs per recipe per rolling hour when the recipe sets none (0 = unlimited)
+    RECIPES_ALERT_WINDOW_MINUTES: int = Field(default=60)
+    RECIPES_ALERT_MIN_JOBS: int = Field(default=5)  # finished jobs in the window before a failure rate means anything
+    RECIPES_ALERT_FAILURE_RATE: float = Field(default=0.5)
     # Outbound email for the send_email step (empty SMTP_HOST = disabled). Recipients must be existing users or in an allowed domain.
     SMTP_HOST: str = Field(default="")
     SMTP_PORT: int = Field(default=587)

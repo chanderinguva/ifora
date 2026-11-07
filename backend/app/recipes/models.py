@@ -27,6 +27,12 @@ class Recipe(TenantOwned, Base):
     published_trigger_type = Column(String(40), nullable=True, index=True)
     webhook_secret_enc = Column(Text, nullable=True)
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    owner_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)  # may publish/enable/run/delete and grant access
+    editors = Column(JSONB, nullable=False, default=list, server_default="[]")  # admin user ids who may edit the draft and dry-run it
+    rate_limit_per_hour = Column(Integer, nullable=True)  # live jobs started per rolling hour (None = server default)
+    throttled_count = Column(Integer, nullable=False, default=0, server_default="0")
+    last_throttled_at = Column(DateTime(timezone=True), nullable=True)
+    last_alert_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=_now)
 

@@ -7,7 +7,7 @@ import re
 import secrets
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -47,7 +47,12 @@ NOW = lambda: datetime.now(timezone.utc)  # noqa: E731
 
 # ---- serialisation ---------------------------------------------------------------------------------
 
-def _recipe_dict(db: Session, r: Recipe, detail: bool = False) -> dict:
+def _people(db: Session, ids: list) -> list:
+    users = {u.id: u for u in db.query(User).filter(User.id.in_([i for i in ids if i is not None])).all()} if ids else {}
+    return [{"id": i, "email": users[i].email} for i in ids if i in users]
+
+
+def _recipe_dict(db: Session, r: Recipe, detail: bool = False, viewer: Optional[User] = None) -> dict:
     published = None
     if r.published_version is not None:
         v = db.query(RecipeVersion).filter(RecipeVersion.recipe_id == r.id, RecipeVersion.version == r.published_version).first()
@@ -67,6 +72,15 @@ def _recipe_dict(db: Session, r: Recipe, detail: bool = False) -> dict:
         "last_job": {"id": last.id, "status": last.status, "created_at": last.created_at.isoformat()} if last else None,
         "created_at": r.created_at.isoformat(),
         "updated_at": r.updated_at.isoformat(),
+        "owner": (_people(db, [r.owner_id]) or [None])[0],
+        "editors": _people(db, list(r.editors or [])),
+        "rate_limit_per_hour": r.rate_limit_per_hour,
+        "effective_rate_limit_per_hour": engine.rate_limit_for(r),
+        "throttled_count": r.throttled_count or 0,
+        "last_throttled_at": r.last_throttled_at.isoformat() if r.last_throttled_at else None,
+        "last_alert_at": r.last_alert_at.isoformat() if r.last_alert_at else None,
+        "can_edit": can_edit(viewer, r) if viewer else None,
+        "can_manage": can_manage(viewer, r) if viewer else None,
     }
     if detail:
         d["draft"] = r.draft
@@ -118,6 +132,23 @@ def _get(db: Session, rid: int) -> Recipe:
     r = db.get(Recipe, rid)
     if r is None:
         raise HTTPException(status_code=404, detail="Recipe not found")
+    return r
+
+
+def can_edit(user: User, r: Recipe) -> bool:
+    """Draft editing and dry runs: the owner, listed editors and super admins."""
+    return bool(user.is_super_admin or user.id == r.owner_id or user.id in (r.editors or []))
+
+
+def can_manage(user: User, r: Recipe) -> bool:
+    """Publish, enable, run, delete, job control, access settings: the owner and super admins. Editors cannot."""
+    return bool(user.is_super_admin or user.id == r.owner_id)
+
+
+def _need(db: Session, rid: int, actor: User, level: str) -> Recipe:
+    r = _get(db, rid)
+    if not (can_manage if level == "manage" else can_edit)(actor, r):
+        raise HTTPException(status_code=403, detail="Only the owner of this recipe can do that" if level == "manage" else "You do not have edit access to this recipe")
     return r
 
 
@@ -233,9 +264,11 @@ def rerun_job(job_id: int, request: Request, db: Session = Depends(get_db), acto
     if j.mode != "live" or j.status not in ("failed", "cancelled"):
         raise HTTPException(status_code=409, detail="Only failed or cancelled jobs can be re-run")
     r = db.get(Recipe, j.recipe_id)
+    if r is not None and not can_manage(actor, r):
+        raise HTTPException(status_code=403, detail="Only the owner of this recipe can do that")
     if r is None or not r.enabled:
         raise HTTPException(status_code=409, detail="Enable the recipe before re-running its jobs")
-    new = engine.create_job(db, r, j.definition, j.version, j.trigger, f"rerun:{j.id}:{uuid.uuid4().hex[:12]}", depth=j.depth)
+    new = engine.create_job(db, r, j.definition, j.version, j.trigger, f"rerun:{j.id}:{uuid.uuid4().hex[:12]}", depth=j.depth, enforce_rate=False)
     new.rerun_of = j.id
     _audit(db, AuditAction.RECIPE_JOB_RERUN, actor, r.id, {"job_id": new.id, "rerun_of": j.id}, request)
     db.commit()
@@ -250,9 +283,11 @@ def _decide(job_id: int, decision: str, request: Request, db: Session, actor: Us
     j = db.query(RecipeJob).filter(RecipeJob.id == job_id).with_for_update().first()
     if j is None:
         raise HTTPException(status_code=404, detail="Job not found")
+    r = db.get(Recipe, j.recipe_id)
+    if r is not None and not can_manage(actor, r):
+        raise HTTPException(status_code=403, detail="Only the owner of this recipe can do that")
     if j.status != "waiting" or not j.approval or j.approval.get("decision") is not None:
         raise HTTPException(status_code=409, detail="This job is not waiting for a decision")
-    r = db.get(Recipe, j.recipe_id)
     if r is None or not r.enabled:
         raise HTTPException(status_code=409, detail="The recipe is disabled; enable it or cancel the job")
     j.approval = {**j.approval, "decision": decision, "decided_by": str(actor.id)}
@@ -282,6 +317,8 @@ def cancel_job(job_id: int, request: Request, db: Session = Depends(get_db), act
     if j.status not in ("queued", "waiting", "running"):
         raise HTTPException(status_code=409, detail="The job has already finished")
     r = db.get(Recipe, j.recipe_id)
+    if r is not None and not can_manage(actor, r):
+        raise HTTPException(status_code=403, detail="Only the owner of this recipe can do that")
     if j.status in ("queued", "waiting"):
         engine._finish(db, j, "cancelled", NOW(), "cancelled by an administrator")
         db.commit()
@@ -290,6 +327,52 @@ def cancel_job(job_id: int, request: Request, db: Session = Depends(get_db), act
         _audit(db, AuditAction.RECIPE_JOB_CANCEL_REQUESTED, actor, j.recipe_id, {"job_id": j.id}, request)
         db.commit()
     return _job_dict(j, r.name if r else None)
+
+
+# ---- metrics ----------------------------------------------------------------------------------------------
+
+@router.get("/metrics")
+def metrics(hours: int = Query(24, ge=1, le=168), db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    """Per-recipe health over the last N hours (live jobs only) plus queue depth. Failure rate = failed / finished."""
+    since = NOW() - timedelta(hours=hours)
+    rows = (
+        db.query(RecipeJob.recipe_id, RecipeJob.status, func.count(RecipeJob.id))
+        .filter(RecipeJob.mode == "live", RecipeJob.created_at > since).group_by(RecipeJob.recipe_id, RecipeJob.status).all()
+    )
+    by: Dict[int, Dict[str, int]] = {}
+    for rid, st, n in rows:
+        by.setdefault(rid, {})[st] = n
+    dur = {
+        rid: (p50, p95) for rid, p50, p95 in db.query(
+            RecipeJob.recipe_id,
+            func.percentile_cont(0.5).within_group(func.extract("epoch", RecipeJob.finished_at - RecipeJob.started_at)),
+            func.percentile_cont(0.95).within_group(func.extract("epoch", RecipeJob.finished_at - RecipeJob.started_at)),
+        ).filter(RecipeJob.mode == "live", RecipeJob.created_at > since, RecipeJob.finished_at.is_not(None),
+                 RecipeJob.started_at.is_not(None), RecipeJob.status.in_(("succeeded", "failed"))).group_by(RecipeJob.recipe_id)
+    }
+    now = NOW()
+    items = []
+    for r in db.query(Recipe).order_by(Recipe.id).all():
+        c = by.get(r.id, {})
+        finished = c.get("succeeded", 0) + c.get("failed", 0)
+        p50, p95 = dur.get(r.id, (None, None))
+        items.append({
+            "recipe_id": r.id, "name": r.name, "enabled": r.enabled, "total": sum(c.values()), "by_status": c,
+            "failure_rate": round(c.get("failed", 0) / finished, 3) if finished else None,
+            "p50_seconds": round(p50, 2) if p50 is not None else None, "p95_seconds": round(p95, 2) if p95 is not None else None,
+            "throttled_count": r.throttled_count or 0,
+            "alerting": bool(r.last_alert_at and r.last_alert_at > now - timedelta(minutes=settings.RECIPES_ALERT_WINDOW_MINUTES)),
+            "last_alert_at": r.last_alert_at.isoformat() if r.last_alert_at else None,
+        })
+    oldest = db.query(func.min(RecipeJob.next_run_at)).filter(RecipeJob.mode == "live", RecipeJob.status == "queued").scalar()
+    return {
+        "window_hours": hours, "items": items,
+        "queue": {"queued": db.query(func.count(RecipeJob.id)).filter(RecipeJob.mode == "live", RecipeJob.status == "queued").scalar(),
+                  "waiting": db.query(func.count(RecipeJob.id)).filter(RecipeJob.mode == "live", RecipeJob.status == "waiting").scalar(),
+                  "oldest_queued_age_seconds": max(int((now - oldest).total_seconds()), 0) if oldest else None},
+        "alert_rule": {"min_jobs": settings.RECIPES_ALERT_MIN_JOBS, "failure_rate": settings.RECIPES_ALERT_FAILURE_RATE,
+                       "window_minutes": settings.RECIPES_ALERT_WINDOW_MINUTES},
+    }
 
 
 # ---- recipes ----------------------------------------------------------------------------------------------
@@ -301,8 +384,8 @@ class RecipeBody(BaseModel):
 
 
 @router.get("")
-def list_recipes(db: Session = Depends(get_db), _: User = Depends(require_admin)):
-    return {"items": [_recipe_dict(db, r) for r in db.query(Recipe).order_by(Recipe.id).all()]}
+def list_recipes(db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    return {"items": [_recipe_dict(db, r, viewer=actor) for r in db.query(Recipe).order_by(Recipe.id).all()]}
 
 
 @router.post("", status_code=201)
@@ -311,7 +394,7 @@ def create_recipe(body: RecipeBody, request: Request, db: Session = Depends(get_
         raise HTTPException(status_code=409, detail=f"At most {settings.RECIPES_MAX_RECIPES} recipes")
     d = _validated(db, body.definition if body.definition is not None else defn.blank_definition())
     r = Recipe(public_id=secrets.token_urlsafe(16).replace("-", "a").replace("_", "b")[:22], name=body.name.strip(),
-               description=body.description, enabled=False, draft=d, created_by=actor.id)
+               description=body.description, enabled=False, draft=d, created_by=actor.id, owner_id=actor.id, editors=[])
     db.add(r)
     try:
         db.flush()
@@ -320,17 +403,56 @@ def create_recipe(body: RecipeBody, request: Request, db: Session = Depends(get_
         raise HTTPException(status_code=409, detail="Recipe name already in use")
     _audit(db, AuditAction.RECIPE_CREATED, actor, r.id, {"name": r.name}, request)
     db.commit()
-    return _recipe_dict(db, r, detail=True)
+    return _recipe_dict(db, r, detail=True, viewer=actor)
+
+
+class SettingsBody(BaseModel):
+    owner_id: Optional[int] = None
+    editors: Optional[List[int]] = Field(None, max_length=20)
+    rate_limit_per_hour: Optional[int] = Field(None, ge=0, le=100000)
+    clear_rate_limit: bool = False  # back to the server default
+
+
+@router.put("/{recipe_id}/settings")
+def update_settings(recipe_id: int, body: SettingsBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    """Owner, editors and the hourly job limit. Owner or super admin only."""
+    r = _need(db, recipe_id, actor, "manage")
+    changed = {}
+    if body.owner_id is not None and body.owner_id != r.owner_id:
+        new_owner = db.get(User, body.owner_id)
+        if new_owner is None or not new_owner.is_admin or new_owner.status != "active":
+            raise HTTPException(status_code=422, detail="The owner must be an active administrator")
+        changed["owner_id"] = [r.owner_id, new_owner.id]
+        r.owner_id = new_owner.id
+    if body.editors is not None:
+        ids = sorted({i for i in body.editors if i != r.owner_id})
+        found = {u.id for u in db.query(User).filter(User.id.in_(ids), User.is_admin.is_(True), User.status == "active").all()} if ids else set()
+        if found != set(ids):
+            raise HTTPException(status_code=422, detail="Editors must be active administrators")
+        if ids != sorted(r.editors or []):
+            changed["editors"] = [sorted(r.editors or []), ids]
+        r.editors = ids
+    if body.clear_rate_limit:
+        changed["rate_limit_per_hour"] = [r.rate_limit_per_hour, None]
+        r.rate_limit_per_hour = None
+    elif body.rate_limit_per_hour is not None and body.rate_limit_per_hour != r.rate_limit_per_hour:
+        changed["rate_limit_per_hour"] = [r.rate_limit_per_hour, body.rate_limit_per_hour]
+        r.rate_limit_per_hour = body.rate_limit_per_hour
+    if changed:
+        r.updated_at = NOW()
+        _audit(db, AuditAction.RECIPE_SETTINGS_CHANGED, actor, r.id, {"changed": changed}, request)
+    db.commit()
+    return _recipe_dict(db, r, detail=True, viewer=actor)
 
 
 @router.get("/{recipe_id}")
-def get_recipe(recipe_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):
-    return _recipe_dict(db, _get(db, recipe_id), detail=True)
+def get_recipe(recipe_id: int, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    return _recipe_dict(db, _get(db, recipe_id), detail=True, viewer=actor)
 
 
 @router.put("/{recipe_id}")
 def update_recipe(recipe_id: int, body: RecipeBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
-    r = _get(db, recipe_id)
+    r = _need(db, recipe_id, actor, "edit")
     if body.definition is not None:
         r.draft = _validated(db, body.definition)
     r.name, r.description, r.updated_at = body.name.strip(), body.description, NOW()
@@ -341,12 +463,12 @@ def update_recipe(recipe_id: int, body: RecipeBody, request: Request, db: Sessio
         raise HTTPException(status_code=409, detail="Recipe name already in use")
     _audit(db, AuditAction.RECIPE_UPDATED, actor, r.id, {"name": r.name}, request)
     db.commit()
-    return _recipe_dict(db, r, detail=True)
+    return _recipe_dict(db, r, detail=True, viewer=actor)
 
 
 @router.delete("/{recipe_id}")
 def delete_recipe(recipe_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
-    r = _get(db, recipe_id)
+    r = _need(db, recipe_id, actor, "manage")
     name = r.name
     db.delete(r)
     _audit(db, AuditAction.RECIPE_DELETED, actor, recipe_id, {"name": name}, request)
@@ -362,7 +484,7 @@ def _new_webhook_secret(r: Recipe) -> str:
 
 @router.post("/{recipe_id}/publish")
 def publish(recipe_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
-    r = _get(db, recipe_id)
+    r = _need(db, recipe_id, actor, "manage")
     d = _validated(db, r.draft, for_publish=True)
     secret = None
     if d["trigger"]["type"] == "webhook":
@@ -376,7 +498,7 @@ def publish(recipe_id: int, request: Request, db: Session = Depends(get_db), act
     r.draft = d
     _audit(db, AuditAction.RECIPE_PUBLISHED, actor, r.id, {"version": latest + 1, "trigger": d["trigger"]["type"]}, request)
     db.commit()
-    out = _recipe_dict(db, r, detail=True)
+    out = _recipe_dict(db, r, detail=True, viewer=actor)
     if secret:
         out["webhook_secret"] = secret  # shown once
     return out
@@ -384,7 +506,7 @@ def publish(recipe_id: int, request: Request, db: Session = Depends(get_db), act
 
 @router.post("/{recipe_id}/webhook-secret")
 def rotate_webhook_secret(recipe_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
-    r = _get(db, recipe_id)
+    r = _need(db, recipe_id, actor, "manage")
     if not crypto.available():
         raise HTTPException(status_code=409, detail="Webhook triggers need RECIPE_ENCRYPTION_KEY to be configured")
     if "webhook" not in (r.draft["trigger"]["type"], r.published_trigger_type):
@@ -397,22 +519,22 @@ def rotate_webhook_secret(recipe_id: int, request: Request, db: Session = Depend
 
 @router.post("/{recipe_id}/enable")
 def enable(recipe_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
-    r = _get(db, recipe_id)
+    r = _need(db, recipe_id, actor, "manage")
     if r.published_version is None:
         raise HTTPException(status_code=409, detail="Publish the recipe before enabling it")
     r.enabled = True
     _audit(db, AuditAction.RECIPE_ENABLED, actor, r.id, None, request)
     db.commit()
-    return _recipe_dict(db, r)
+    return _recipe_dict(db, r, viewer=actor)
 
 
 @router.post("/{recipe_id}/disable")
 def disable(recipe_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
-    r = _get(db, recipe_id)
+    r = _need(db, recipe_id, actor, "manage")
     r.enabled = False
     _audit(db, AuditAction.RECIPE_DISABLED, actor, r.id, None, request)
     db.commit()
-    return _recipe_dict(db, r)
+    return _recipe_dict(db, r, viewer=actor)
 
 
 @router.get("/{recipe_id}/versions")
@@ -488,7 +610,7 @@ def _sample_trigger(db: Session, d: dict, body: RunBody, admin: User) -> dict:
 @router.post("/{recipe_id}/test")
 def test_run(recipe_id: int, body: RunBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
     """Dry run of the DRAFT: nothing is written and no request is sent."""
-    r = _get(db, recipe_id)
+    r = _need(db, recipe_id, actor, "edit")
     d = _validated(db, r.draft)
     ctx = _sample_trigger(db, d, body, actor)
     _audit(db, AuditAction.RECIPE_TEST_RUN, actor, r.id, {"trigger": d["trigger"]["type"]}, request)
@@ -498,14 +620,14 @@ def test_run(recipe_id: int, body: RunBody, request: Request, db: Session = Depe
 
 @router.post("/{recipe_id}/run", status_code=202)
 def manual_run(recipe_id: int, body: RunBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
-    r = _get(db, recipe_id)
+    r = _need(db, recipe_id, actor, "manage")
     if r.published_version is None or not r.enabled:
         raise HTTPException(status_code=409, detail="Publish and enable the recipe before running it")
     if r.published_trigger_type != "manual":
         raise HTTPException(status_code=409, detail="Only recipes with a manual trigger can be started by hand")
     v = db.query(RecipeVersion).filter(RecipeVersion.recipe_id == r.id, RecipeVersion.version == r.published_version).one()
     ctx = _sample_trigger(db, v.definition, body, actor)
-    job = engine.create_job(db, r, v.definition, v.version, ctx, f"manual:{uuid.uuid4().hex}")
+    job = engine.create_job(db, r, v.definition, v.version, ctx, f"manual:{uuid.uuid4().hex}", enforce_rate=False)
     _audit(db, AuditAction.RECIPE_MANUAL_RUN, actor, r.id, {"job_id": job.id, "version": v.version}, request)
     db.commit()
     return _job_dict(job, r.name)
@@ -700,7 +822,11 @@ async def webhook(public_id: str, request: Request, db: Session = Depends(get_db
            "actor": {"type": "webhook", "id": ""}, "payload": payload}
     if not engine.trigger_matches(db, v.definition["trigger"], ctx):
         return {"accepted": False}
-    job = engine.create_job(db, r, v.definition, v.version, ctx, "wh:" + expected, now=now)
+    try:
+        job = engine.create_job(db, r, v.definition, v.version, ctx, "wh:" + expected, now=now)
+    except engine.RateLimited:
+        db.commit()  # keep the throttle counters and the audit line
+        raise HTTPException(status_code=429, detail="This recipe is over its hourly limit", headers={"Retry-After": "300"})
     if job is None:  # replay of an already accepted request: same signature, same job
         return {"accepted": True, "duplicate": True}
     db.add(AuditEvent(
