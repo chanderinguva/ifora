@@ -21,6 +21,9 @@ user_group_association = Table(
     Column("added_at", DateTime(timezone=True), default=datetime.utcnow, nullable=False),
     # set when a group rule created this membership (NULL = added by hand); see groups/rules.py
     Column("rule_id", Integer, ForeignKey("group_rules.id", ondelete="CASCADE"), nullable=True, index=True),
+    # Filled by a database trigger from the group (and checked against the user's tenant), so no insert path can
+    # forget it or link across tenants. See migration 0030.
+    Column("tenant_id", Integer, ForeignKey("tenants.id"), nullable=False, index=True),
 )
 
 

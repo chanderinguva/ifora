@@ -253,7 +253,7 @@ export default function GroupRulesPage() {
                   <td className={td + " font-medium"}>{r.name}{r.kind === "expression" && <span className="ml-2 text-xs font-normal text-muted-foreground">EL</span>}</td>
                   <td className={td + " font-mono text-xs"}>{r.expression}</td>
                   <td className={td}>{r.groups.map((g) => g.name).join(", ") || "—"}</td>
-                  <td className={td}><Badge tone={r.status === "active" ? "good" : "neutral"}>{r.status}</Badge></td>
+                  <td className={td}><Badge tone={r.status === "active" ? "good" : "neutral"}>{r.status}</Badge>{r.sync_state === "pending" && <Badge tone="info">syncing…</Badge>}</td>
                   <td className={td + " space-x-2 text-right whitespace-nowrap"}>
                     {r.status === "inactive" ? (
                       <>

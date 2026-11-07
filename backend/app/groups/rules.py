@@ -58,6 +58,9 @@ class GroupRule(TenantOwned, Base):
     conditions = Column(JSONB, nullable=False)
     # "basic": structured conditions. "expression": an Okta Expression Language boolean (okta_el).
     kind = Column(String(12), nullable=False, default="basic", server_default="basic")
+    # Large directories: activation is finished by the worker in batches (sync_state "pending", cursor = last user id done).
+    sync_state = Column(String(8), nullable=False, default="idle", server_default="idle")
+    sync_cursor = Column(Integer, nullable=False, default=0, server_default="0")
     expression_text = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
@@ -74,6 +77,7 @@ class GroupRule(TenantOwned, Base):
             "status": self.status,
             "match": self.match,
             "kind": self.kind,
+            "sync_state": self.sync_state,
             "conditions": self.conditions,
             "expression": self.expression_text if self.kind == "expression" else describe(self.match, self.conditions),
             "groups": [{"id": g.id, "name": g.name} for g in groups],
@@ -248,10 +252,16 @@ def evaluate_user(db: Session, user: User, request=None, actor=None) -> None:
 
 
 def evaluate_rule(db: Session, rule: GroupRule, request=None, actor=None) -> Dict[str, int]:
-    """Apply one rule to every user (activation, or a changed rule). Caller commits."""
-    total = {"added": 0, "removed": 0}
+    """Apply one rule to every user (activation, or a changed rule). Caller commits. In a directory bigger than
+    GROUP_RULES_SYNC_MAX_USERS the work is queued for the worker instead (result carries queued=True)."""
+    total: Dict[str, Any] = {"added": 0, "removed": 0}
     if rule.status != "active":
         return total
+    if db.query(User.id).count() > settings.GROUP_RULES_SYNC_MAX_USERS:
+        rule.sync_state, rule.sync_cursor = "pending", 0
+        total["queued"] = True
+        return total
+    rule.sync_state = "idle"
     for user in db.query(User).yield_per(200):
         r = _reconcile(db, rule, user, rule_matches(rule, user), request, actor)
         total["added"] += r["added"]
@@ -259,8 +269,50 @@ def evaluate_rule(db: Session, rule: GroupRule, request=None, actor=None) -> Dic
     return total
 
 
+def sync_batch(db: Session, rule: GroupRule) -> int:
+    """Process the next batch of a pending rule. Returns how many users were looked at. Caller commits."""
+    if rule.status != "active" or rule.sync_state != "pending":
+        rule.sync_state = "idle"
+        return 0
+    users = db.query(User).filter(User.id > rule.sync_cursor).order_by(User.id).limit(settings.GROUP_RULES_BATCH_SIZE).all()
+    for user in users:
+        _reconcile(db, rule, user, rule_matches(rule, user), None, None)
+    if users:
+        rule.sync_cursor = users[-1].id
+    if len(users) < settings.GROUP_RULES_BATCH_SIZE:
+        rule.sync_state = "idle"
+    return len(users)
+
+
+def sync_pending_all() -> int:
+    """Worker entry point: advance every pending rule in every tenant by one batch. Returns users processed."""
+    from backend.app.db import SessionLocal
+    from backend.app.tenancy import Tenant, tenant_session, unscoped
+
+    s = SessionLocal()
+    try:
+        with unscoped(s):
+            todo = [(r.tenant_id, r.id) for r in s.query(GroupRule).filter(GroupRule.sync_state == "pending").all()]
+    finally:
+        s.close()
+    done = 0
+    for tid, rid in todo:
+        db = tenant_session(tid)
+        try:
+            rule = db.get(GroupRule, rid)
+            if rule is not None:
+                done += sync_batch(db, rule)
+                db.commit()
+        except Exception:  # noqa: BLE001 - one rule must not stop the others
+            db.rollback()
+        finally:
+            db.close()
+    return done
+
+
 def strip_rule_memberships(db: Session, rule: GroupRule, request=None, actor=None) -> int:
     """Remove every membership this rule created (deactivate/delete)."""
+    rule.sync_state = "idle"
     rows = db.execute(
         select(user_group_association.c.user_id, user_group_association.c.group_id).where(
             user_group_association.c.rule_id == rule.id

@@ -81,6 +81,7 @@ export type GroupRule = {
   name: string;
   status: "active" | "inactive";
   kind: "basic" | "expression";
+  sync_state?: "idle" | "pending";
   match: "all" | "any";
   conditions: RuleCondition[];
   expression: string;

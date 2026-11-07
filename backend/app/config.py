@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     OIDC_JWKS_CACHE_SECONDS: int = Field(default=300)
     # Edition feature flag: attribute-based group rules (Okta-style).
     GROUP_RULES_ENABLED: bool = Field(default=True)
+    # Activating a rule in a directory larger than this is finished by the worker in batches instead of inside the request.
+    GROUP_RULES_SYNC_MAX_USERS: int = Field(default=500)
+    GROUP_RULES_BATCH_SIZE: int = Field(default=200)
     # Recipe engine (ADR 008). Kill switch + limits. RECIPE_ENCRYPTION_KEY is a third, separate Fernet key;
     # empty = connections (stored secrets) and webhook triggers are unavailable.
     RECIPES_JOB_RETENTION_DAYS: int = Field(default=30)  # finished jobs and their step history are deleted after this many days (0 = keep)
