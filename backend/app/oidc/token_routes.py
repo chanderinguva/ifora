@@ -62,7 +62,7 @@ async def _token(request: Request, db: Session):
         form = dict(pairs)
         if len(pairs) != len(form):
             raise tokens.TokenError("invalid_request", "repeated parameter")
-        client = tokens.authenticate(db, request.headers.get("authorization"), form)
+        client = tokens.authenticate(db, request.headers.get("authorization"), form, "token")
 
         def audit(action: str, user_id: Optional[int], meta: dict):
             record(db, AuditAction(action), request, None, user_id, "user", {"client_id": client.client_id, **meta})
@@ -125,8 +125,12 @@ def _userinfo(request: Request, db: Session):
 
 
 @router.get("/.well-known/openid-configuration")
-def discovery():
+def discovery(db: Session = Depends(get_db)):
     iss = settings.OIDC_ISSUER.rstrip("/")
+    try:
+        algs = keys.advertised_algs(db)
+    except keys.KeyConfigError:  # signing not configured yet: say what we would use rather than failing discovery
+        algs = [settings.OIDC_SIGNING_ALG]
     return JSONResponse({
         "issuer": settings.OIDC_ISSUER,
         "authorization_endpoint": f"{iss}/oauth/authorize",
@@ -137,15 +141,16 @@ def discovery():
         "response_modes_supported": ["query"],
         "grant_types_supported": ["authorization_code", "refresh_token", "client_credentials"],
         "subject_types_supported": ["public"],
-        "id_token_signing_alg_values_supported": ["RS256"],
+        "id_token_signing_alg_values_supported": algs,
         "scopes_supported": list(SUPPORTED_SCOPES),
-        "token_endpoint_auth_methods_supported": ["client_secret_basic", "none"],
+        "token_endpoint_auth_methods_supported": ["client_secret_basic", "private_key_jwt", "none"],
+        "token_endpoint_auth_signing_alg_values_supported": ["RS256", "ES256"],
         "code_challenge_methods_supported": ["S256"],
         "claims_supported": ["sub", "iss", "aud", "exp", "iat", "auth_time", "nonce", "amr", "acr", "at_hash", "name", "given_name",
                              "family_name", "preferred_username", "zoneinfo", "locale", "updated_at", "email", "groups"],
         "authorization_response_iss_parameter_supported": True,
         "introspection_endpoint": f"{iss}/oauth/introspect",
-        "introspection_endpoint_auth_methods_supported": ["client_secret_basic"],
+        "introspection_endpoint_auth_methods_supported": ["client_secret_basic", "private_key_jwt"],
         "end_session_endpoint": f"{iss}/oauth/logout",
         "prompt_values_supported": ["none", "login", "consent", "select_account"],
         "acr_values_supported": ["urn:identityforge:acr:1", "urn:identityforge:acr:2"],
@@ -167,7 +172,7 @@ async def introspect(request: Request, db: Session = Depends(get_db)):
         form = dict(pairs)
         if len(pairs) != len(form):
             raise tokens.TokenError("invalid_request", "repeated parameter")
-        client = tokens.authenticate(db, request.headers.get("authorization"), form)
+        client = tokens.authenticate(db, request.headers.get("authorization"), form, "introspect")
         if client.client_type == "public":
             raise tokens.TokenError("invalid_client", "client authentication failed", 401, 'Basic realm="oauth"')
         raw = form.get("token")
@@ -196,7 +201,7 @@ async def revoke(request: Request, db: Session = Depends(get_db)):
         form = dict(pairs)
         if len(pairs) != len(form):
             raise tokens.TokenError("invalid_request", "repeated parameter")
-        client = tokens.authenticate(db, request.headers.get("authorization"), form)
+        client = tokens.authenticate(db, request.headers.get("authorization"), form, "revoke")
         raw = form.get("token")
         if not raw or len(raw) > 4096:
             raise tokens.TokenError("invalid_request", "token is required")

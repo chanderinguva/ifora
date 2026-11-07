@@ -22,6 +22,10 @@ USER_SCOPES = SUPPORTED_SCOPES  # identity scopes: never granted to a service cl
 _SERVICE_SCOPE = re.compile(r"^[a-z][a-z0-9:._-]{0,63}$")
 MAX_SERVICE_SCOPES = 20
 MAX_URIS = 10
+AUTH_METHODS = ("client_secret_basic", "private_key_jwt")
+MAX_JWKS_KEYS = 5
+_PRIVATE_MEMBERS = {"d", "p", "q", "dp", "dq", "qi", "oth", "k"}
+_PUBLIC_MEMBERS = {"kty", "kid", "use", "alg", "n", "e", "crv", "x", "y"}
 MAX_ACTIVE_SECRETS = 2
 SECRET_PREFIX = "idf_cs_"
 _LOOPBACK = {"localhost", "127.0.0.1", "::1"}
@@ -106,6 +110,58 @@ def validate_audiences(audiences: List[str]) -> List[str]:
     return out
 
 
+def validate_jwks(jwks: Any) -> Dict[str, Any]:
+    """Inline public keys for private_key_jwt. Refuses private key material outright (a pasted private key must never be
+    stored), weak RSA, curves other than P-256, duplicate or missing `kid`. Returns only the public members."""
+    from joserfc.jwk import ECKey, RSAKey
+
+    if not isinstance(jwks, dict) or not isinstance(jwks.get("keys"), list) or not jwks["keys"]:
+        raise ClientError("jwks must be a JSON object with a non-empty keys array")
+    if len(jwks["keys"]) > MAX_JWKS_KEYS:
+        raise ClientError(f"at most {MAX_JWKS_KEYS} keys")
+    out, kids = [], set()
+    for k in jwks["keys"]:
+        if not isinstance(k, dict):
+            raise ClientError("each key must be an object")
+        if _PRIVATE_MEMBERS & set(k):
+            raise ClientError("jwks must contain public keys only; remove private key material")
+        kid = k.get("kid")
+        if not isinstance(kid, str) or not kid or len(kid) > 64:
+            raise ClientError("every key needs a kid (at most 64 characters)")
+        if kid in kids:
+            raise ClientError(f"duplicate kid {kid}")
+        kids.add(kid)
+        if k.get("use") not in (None, "sig"):
+            raise ClientError("keys must be for signatures (use=sig)")
+        kty, alg = k.get("kty"), k.get("alg")
+        if kty == "RSA":
+            if alg not in (None, "RS256"):
+                raise ClientError(f"key {kid}: RSA keys sign with RS256")
+            try:
+                key = RSAKey.import_key({m: k[m] for m in ("kty", "n", "e")})
+            except Exception:
+                raise ClientError(f"key {kid} is not a valid RSA public key")
+            if key.as_dict(private=False).get("n") and (int.from_bytes(_b64u(k["n"]), "big").bit_length() < 2048):
+                raise ClientError(f"key {kid}: RSA keys must be at least 2048 bits")
+        elif kty == "EC":
+            if alg not in (None, "ES256") or k.get("crv") != "P-256":
+                raise ClientError(f"key {kid}: only P-256 / ES256 elliptic-curve keys are supported")
+            try:
+                ECKey.import_key({m: k[m] for m in ("kty", "crv", "x", "y")})
+            except Exception:
+                raise ClientError(f"key {kid} is not a valid EC public key")
+        else:
+            raise ClientError(f"key {kid}: unsupported key type (RSA or EC)")
+        out.append({m: v for m, v in k.items() if m in _PUBLIC_MEMBERS})
+    return {"keys": out}
+
+
+def _b64u(v: str) -> bytes:
+    import base64
+
+    return base64.urlsafe_b64decode(v + "=" * (-len(v) % 4))
+
+
 def grant_types_for(scopes: List[str]) -> List[str]:
     # authorization_code always; refresh_token only if the client may ask for offline_access.
     # client_credentials, implicit and password grants are deliberately not offered here.
@@ -126,6 +182,7 @@ def client_to_dict(c: OIDCClient, secrets_: Optional[List[OIDCClientSecret]] = N
         "post_logout_redirect_uris": c.post_logout_redirect_uris,
         "allowed_scopes": c.allowed_scopes,
         "allowed_audiences": c.allowed_audiences or [],
+        "jwks": c.jwks,
         "grant_types": c.grant_types,
         "created_at": c.created_at.isoformat(),
         "updated_at": c.updated_at.isoformat(),
@@ -160,6 +217,8 @@ def add_secret(db: Session, client: OIDCClient, expires_in_days: Optional[int] =
     """Create a secret and return it in clear ONCE; only its Argon2id hash is stored."""
     if client.client_type not in ("confidential", "service"):
         raise ClientError("only confidential and service clients have secrets")
+    if client.token_endpoint_auth_method != "client_secret_basic":
+        raise ClientError("this client authenticates with a signed assertion (private_key_jwt), not a secret")
     if len(active_secrets(db, client)) >= MAX_ACTIVE_SECRETS:
         raise ClientError(f"at most {MAX_ACTIVE_SECRETS} active secrets; revoke an old one first")
     raw = new_secret()
@@ -179,7 +238,7 @@ def authenticate_client(db: Session, client_id: str, presented_secret: Optional[
     """
     client = db.query(OIDCClient).filter(OIDCClient.client_id == client_id).first()
     ok = False
-    if client is not None and client.status == "active" and client.client_type in ("confidential", "service") and presented_secret:
+    if client is not None and client.status == "active" and client.client_type in ("confidential", "service") and client.token_endpoint_auth_method == "client_secret_basic" and presented_secret:
         for s in active_secrets(db, client):
             try:
                 if argon2.verify(presented_secret, s.secret_hash):

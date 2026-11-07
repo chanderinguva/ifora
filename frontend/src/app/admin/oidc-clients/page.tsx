@@ -18,8 +18,8 @@ const SCOPE_HELP: Record<string, string> = {
 };
 const lines = (s: string) => s.split("\n").map((x) => x.trim()).filter(Boolean);
 
-type Draft = { name: string; description: string; client_type: "public" | "confidential" | "service"; redirect_uris: string; post_logout: string; scopes: string[]; first_party: boolean; service_scopes: string; audiences: string };
-const empty = (): Draft => ({ name: "", description: "", client_type: "public", redirect_uris: "", post_logout: "", scopes: ["openid", "profile", "email"], first_party: false, service_scopes: "", audiences: "" });
+type Draft = { name: string; description: string; client_type: "public" | "confidential" | "service"; redirect_uris: string; post_logout: string; scopes: string[]; first_party: boolean; service_scopes: string; audiences: string; auth_method: "client_secret_basic" | "private_key_jwt"; jwks: string };
+const empty = (): Draft => ({ name: "", description: "", client_type: "public", redirect_uris: "", post_logout: "", scopes: ["openid", "profile", "email"], first_party: false, service_scopes: "", audiences: "", auth_method: "client_secret_basic", jwks: "" });
 
 export default function OidcClientsPage() {
   const me = useCurrentUser();
@@ -105,6 +105,25 @@ export default function OidcClientsPage() {
                 </label>
               )}
             </fieldset>
+            {draft.client_type !== "public" && (
+              <fieldset className="space-y-2">
+                <legend className="text-sm font-medium">Client authentication</legend>
+                <label className="flex items-start gap-2 text-sm">
+                  <input type="radio" name="cauth" checked={draft.auth_method === "client_secret_basic"} onChange={() => setDraft({ ...draft, auth_method: "client_secret_basic" })} />
+                  <span><strong>Client secret</strong>: a secret shown once, sent with each token request.</span>
+                </label>
+                <label className="flex items-start gap-2 text-sm">
+                  <input type="radio" name="cauth" checked={draft.auth_method === "private_key_jwt"} onChange={() => setDraft({ ...draft, auth_method: "private_key_jwt" })} />
+                  <span><strong>Signed assertion (private_key_jwt)</strong>: the application keeps a private key and signs a short-lived JWT; you register only the public key (RS256 or ES256). Nothing secret is stored here.</span>
+                </label>
+                {draft.auth_method === "private_key_jwt" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="c-jwks">Public keys (JWKS JSON, every key needs a kid)</Label>
+                    <textarea id="c-jwks" className={fieldClass + " h-28 font-mono"} placeholder='{"keys":[{"kty":"EC","crv":"P-256","kid":"key-1","x":"…","y":"…"}]}' value={draft.jwks} onChange={(e) => setDraft({ ...draft, jwks: e.target.value })} />
+                  </div>
+                )}
+              </fieldset>
+            )}
             {draft.client_type === "service" ? (
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
@@ -144,9 +163,15 @@ export default function OidcClientsPage() {
               </label>
             )}
             <div className="flex gap-2">
-              <Button disabled={!draft.name.trim() || (draft.client_type === "service" ? lines(draft.service_scopes).length === 0 || lines(draft.audiences).length === 0 : lines(draft.redirect_uris).length === 0)}
+              <Button disabled={!draft.name.trim() || (draft.client_type !== "public" && draft.auth_method === "private_key_jwt" && !draft.jwks.trim()) || (draft.client_type === "service" ? lines(draft.service_scopes).length === 0 || lines(draft.audiences).length === 0 : lines(draft.redirect_uris).length === 0)}
                 onClick={() => run(async () => {
+                  let jwks: unknown = undefined;
+                  if (draft.client_type !== "public" && draft.auth_method === "private_key_jwt") {
+                    try { jwks = JSON.parse(draft.jwks); } catch { throw new Error("The public keys must be valid JSON"); }
+                  }
                   const r = await http<OidcClient>("/admin/oidc/clients", { method: "POST", body: {
+                    ...(draft.client_type !== "public" ? { token_endpoint_auth_method: draft.auth_method } : {}),
+                    ...(jwks !== undefined ? { jwks } : {}),
                     name: draft.name, description: draft.description || null, client_type: draft.client_type,
                     redirect_uris: draft.client_type === "service" ? [] : lines(draft.redirect_uris),
                     post_logout_redirect_uris: draft.client_type === "service" ? [] : lines(draft.post_logout),
@@ -182,7 +207,10 @@ export default function OidcClientsPage() {
               {c.client_type !== "service" && <div>Redirect URIs: <ul className="ml-4 list-disc font-mono text-xs">{c.redirect_uris.map((u) => <li key={u}>{u}</li>)}</ul></div>}
               {c.client_type === "service" && <div>Audiences: {c.allowed_audiences.map((a) => <code key={a} className="mr-2">{a}</code>)}</div>}
               <div>Scopes: {c.allowed_scopes.map((s) => <code key={s} className="mr-2">{s}</code>)}</div>
-              {c.client_type !== "public" && (
+              {c.token_endpoint_auth_method === "private_key_jwt" && (
+                <div>Signed assertion keys: {c.jwks?.keys.map((k) => <code key={k.kid} className="mr-2">{k.kid} ({k.kty}{k.alg ? `/${k.alg}` : ""})</code>)}</div>
+              )}
+              {c.token_endpoint_auth_method === "client_secret_basic" && (
                 <div className="space-y-2">
                   <div className="font-medium">Client secrets</div>
                   <ul className="space-y-1">

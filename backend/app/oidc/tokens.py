@@ -47,9 +47,18 @@ def parse_basic(header: Optional[str]) -> Optional[Tuple[str, str]]:
     return unquote_plus(cid), unquote_plus(secret)
 
 
-def authenticate(db: Session, header: Optional[str], form: Dict[str, str]) -> OIDCClient:
+def authenticate(db: Session, header: Optional[str], form: Dict[str, str], endpoint: str = "token") -> OIDCClient:
     if "client_secret" in form:
         raise TokenError("invalid_request", "client_secret_post is not supported; use HTTP Basic authentication")
+    if form.get("client_assertion") is not None or form.get("client_assertion_type") is not None:
+        from backend.app.oidc import client_auth
+
+        if header:
+            raise TokenError("invalid_request", "use one client authentication method")
+        client = client_auth.authenticate_assertion(db, form, endpoint)
+        if client is None:
+            raise TokenError("invalid_client", "client authentication failed", 401)
+        return client
     basic = parse_basic(header)
     body_id = form.get("client_id")
     if basic:
