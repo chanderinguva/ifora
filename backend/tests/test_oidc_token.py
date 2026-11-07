@@ -214,9 +214,11 @@ def test_disabled_client_is_refused(super_admin, user_api):
 def test_only_authorization_code_grant_and_form_encoding(super_admin, user_api):
     c = mk(super_admin)
     code = get_code(user_api, c)
-    for g in ("password", "client_credentials", "implicit"):
+    for g in ("password", "implicit"):
         r = exchange(user_api, c, code, grant_type=g)
         assert r.status_code == 400 and r.json()["error"] == "unsupported_grant_type"
+    r = exchange(user_api, c, code, grant_type="client_credentials")   # supported, but only for service clients
+    assert r.status_code == 400 and r.json()["error"] == "unauthorized_client"
     j = user_api.c.post("/oauth/token", json={"grant_type": "authorization_code"})
     assert j.status_code == 400 and j.json()["error"] == "invalid_request"
     dup = user_api.c.post("/oauth/token", content="grant_type=authorization_code&grant_type=password",
@@ -293,5 +295,5 @@ def test_discovery_document(anon):
     assert d["issuer"] == settings.OIDC_ISSUER and d["token_endpoint"].endswith("/oauth/token")
     assert d["response_types_supported"] == ["code"] and d["code_challenge_methods_supported"] == ["S256"]
     assert d["id_token_signing_alg_values_supported"] == ["RS256"]
-    assert "offline_access" in d["scopes_supported"] and d["grant_types_supported"] == ["authorization_code", "refresh_token"] and d["authorization_response_iss_parameter_supported"] is True
+    assert "offline_access" in d["scopes_supported"] and d["grant_types_supported"] == ["authorization_code", "refresh_token", "client_credentials"] and d["authorization_response_iss_parameter_supported"] is True
     assert anon.c.get(d["jwks_uri"].replace(settings.OIDC_ISSUER, "")).status_code == 200

@@ -26,6 +26,7 @@ Discovery says so (`claims_parameter_supported=false`, `request_parameter_suppor
 - Access tokens are JWTs and cannot be recalled before `exp` (10 min default); `/oauth/revoke` refuses them honestly.
 - Refresh tokens survive logout; withdrawing consent or revoking ends them.
 - Strict refresh reuse detection with no grace window.
+- Grants: authorization_code, refresh_token, client_credentials (service clients; `/oauth/introspect` per RFC 7662). Access tokens are JWTs; opaque tokens are not offered.
 - `client_secret_post` is refused (Basic only); `private_key_jwt` is a later milestone.
 - The `acr` claim reports what actually happened rather than what `acr_values` asked for.
 - `claims_supported` lists claims we can emit, not per-client sets.

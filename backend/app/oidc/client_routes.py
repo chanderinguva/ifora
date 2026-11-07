@@ -23,9 +23,10 @@ class ClientCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     description: Optional[str] = Field(None, max_length=500)
     client_type: str = "public"
-    redirect_uris: List[str]
+    redirect_uris: List[str] = Field(default_factory=list)
     post_logout_redirect_uris: List[str] = Field(default_factory=list)
     allowed_scopes: List[str] = Field(default_factory=lambda: ["openid", "profile", "email"])
+    allowed_audiences: List[str] = Field(default_factory=list)  # service clients only
     first_party: bool = False
 
 
@@ -35,6 +36,7 @@ class ClientUpdate(BaseModel):
     redirect_uris: Optional[List[str]] = None
     post_logout_redirect_uris: Optional[List[str]] = None
     allowed_scopes: Optional[List[str]] = None
+    allowed_audiences: Optional[List[str]] = None
     status: Optional[str] = Field(None, pattern="^(active|disabled)$")
     first_party: Optional[bool] = None
 
@@ -74,13 +76,28 @@ def list_clients(db: Session = Depends(get_db), _: User = Depends(require_admin)
 @router.post("", status_code=201)
 def create_client(body: ClientCreate, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
     if body.client_type not in svc.CLIENT_TYPES:
-        raise HTTPException(status_code=422, detail="client_type must be public or confidential")
+        raise HTTPException(status_code=422, detail="client_type must be public, confidential or service")
+    service = body.client_type == "service"
     if body.first_party:
         _only_super_admin_sets_first_party(actor)
+        if service:
+            raise HTTPException(status_code=422, detail="a service client has no users, so first-party does not apply")
+    if service and not actor.is_super_admin:
+        raise HTTPException(status_code=403, detail="Only a super administrator can create a service client")  # it acts without any user
     try:
-        redirects = svc.validate_uri_list(body.redirect_uris, "redirect URI", required=True)
-        logouts = svc.validate_uri_list(body.post_logout_redirect_uris, "post-logout redirect URI", required=False)
-        scopes = svc.validate_scopes(body.allowed_scopes)
+        if service:
+            if body.redirect_uris or body.post_logout_redirect_uris:
+                raise svc.ClientError("a service client has no redirect URIs")
+            redirects, logouts = [], []
+            scopes = svc.validate_service_scopes(body.allowed_scopes)
+            audiences = svc.validate_audiences(body.allowed_audiences)
+        else:
+            if body.allowed_audiences:
+                raise svc.ClientError("audiences apply to service clients only")
+            redirects = svc.validate_uri_list(body.redirect_uris, "redirect URI", required=True)
+            logouts = svc.validate_uri_list(body.post_logout_redirect_uris, "post-logout redirect URI", required=False)
+            scopes = svc.validate_scopes(body.allowed_scopes)
+            audiences = []
     except svc.ClientError as e:
         _bad(e)
     client = OIDCClient(
@@ -88,18 +105,19 @@ def create_client(body: ClientCreate, request: Request, db: Session = Depends(ge
         name=body.name.strip(),
         description=body.description,
         client_type=body.client_type,
-        token_endpoint_auth_method="client_secret_basic" if body.client_type == "confidential" else "none",
+        token_endpoint_auth_method="none" if body.client_type == "public" else "client_secret_basic",
         first_party=body.first_party,
         status="active",
         redirect_uris=redirects,
         post_logout_redirect_uris=logouts,
         allowed_scopes=scopes,
-        grant_types=svc.grant_types_for(scopes),
+        allowed_audiences=audiences,
+        grant_types=["client_credentials"] if service else svc.grant_types_for(scopes),
         created_by=actor.id,
     )
     db.add(client)
     db.flush()
-    raw = svc.add_secret(db, client) if client.client_type == "confidential" else None
+    raw = svc.add_secret(db, client) if client.client_type != "public" else None
     record(db, AuditAction.OIDC_CLIENT_CREATED, request, actor, client.id, "oidc_client",
            {"client_id": client.client_id, "name": client.name, "type": client.client_type, "first_party": client.first_party})
     db.commit()
@@ -123,14 +141,24 @@ def update_client(pk: int, body: ClientUpdate, request: Request, db: Session = D
             c.name = body.name.strip(); changed["name"] = True
         if body.description is not None:
             c.description = body.description; changed["description"] = True
-        if body.redirect_uris is not None:
+        service = c.client_type == "service"
+        if service and (body.redirect_uris or body.post_logout_redirect_uris):
+            raise svc.ClientError("a service client has no redirect URIs")
+        if body.allowed_audiences is not None:
+            if not service:
+                raise svc.ClientError("audiences apply to service clients only")
+            c.allowed_audiences = svc.validate_audiences(body.allowed_audiences); changed["allowed_audiences"] = True
+        if body.redirect_uris is not None and not service:
             c.redirect_uris = svc.validate_uri_list(body.redirect_uris, "redirect URI", required=True); changed["redirect_uris"] = True
-        if body.post_logout_redirect_uris is not None:
+        if body.post_logout_redirect_uris is not None and not service:
             c.post_logout_redirect_uris = svc.validate_uri_list(body.post_logout_redirect_uris, "post-logout redirect URI", required=False)
             changed["post_logout_redirect_uris"] = True
         if body.allowed_scopes is not None:
-            c.allowed_scopes = svc.validate_scopes(body.allowed_scopes)
-            c.grant_types = svc.grant_types_for(c.allowed_scopes)
+            if service:
+                c.allowed_scopes = svc.validate_service_scopes(body.allowed_scopes)
+            else:
+                c.allowed_scopes = svc.validate_scopes(body.allowed_scopes)
+                c.grant_types = svc.grant_types_for(c.allowed_scopes)
             changed["allowed_scopes"] = True
     except svc.ClientError as e:
         _bad(e)

@@ -5,6 +5,7 @@ unambiguous when registered (absolute, no wildcard, no fragment, https except lo
 on a client: the authorize endpoint will always require it.
 """
 
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -16,7 +17,10 @@ from sqlalchemy.orm import Session
 from backend.app.oidc.models import OIDCClient, OIDCClientSecret
 
 SUPPORTED_SCOPES = ("openid", "profile", "email", "groups", "offline_access")
-CLIENT_TYPES = ("public", "confidential")
+CLIENT_TYPES = ("public", "confidential", "service")
+USER_SCOPES = SUPPORTED_SCOPES  # identity scopes: never granted to a service client (there is no user)
+_SERVICE_SCOPE = re.compile(r"^[a-z][a-z0-9:._-]{0,63}$")
+MAX_SERVICE_SCOPES = 20
 MAX_URIS = 10
 MAX_ACTIVE_SECRETS = 2
 SECRET_PREFIX = "idf_cs_"
@@ -74,6 +78,34 @@ def validate_scopes(scopes: List[str]) -> List[str]:
     return [s for s in SUPPORTED_SCOPES if s in scopes]  # canonical order, de-duplicated
 
 
+def validate_service_scopes(scopes: List[str]) -> List[str]:
+    """Service clients act as themselves: scopes are application-defined permissions, not identity claims."""
+    if not scopes:
+        raise ClientError("at least one scope is required")
+    if len(scopes) > MAX_SERVICE_SCOPES:
+        raise ClientError(f"at most {MAX_SERVICE_SCOPES} scopes")
+    for sc in scopes:
+        if not isinstance(sc, str) or not _SERVICE_SCOPE.match(sc):
+            raise ClientError(f"invalid scope {sc!r}: lowercase letters, digits and : . _ - only, at most 64 characters")
+        if sc in USER_SCOPES:
+            raise ClientError(f"{sc} is an identity scope and cannot be granted to a service client")
+    if len(set(scopes)) != len(scopes):
+        raise ClientError("duplicate scope")
+    return list(scopes)
+
+
+def validate_audiences(audiences: List[str]) -> List[str]:
+    """Resource identifiers (RFC 8707): absolute https (or loopback http) URIs without fragment or wildcard."""
+    if not audiences:
+        raise ClientError("at least one audience (resource identifier) is required")
+    if len(audiences) > MAX_URIS:
+        raise ClientError(f"at most {MAX_URIS} audiences")
+    out = [validate_redirect_uri(a, "audience") for a in audiences]
+    if len(set(out)) != len(out):
+        raise ClientError("duplicate audience")
+    return out
+
+
 def grant_types_for(scopes: List[str]) -> List[str]:
     # authorization_code always; refresh_token only if the client may ask for offline_access.
     # client_credentials, implicit and password grants are deliberately not offered here.
@@ -93,6 +125,7 @@ def client_to_dict(c: OIDCClient, secrets_: Optional[List[OIDCClientSecret]] = N
         "redirect_uris": c.redirect_uris,
         "post_logout_redirect_uris": c.post_logout_redirect_uris,
         "allowed_scopes": c.allowed_scopes,
+        "allowed_audiences": c.allowed_audiences or [],
         "grant_types": c.grant_types,
         "created_at": c.created_at.isoformat(),
         "updated_at": c.updated_at.isoformat(),
@@ -125,8 +158,8 @@ def active_secrets(db: Session, client: OIDCClient) -> List[OIDCClientSecret]:
 
 def add_secret(db: Session, client: OIDCClient, expires_in_days: Optional[int] = None) -> str:
     """Create a secret and return it in clear ONCE; only its Argon2id hash is stored."""
-    if client.client_type != "confidential":
-        raise ClientError("only confidential clients have secrets")
+    if client.client_type not in ("confidential", "service"):
+        raise ClientError("only confidential and service clients have secrets")
     if len(active_secrets(db, client)) >= MAX_ACTIVE_SECRETS:
         raise ClientError(f"at most {MAX_ACTIVE_SECRETS} active secrets; revoke an old one first")
     raw = new_secret()
@@ -146,7 +179,7 @@ def authenticate_client(db: Session, client_id: str, presented_secret: Optional[
     """
     client = db.query(OIDCClient).filter(OIDCClient.client_id == client_id).first()
     ok = False
-    if client is not None and client.status == "active" and client.client_type == "confidential" and presented_secret:
+    if client is not None and client.status == "active" and client.client_type in ("confidential", "service") and presented_secret:
         for s in active_secrets(db, client):
             try:
                 if argon2.verify(presented_secret, s.secret_hash):

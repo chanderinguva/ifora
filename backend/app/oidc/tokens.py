@@ -148,3 +148,35 @@ def build_tokens(db: Session, client: OIDCClient, user: User, *, scopes, auth_ti
         "access_token": access, "token_type": "Bearer", "expires_in": settings.OIDC_ACCESS_TOKEN_TTL_SECONDS,
         "id_token": keys.sign_jwt(db, idc), "scope": " ".join(scopes),
     }
+
+
+def client_credentials(db: Session, client: OIDCClient, form: Dict[str, str]) -> Dict:
+    """RFC 6749 §4.4. The client acts as itself: no user, no ID token, no refresh token (§4.4.3).
+    `scope` must be within the client's allow-list (default: all of it); `resource` (RFC 8707) must be one of its
+    allowed audiences (default: the only one). The access token's `sub` is the client_id."""
+    if "client_credentials" not in client.grant_types:
+        raise TokenError("unauthorized_client", "this client may not use the client credentials grant")
+    allowed = list(client.allowed_scopes)
+    asked = form.get("scope")
+    if asked is None or not asked.strip():
+        scopes = allowed
+    else:
+        scopes = asked.split()
+        if len(scopes) != len(set(scopes)) or any(sc not in allowed for sc in scopes):
+            raise TokenError("invalid_scope", "scope is not allowed for this client")
+    audiences = list(client.allowed_audiences or [])
+    resource = form.get("resource")
+    if resource is None:
+        if len(audiences) != 1:
+            raise TokenError("invalid_target", "resource is required for this client")
+        resource = audiences[0]
+    elif resource not in audiences:
+        raise TokenError("invalid_target", "resource is not allowed for this client")
+    t = int(datetime.now(timezone.utc).timestamp())
+    tenant = db.get(Tenant, client.tenant_id)
+    access = keys.sign_jwt(db, {
+        "iss": settings.OIDC_ISSUER, "sub": client.client_id, "aud": resource, "client_id": client.client_id,
+        "scope": " ".join(scopes), "iat": t, "exp": t + settings.OIDC_ACCESS_TOKEN_TTL_SECONDS,
+        "jti": str(uuid.uuid4()), "tenant": tenant.slug if tenant else None,
+    }, typ="at+jwt")
+    return {"access_token": access, "token_type": "Bearer", "expires_in": settings.OIDC_ACCESS_TOKEN_TTL_SECONDS, "scope": " ".join(scopes)}

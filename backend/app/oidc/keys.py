@@ -215,7 +215,7 @@ def verify_jwt(
     token: str,
     *,
     issuer: str,
-    audience: str,
+    audience: Optional[str],
     typ: Optional[str] = None,
     algorithms: tuple = ("RS256",),
     allow_expired: bool = False,
@@ -234,7 +234,9 @@ def verify_jwt(
         decoded = jwt.decode(token, keyset, algorithms=list(algorithms))
         if typ is not None and decoded.header.get("typ") != typ:
             raise TokenError("unexpected token type")
-        checks = {"iss": {"essential": True, "value": issuer}, "aud": {"essential": True, "value": audience}}
+        checks = {"iss": {"essential": True, "value": issuer}}
+        if audience is not None:  # None: the caller checks `aud` itself (token introspection serves many resource servers)
+            checks["aud"] = {"essential": True, "value": audience}
         if not allow_expired:  # an RP-initiated logout may present an ID token that has since expired (OIDC RP-Initiated Logout 1.0)
             checks["exp"] = {"essential": True}
         to_check = decoded.claims
