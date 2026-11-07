@@ -25,7 +25,7 @@ Confidence: the left-sidebar pattern is well supported. Details of the logo area
 - Role context (admin / user view) lives in the account menu label and the user-view banner, not in the sidebar header.
 
 ## Not done (deliberately)
-- **Global search** (Okta/Entra have it). There is not enough searchable surface yet; user search exists on the Users page. Revisit with OIDC clients/apps.
+- ~~Global search~~ **Done later:** Cmd/Ctrl+K command palette and a Search button in the header (admins): jumps to any page and searches users, groups, applications (OIDC clients), recipes and group rules (`GET /admin/search`, 5 per kind, literal matching).
 - **Realm/tenant selector** (Keycloak/Auth0): single-tenant for now.
 - Nested/expandable nav groups: the IA is small enough to be flat within labelled groups.
 

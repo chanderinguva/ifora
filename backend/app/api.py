@@ -147,6 +147,9 @@ def create_app() -> FastAPI:
     app.include_router(scim_admin_router, prefix="/api/v1")
     app.mount("/scim/v2", create_scim_app())  # SCIM 2.0 server (ADR 007): own error format, bearer-token auth
 
+    from backend.app.search_routes import router as search_router
+
+    app.include_router(search_router, prefix="/api/v1")
     for r in (users_router, groups_router, profiles_router, audit_router, mfa_router, passkey_router, role_router):
         app.include_router(r, prefix="/api/v1")
 

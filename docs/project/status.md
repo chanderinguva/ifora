@@ -36,7 +36,7 @@ _Last updated: 2026-11-05_
 
 ## Not done / known gaps
 - `SESSION_COOKIE_SECURE` is off (plain HTTP in dev); turn it on behind TLS. Behind a reverse proxy, configure uvicorn `--proxy-headers`/`--forwarded-allow-ips` so rate limiting sees real client IPs.
-- Frontend runs `next dev` inside Docker (development mode).
+- The default compose stack still runs `next dev`; a production target exists (`FRONTEND_TARGET=prod`, compiled `next start`, non-root, built and smoke-tested with `/login` returning 200 but not load-tested).
 - No independent security review yet.
 
 ## Running
