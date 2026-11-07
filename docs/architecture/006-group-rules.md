@@ -15,13 +15,13 @@
 Memberships may later drive authorization, so a rule must never be steerable by the user it applies to. Conditions may only use **email, username, status and admin-managed profile attributes**. Self-editable fields (names, phone, title, location, timezone, locale, bio) are rejected when a rule is saved. Conditions are structured data evaluated in code: no expression language, no `eval`.
 
 ## Known limits
-- Evaluation for one changed user is synchronous in the request. Activating a rule in a directory larger than `GROUP_RULES_SYNC_MAX_USERS` (500) is queued (`sync_state = pending`, cursor in `sync_cursor`) and finished by the worker in batches of `GROUP_RULES_BATCH_SIZE` (200); `python -m backend.cli sync-group-rules` does it by hand. Until it finishes the rule is `active` and the UI shows "syncing". Not yet batched: a user-triggered re-evaluation storm, and editing a rule re-evaluates only after deactivate/activate.
+- Evaluation for one changed user is synchronous in the request. Activating a rule in a directory larger than `GROUP_RULES_SYNC_MAX_USERS` (500) is queued (`sync_state = pending`, cursor in `sync_cursor`) and finished by the worker in batches of `GROUP_RULES_BATCH_SIZE` (200); `python -m backend.cli sync-group-rules` does it by hand. Until it finishes the rule is `active` and the UI shows "syncing". Not yet batched: a user-triggered re-evaluation storm. A rule must be deactivated before it is edited (409 otherwise); activating it again re-evaluates every user, so an edit never leaves stale memberships.
 - Admin-managed attributes are free-form keys; there is no schema/catalog yet (the UI suggests department, employee_id, manager, cost_center).
 - A manual membership removed later is not re-added by a rule until the user or rule is next evaluated.
 - ~~The group-membership table has no `tenant_id`~~ Fixed (migration 0030): the column is filled by a trigger from the group, and the trigger refuses a membership that links a user and a group of different tenants.
 
 ## Also in this change
-Add person form (groups, organisation attributes, generated one-time temporary password). "Must change password at first login" is **not** implemented (needs a user flag and login enforcement).
+Add person form (groups, organisation attributes, generated one-time temporary password). "Must change password at first login" was added later: the `password_expired` status plus the forced change on login (ADR 007 addendum / `auth/recovery_routes.py`).
 
 
 ## Addendum: expression rules, templates, lifecycle
