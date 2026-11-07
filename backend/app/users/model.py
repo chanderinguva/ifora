@@ -14,12 +14,16 @@ from backend.app.tenancy import TenantOwned
 
 
 class UserStatus(str, Enum):
-    """User account status."""
+    """Account lifecycle, the same states Okta uses (lower-case). Only ACTIVE can sign in."""
 
+    STAGED = "staged"                    # created, not yet activated
+    PROVISIONED = "provisioned"          # activated, waiting for the user to finish setup (set a password)
     ACTIVE = "active"
-    INACTIVE = "inactive"
-    PENDING_ACTIVATION = "pending_activation"
+    RECOVERY = "recovery"                # password reset requested
+    PASSWORD_EXPIRED = "password_expired"
     LOCKED_OUT = "locked_out"
+    SUSPENDED = "suspended"              # temporarily blocked; keeps groups and assignments
+    DEPROVISIONED = "deprovisioned"      # deactivated; removed from every group
 
 
 class User(TenantOwned, Base):

@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, field_validator
 
 AttrValue = Union[str, int, float, bool, None]
 _KEY = re.compile(r"^[a-z][a-z0-9_]{0,49}$")
-MAX_ATTRS = 20
+MAX_ATTRS = 80
 MAX_STR = 500
 
 _LOCALE = re.compile(r"^[a-z]{2,3}(-[A-Z]{2})?$")  # e.g. en, en-GB, pt-BR

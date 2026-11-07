@@ -110,7 +110,7 @@ def test_admin_api_cannot_see_or_touch_other_tenant_users(db, tenant_b, super_ad
     other = user_in(tenant_b, "victim@example.com")
     assert all(u["email"] != "victim@example.com" for u in super_admin.get("/admin/users").json()["items"])
     assert super_admin.get(f"/admin/users/{other.id}").status_code == 404
-    assert super_admin.patch(f"/admin/users/{other.id}", {"status": "inactive"}).status_code == 404
+    assert super_admin.patch(f"/admin/users/{other.id}", {"status": "deprovisioned"}).status_code == 404
     assert super_admin.delete(f"/admin/users/{other.id}").status_code == 404
     assert super_admin.post(f"/admin/users/{other.id}/password", {"new_password": STRONG}).status_code == 404
 

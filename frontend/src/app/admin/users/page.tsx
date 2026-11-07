@@ -12,7 +12,7 @@ import { Badge, PageHeader, Pager, fieldClass, fmt, td, th } from "@/components/
 import { useCurrentUser } from "@/components/auth-guard";
 import { http, qs, type Page } from "@/lib/http";
 import { AttrField, toApi } from "@/components/attr-field";
-import type { Group, ProfileAttribute, User } from "@/lib/types";
+import { USER_STATUSES, statusTone, type Group, type ProfileAttribute, type User } from "@/lib/types";
 
 const PAGE_SIZE = 15;
 
@@ -75,8 +75,7 @@ export default function UsersPage() {
           }}
         >
           <option value="">All statuses</option>
-          <option value="active">Active</option>
-          <option value="inactive">Inactive</option>
+          {USER_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
         </select>
       </div>
 
@@ -111,7 +110,7 @@ export default function UsersPage() {
                     {u.is_super_admin ? <Badge tone="info">Super admin</Badge> : u.is_admin ? <Badge tone="info">Admin</Badge> : <Badge>User</Badge>}
                   </td>
                   <td className={td}>
-                    <Badge tone={u.status === "active" ? "good" : "bad"}>{u.status}</Badge>
+                    <Badge tone={statusTone(u.status)}>{u.status.replace("_", " ")}</Badge>
                   </td>
                   <td className={td}>{fmt(u.last_login_at)}</td>
                 </tr>

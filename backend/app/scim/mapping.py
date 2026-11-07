@@ -28,8 +28,9 @@ SCHEMA_URN = "urn:ietf:params:scim:schemas:core:2.0:Schema"
 
 # SCIM attribute -> profile catalog key
 CORE_PROFILE = {"title": "title", "locale": "locale", "timezone": "timezone"}
-ENTERPRISE_PROFILE = {"department": "department", "costCenter": "cost_center", "employeeNumber": "employee_id"}
-MAPPED_KEYS = set(CORE_PROFILE.values()) | set(ENTERPRISE_PROFILE.values()) | {"phone", "manager"}
+ENTERPRISE_PROFILE = {"department": "department", "costCenter": "cost_center", "employeeNumber": "employee_number",
+                      "organization": "organization", "division": "division"}
+MAPPED_KEYS = set(CORE_PROFILE.values()) | set(ENTERPRISE_PROFILE.values()) | {"primary_phone", "manager"}
 _USERNAME = re.compile(r"^[a-z0-9][a-z0-9._@+\-]{1,99}$")
 
 
@@ -85,8 +86,8 @@ def render_user(db: Session, user, external_id: Optional[str]) -> Dict[str, Any]
     for scim_key, key in CORE_PROFILE.items():
         if attrs.get(key) not in (None, ""):
             doc[scim_key] = attrs[key]
-    if attrs.get("phone") not in (None, ""):
-        doc["phoneNumbers"] = [{"value": str(attrs["phone"]), "type": "work", "primary": True}]
+    if attrs.get("primary_phone") not in (None, ""):
+        doc["phoneNumbers"] = [{"value": str(attrs["primary_phone"]), "type": "work", "primary": True}]
     ent = {sk: attrs[k] for sk, k in ENTERPRISE_PROFILE.items() if attrs.get(k) not in (None, "")}
     if attrs.get("manager") not in (None, ""):
         ent["manager"] = {"value": str(attrs["manager"])}
@@ -196,7 +197,7 @@ def ingest_user(db: Session, doc: Any, *, current_attrs: Dict[str, Any], current
             desired[key] = doc[scim_key]
     phone = _pick(doc.get("phoneNumbers"), "phoneNumbers")
     if "phoneNumbers" in doc:
-        desired["phone"] = phone
+        desired["primary_phone"] = phone
     ent = doc.get(ENTERPRISE_URN)
     if ent is not None and not isinstance(ent, dict):
         raise invalid_value("Enterprise extension must be an object")

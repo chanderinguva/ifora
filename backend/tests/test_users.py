@@ -85,11 +85,11 @@ def test_admin_cannot_grant_or_touch_admins(admin, super_admin, db):
 def test_super_admin_is_protected_and_no_self_harm(admin, super_admin):
     root = super_admin.user.id
     assert admin.delete(f"/admin/users/{root}").status_code == 403
-    assert admin.patch(f"/admin/users/{root}", {"status": "inactive"}).status_code == 403
+    assert admin.patch(f"/admin/users/{root}", {"status": "deprovisioned"}).status_code == 403
     assert super_admin.delete(f"/admin/users/{root}").status_code == 400
-    assert super_admin.patch(f"/admin/users/{root}", {"status": "inactive"}).status_code == 400
+    assert super_admin.patch(f"/admin/users/{root}", {"status": "deprovisioned"}).status_code == 400
     assert admin.delete(f"/admin/users/{admin.user.id}").status_code == 400
-    assert admin.patch(f"/admin/users/{admin.user.id}", {"status": "inactive"}).status_code == 400
+    assert admin.patch(f"/admin/users/{admin.user.id}", {"status": "deprovisioned"}).status_code == 400
 
 
 def test_mass_assignment_ignored(admin, db):
@@ -100,7 +100,7 @@ def test_mass_assignment_ignored(admin, db):
 
 def test_deactivate_revokes_sessions(admin, member):
     assert member.get("/me").status_code == 200
-    assert admin.patch(f"/admin/users/{member.user.id}", {"status": "inactive"}).status_code == 200
+    assert admin.patch(f"/admin/users/{member.user.id}", {"status": "deprovisioned"}).status_code == 200
     assert member.get("/me").status_code == 401
     assert admin.patch(f"/admin/users/{member.user.id}", {"status": "active"}).status_code == 200
     assert Api().login("member@example.com").status_code == 200

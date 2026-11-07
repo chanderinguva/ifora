@@ -29,6 +29,7 @@ from backend.app.recipes.http_client import (
 from backend.app.recipes.models import RecipeConnection
 from backend.app.config import settings
 from backend.app.recipes.redact import redact, redact_text, scrub
+from backend.app.users import lifecycle
 from backend.app.users.model import User
 
 logger = structlog.get_logger(__name__)
@@ -163,12 +164,8 @@ def _set_status(rc: RunCtx, cfg: dict, status: str):
         raise StepError("recipes cannot change administrator accounts")
     changed = user.status != status
     if changed and not rc.dry:
-        user.status = status
-        rc.db.flush()
-        if status == "inactive":
-            revoke_user_sessions(rc.db, user.id)
-        group_rules.evaluate_user(rc.db, user)
-        audit_as_recipe(rc, AuditAction.USER_DEACTIVATED if status == "inactive" else AuditAction.USER_ACTIVATED,
+        lifecycle.set_status(rc.db, user, status, None, None, audit=False)
+        audit_as_recipe(rc, AuditAction.USER_DEACTIVATED if status == "deprovisioned" else AuditAction.USER_ACTIVATED,
                         user.id, "user", {"changed": {"status": status}})
     return {"user_id": user.id}, {"user_id": user.id, "changed": changed}
 
@@ -178,7 +175,7 @@ def _activate(rc, cfg):
 
 
 def _deactivate(rc, cfg):
-    return _set_status(rc, cfg, "inactive")
+    return _set_status(rc, cfg, "deprovisioned")
 
 
 def _log(rc: RunCtx, cfg: dict):

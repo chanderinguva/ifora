@@ -25,20 +25,38 @@ RESERVED = {
     "id", "email", "username", "first_name", "last_name", "password", "status", "is_admin", "is_super_admin",
     "groups", "tenant_id", "created_at", "updated_at",
 }
-MAX_ATTRIBUTES = 50
+MAX_ATTRIBUTES = 80
 
 # key, display name, type, user editable, description
 DEFAULTS = [
-    ("title", "Title", "string", True, "Job title"),
-    ("phone", "Phone", "string", True, "Contact phone number"),
-    ("location", "Location", "string", True, "Office or city"),
-    ("bio", "Bio", "string", True, "A few words about you"),
-    ("timezone", "Time zone", "timezone", True, "Used to display dates and times"),
-    ("locale", "Locale", "locale", True, "Date and number formats"),
-    ("department", "Department", "string", False, "Managed by administrators"),
-    ("employee_id", "Employee ID", "string", False, "Managed by administrators"),
-    ("manager", "Manager", "string", False, "Managed by administrators"),
-    ("cost_center", "Cost center", "string", False, "Managed by administrators"),
+    # The Okta base user profile (keys are snake_case of Okta's names; login/email/firstName/lastName are core fields).
+    ("middle_name", "Middle name", "string", True, "Okta middleName"),
+    ("honorific_prefix", "Honorific prefix", "string", True, "Okta honorificPrefix, e.g. Dr."),
+    ("honorific_suffix", "Honorific suffix", "string", True, "Okta honorificSuffix, e.g. Jr."),
+    ("display_name", "Display name", "string", True, "Okta displayName"),
+    ("nick_name", "Nickname", "string", True, "Okta nickName"),
+    ("second_email", "Secondary email", "string", True, "Okta secondEmail"),
+    ("profile_url", "Profile URL", "string", True, "Okta profileUrl"),
+    ("primary_phone", "Primary phone", "string", True, "Okta primaryPhone"),
+    ("mobile_phone", "Mobile phone", "string", True, "Okta mobilePhone"),
+    ("street_address", "Street address", "string", True, "Okta streetAddress"),
+    ("city", "City", "string", True, "Okta city"),
+    ("state", "State", "string", True, "Okta state"),
+    ("zip_code", "Zip or postal code", "string", True, "Okta zipCode"),
+    ("country_code", "Country code", "string", True, "Okta countryCode, ISO 3166-1 alpha-2"),
+    ("postal_address", "Mailing address", "string", True, "Okta postalAddress"),
+    ("preferred_language", "Preferred language", "locale", True, "Okta preferredLanguage"),
+    ("locale", "Locale", "locale", True, "Okta locale; date and number formats"),
+    ("timezone", "Time zone", "timezone", True, "Okta timezone; used to display dates and times"),
+    ("title", "Title", "string", True, "Okta title"),
+    ("user_type", "User type", "string", False, "Okta userType, e.g. Employee or Contractor"),
+    ("employee_number", "Employee number", "string", False, "Okta employeeNumber"),
+    ("cost_center", "Cost center", "string", False, "Okta costCenter"),
+    ("organization", "Organization", "string", False, "Okta organization"),
+    ("division", "Division", "string", False, "Okta division"),
+    ("department", "Department", "string", False, "Okta department"),
+    ("manager_id", "Manager ID", "string", False, "Okta managerId"),
+    ("manager", "Manager", "string", False, "Okta manager"),
 ]
 
 
@@ -70,10 +88,13 @@ class ProfileAttribute(TenantOwned, Base):
 
 
 def ensure_defaults(db: Session) -> None:
-    """Seed the built-in attributes for a tenant that has none (new tenant, or a freshly truncated test DB)."""
-    if db.query(ProfileAttribute.id).first() is not None:
+    """Seed the built-in attributes, and top up any built-in a tenant is missing (new tenant, truncated test DB,
+    or a release that added attributes). Built-ins cannot be deleted, so this never resurrects a removal."""
+    have = {k for (k,) in db.query(ProfileAttribute.key).all()}
+    missing = [(i, d) for i, d in enumerate(DEFAULTS) if d[0] not in have]
+    if not missing:
         return
-    for i, (key, name, typ, editable, desc) in enumerate(DEFAULTS):
+    for i, (key, name, typ, editable, desc) in missing:
         db.add(ProfileAttribute(key=key, display_name=name, description=desc, data_type=typ,
                                 user_editable=editable, built_in=True, sort_order=i))
     db.commit()

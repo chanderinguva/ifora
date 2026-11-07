@@ -70,7 +70,7 @@ def schemas() -> List[Dict[str, Any]]:
                 _a("name", "complex", subs=[_a("givenName", required=True), _a("familyName", required=True), _a("formatted", mutability="readOnly")]),
                 _a("displayName", mutability="readOnly"),
                 _a("emails", "complex", multi=True, required=True, subs=contact, desc="Only one address is stored (primary, else work, else first)"),
-                _a("phoneNumbers", "complex", multi=True, subs=contact, desc="Only one number is stored; maps to profile attribute 'phone'"),
+                _a("phoneNumbers", "complex", multi=True, subs=contact, desc="Only one number is stored; maps to profile attribute 'primary_phone'"),
                 _a("title"), _a("locale"), _a("timezone"),
                 _a("active", "boolean", desc="false deactivates the account; it is never deleted"),
                 _a("groups", "complex", multi=True, mutability="readOnly", subs=[_a("value"), _a("display"), _a("$ref", "reference")]),
@@ -80,7 +80,7 @@ def schemas() -> List[Dict[str, Any]]:
             "schemas": [SCHEMA_URN], "id": ENTERPRISE_URN, "name": "EnterpriseUser", "description": "Enterprise extension",
             "meta": meta(ENTERPRISE_URN),
             "attributes": [
-                _a("employeeNumber", desc="Profile attribute employee_id"), _a("costCenter", desc="Profile attribute cost_center"),
+                _a("employeeNumber", desc="Profile attribute employee_number"), _a("costCenter", desc="Profile attribute cost_center"), _a("organization", desc="Profile attribute organization"), _a("division", desc="Profile attribute division"),
                 _a("department", desc="Profile attribute department"),
                 _a("manager", "complex", subs=[_a("value", desc="Stored as given, not resolved"), _a("displayName", mutability="readOnly")]),
             ],

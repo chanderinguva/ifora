@@ -20,7 +20,7 @@ type Field = { key: string; label: string; type: string; options?: string[] | nu
 const ACCOUNT_FIELDS: Field[] = [
   { key: "email", label: "Email", type: "string" },
   { key: "username", label: "Username", type: "string" },
-  { key: "status", label: "Account status", type: "enum", options: ["active", "inactive", "suspended"] },
+  { key: "status", label: "Account status", type: "enum", options: ["staged", "provisioned", "active", "recovery", "password_expired", "locked_out", "suspended", "deprovisioned"] },
 ];
 const BOOL_OPS = ["equals", "not_equals", "is_set", "is_not_set"];
 const NUM_OPS = ["equals", "not_equals", "is_set", "is_not_set"];

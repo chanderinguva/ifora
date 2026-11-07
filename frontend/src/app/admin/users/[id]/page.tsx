@@ -12,7 +12,7 @@ import { Badge, PageHeader, fmt } from "@/components/bits";
 import { useCurrentUser } from "@/components/auth-guard";
 import { http } from "@/lib/http";
 import { AttrField, fromApi, toApi } from "@/components/attr-field";
-import type { ProfileAttribute, User } from "@/lib/types";
+import { USER_STATUSES, statusTone, type ProfileAttribute, type User } from "@/lib/types";
 
 
 export default function UserDetail() {
@@ -75,7 +75,7 @@ export default function UserDetail() {
         <Link href="/admin/users" className="text-sm underline-offset-4 hover:underline">← All users</Link>
       </PageHeader>
       <div className="mb-4 flex flex-wrap gap-2 text-sm">
-        <Badge tone={user.status === "active" ? "good" : "bad"}>{user.status}</Badge>
+        <Badge tone={statusTone(user.status)}>{user.status.replace("_", " ")}</Badge>
         {user.mfa_enabled && <Badge tone="good">MFA</Badge>}
         {(user.passkey_count ?? 0) > 0 && <Badge tone="good">{user.passkey_count} passkey{user.passkey_count === 1 ? "" : "s"}</Badge>}
         {user.passkey_required && <Badge tone="info">passkey required</Badge>}
@@ -143,12 +143,27 @@ export default function UserDetail() {
             variant="outline"
             disabled={protectedTarget}
             onClick={() =>
-              run(async () => apply(await http<User>(`/admin/users/${id}`, { method: "PATCH", body: { status: user.status === "active" ? "inactive" : "active" } })),
-                user.status === "active" ? "User deactivated; their sessions were ended" : "User activated")
+              run(async () => apply(await http<User>(`/admin/users/${id}`, { method: "PATCH", body: { status: user.status === "active" ? "deprovisioned" : "active" } })),
+                user.status === "active" ? "User deactivated; sessions ended and removed from all groups" : "User activated")
             }
           >
             {user.status === "active" ? "Deactivate" : "Activate"}
           </Button>
+        )}
+        {!isSelf && !user.is_super_admin && (
+          <select
+            aria-label="Set account status"
+            className="h-10 rounded-md border bg-background px-3 text-sm"
+            value={user.status}
+            disabled={protectedTarget}
+            onChange={(e) => {
+              const next = e.target.value;
+              if (next === "deprovisioned" && !confirm("Deactivate this user? They are signed out everywhere and removed from every group.")) return;
+              run(async () => apply(await http<User>(`/admin/users/${id}`, { method: "PATCH", body: { status: next } })), `Status set to ${next.replace("_", " ")}`);
+            }}
+          >
+            {USER_STATUSES.map((s) => <option key={s.value} value={s.value} title={s.hint}>{s.label}</option>)}
+          </select>
         )}
         {(user.mfa_enabled || (user.passkey_count ?? 0) > 0 || user.passkey_required) && !isSelf && !protectedTarget && (
           <Button

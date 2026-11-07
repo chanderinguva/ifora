@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from backend.app.audit.model import AuditAction
 from backend.app.auth.sessions_util import revoke_user_sessions
+from backend.app.users import lifecycle
 from backend.app.groups import rules as group_rules
 from backend.app.groups.model import Group, user_group_association as assoc
 from backend.app.oidc.models import RefreshToken
@@ -276,7 +277,7 @@ def create_user(request: Request, body: Any = Depends(read_json), ctx: Ctx = Dep
         email=data["email"], username=data["username"], first_name=data["first_name"], last_name=data["last_name"],
         password=secrets.token_urlsafe(24),  # unknown to everyone; the password attribute is never read (ADR 007 D5)
     )
-    user.status = "inactive" if data["active"] is False else "active"
+    user.status = "deprovisioned" if data["active"] is False else "active"
     user.set_profile_attributes(data["profile"])
     db.add(user)
     try:
@@ -313,13 +314,13 @@ def apply_user_update(ctx: Ctx, user: User, data: dict) -> None:
         _set_external_id(db, "user", user.id, data["external_id"])
         changed.append("externalId")
     action = AuditAction.SCIM_USER_UPDATED
-    if data["active"] is True and user.status in ("inactive", "pending_activation"):
-        user.status = "active"
+    if data["active"] is True and user.status != "active":
+        lifecycle.set_status(db, user, "active", ctx.request, None, audit=False)
         changed.append("active")
         action = AuditAction.SCIM_USER_ACTIVATED
         retention.clear_deactivation(db, user)
-    elif data["active"] is False and user.status != "inactive":
-        user.status = "inactive"
+    elif data["active"] is False and user.status != "deprovisioned":
+        lifecycle.set_status(db, user, "deprovisioned", ctx.request, None, audit=False)  # also leaves every group
         changed.append("active")
         action = AuditAction.SCIM_USER_DEACTIVATED
         _deactivate_side_effects(db, user)
@@ -328,7 +329,7 @@ def apply_user_update(ctx: Ctx, user: User, data: dict) -> None:
         db.flush()
         group_rules.evaluate_user(db, user, ctx.request, None)
         db.flush()
-        if user.status == "inactive" and action == AuditAction.SCIM_USER_DEACTIVATED:
+        if user.status == "deprovisioned" and action == AuditAction.SCIM_USER_DEACTIVATED:
             retention.mark_deactivated(db, user, ctx.token)
         audit(db, action, ctx.request, ctx.token, user.id, "user", {"changed": changed})
     _commit(db)
@@ -374,8 +375,8 @@ def delete_user(uid: str, request: Request, ctx: Ctx = Depends(get_ctx)):
     _guard_admin(user)
     cur_ext = _ext_ids(db, "user", [user.id]).get(user.id)
     check_if_match(request, mapping.user_meta(user, cur_ext)["version"])
-    if user.status != "inactive":
-        user.status = "inactive"
+    if user.status != "deprovisioned":
+        lifecycle.set_status(db, user, "deprovisioned", request, None, audit=False)
         user.updated_at = datetime.now(timezone.utc)
         _deactivate_side_effects(db, user)
         db.flush()

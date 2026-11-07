@@ -225,7 +225,7 @@ def test_create_get_roundtrip(scim, db):
     g = scim.get(f"/Users/{u['id']}")
     assert g.status_code == 200 and g.json()["id"] == u["id"] and g.headers["etag"] == r.headers["etag"]
     row = stored(db, u["id"])
-    assert row.get_profile_attributes()["department"] == "Sales" and row.get_profile_attributes()["phone"] == "+44 1"
+    assert row.get_profile_attributes()["department"] == "Sales" and row.get_profile_attributes()["primary_phone"] == "+44 1"
     assert "password" not in json.dumps(u).lower()
 
 
@@ -367,7 +367,7 @@ def test_filter_parser_precedence_and_escapes():
 def test_okta_deactivate_and_reactivate_path_shapes(scim, db):
     u = mk(scim, "okta")
     assert scim.patch(f"/Users/{u['id']}", [{"op": "replace", "path": "active", "value": False}]).json()["active"] is False
-    assert stored(db, u["id"]).status == "inactive"
+    assert stored(db, u["id"]).status == "deprovisioned"
     assert scim.patch(f"/Users/{u['id']}", [{"op": "replace", "value": {"active": True}}]).json()["active"] is True
     assert stored(db, u["id"]).status == "active"
 

@@ -103,3 +103,17 @@ export type Stats = {
   failed_logins_24h: number;
   recent_events: AuditEvent[];
 };
+
+// Okta-style lifecycle. Only "active" can sign in; "deprovisioned" (deactivated) also removes every group membership.
+export type UserStatus = "staged" | "provisioned" | "active" | "recovery" | "password_expired" | "locked_out" | "suspended" | "deprovisioned";
+export const USER_STATUSES: { value: UserStatus; label: string; hint: string }[] = [
+  { value: "staged", label: "Staged", hint: "Created, not yet activated" },
+  { value: "provisioned", label: "Provisioned", hint: "Activated, user has not finished setup" },
+  { value: "active", label: "Active", hint: "Can sign in" },
+  { value: "recovery", label: "Recovery", hint: "Password reset requested" },
+  { value: "password_expired", label: "Password expired", hint: "Must set a new password" },
+  { value: "locked_out", label: "Locked out", hint: "Too many failed sign-ins" },
+  { value: "suspended", label: "Suspended", hint: "Temporarily blocked; keeps groups" },
+  { value: "deprovisioned", label: "Deprovisioned", hint: "Deactivated; removed from all groups" },
+];
+export const statusTone = (s: string) => (s === "active" ? "good" : s === "deprovisioned" || s === "locked_out" || s === "suspended" ? "bad" : "neutral");

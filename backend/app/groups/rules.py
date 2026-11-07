@@ -227,6 +227,18 @@ def strip_rule_memberships(db: Session, rule: GroupRule, request=None, actor=Non
     return len(rows)
 
 
+def remove_all_memberships(db: Session, user: User, request=None, actor=None) -> int:
+    """Remove the user from every group (deactivation). Returns how many memberships were removed."""
+    gids = [r[0] for r in db.execute(select(user_group_association.c.group_id).where(user_group_association.c.user_id == user.id))]
+    if not gids:
+        return 0
+    db.execute(delete(user_group_association).where(user_group_association.c.user_id == user.id))
+    for gid in gids:
+        record(db, AuditAction.GROUP_MEMBER_REMOVED, request, actor, gid, "group", {"user_id": user.id, "reason": "deactivated"})
+        _recount(db, gid)
+    return len(gids)
+
+
 def preview(db: Session, match: str, conditions: List[Dict[str, str]], limit: int = 10) -> Dict[str, Any]:
     hits = [u for u in db.query(User).all() if matches(match, conditions, u)]
     return {

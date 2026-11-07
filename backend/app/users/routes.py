@@ -16,6 +16,7 @@ from backend.app.audit.model import AuditAction
 from backend.app.audit.service import record
 from backend.app.auth.deps import require_admin
 from backend.app.auth.sessions_util import revoke_user_sessions
+from backend.app.users import lifecycle
 from backend.app.db import get_db
 from backend.app.groups import rules as group_rules
 from backend.app.groups.model import Group, user_group_association
@@ -62,7 +63,7 @@ class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
     first_name: Optional[str] = Field(None, min_length=1, max_length=100)
     last_name: Optional[str] = Field(None, min_length=1, max_length=100)
-    status: Optional[str] = Field(None, pattern="^(active|inactive)$")
+    status: Optional[str] = Field(None, pattern=lifecycle.STATUS_PATTERN)
     is_admin: Optional[bool] = None
     profile_attributes: Optional[Dict[str, Any]] = None
 
@@ -135,7 +136,7 @@ def _unique_username(db: Session, base: str) -> str:
 @router.get("")
 def list_users(
     q: Optional[str] = Query(None, max_length=100),
-    status: Optional[str] = Query(None, pattern="^(active|inactive)$"),
+    status: Optional[str] = Query(None, pattern=lifecycle.STATUS_PATTERN),
     page: int = Query(1, ge=1, le=100000),
     page_size: int = Query(25, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -262,27 +263,26 @@ def update_user(
         user.is_admin = body.is_admin
         changed["is_admin"] = body.is_admin
 
-    deactivated = activated = False
-    if body.status is not None and body.status != user.status:
+    status_result = None
+    if body.status is not None and lifecycle.normalize(body.status) != user.status:
         if user.id == actor.id and body.status != "active":
-            raise HTTPException(status_code=400, detail="You cannot deactivate your own account")
+            raise HTTPException(status_code=400, detail="You cannot change your own account status")
         if user.is_super_admin and body.status != "active":
-            raise HTTPException(status_code=403, detail="Cannot deactivate a super administrator")
-        user.status = body.status
-        changed["status"] = body.status
-        deactivated, activated = body.status == "inactive", body.status == "active"
+            raise HTTPException(status_code=403, detail="Cannot change the status of a super administrator")
+        changed["status"] = lifecycle.normalize(body.status)
 
-    if deactivated or "is_admin" in changed:
+    if "is_admin" in changed:
         revoke_user_sessions(db, user.id)  # force re-login with current rights
     if changed:
         db.flush()
-        group_rules.evaluate_user(db, user, request, actor)  # attribute/status changes can move rule-based memberships
+        if "status" in changed:
+            status_result = lifecycle.set_status(db, user, changed["status"], request, actor)  # sessions, groups, audit
+        else:
+            group_rules.evaluate_user(db, user, request, actor)  # attribute changes can move rule-based memberships
 
-    if changed:
-        action = AuditAction.USER_DEACTIVATED if deactivated else (
-            AuditAction.USER_ACTIVATED if activated else AuditAction.USER_UPDATED
-        )
-        record(db, action, request, actor, user.id, "user", {"changed": changed})
+    if changed and set(changed) != {"status"}:
+        rest = {k: v for k, v in changed.items() if k != "status"}
+        record(db, AuditAction.USER_UPDATED, request, actor, user.id, "user", {"changed": rest})
     db.commit()
     db.refresh(user)
     return _detail(user)

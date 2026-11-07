@@ -14,7 +14,7 @@ def keys(admin):
 
 def test_defaults_are_seeded_and_admin_only(admin, member):
     k = keys(admin)
-    assert {"title", "phone", "location", "bio", "timezone", "locale", "department", "employee_id", "manager", "cost_center"} <= set(k)
+    assert {"title", "primary_phone", "timezone", "locale", "department", "employee_number", "manager", "cost_center", "middle_name", "city"} <= set(k)
     assert k["department"]["user_editable"] is False and k["title"]["user_editable"] is True
     assert member.get("/admin/profile-attributes").status_code == 403
     assert member.post("/admin/profile-attributes", {"key": "x", "display_name": "X"}).status_code == 403

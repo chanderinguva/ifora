@@ -52,7 +52,7 @@ def purge(db: Session, now: Optional[datetime] = None) -> int:
         if user is None:
             db.delete(row)
             continue
-        if user.status != "inactive" or user.is_admin or user.is_super_admin:
+        if user.status != "deprovisioned" or user.is_admin or user.is_super_admin:
             db.delete(row)  # reactivated or promoted since: the policy no longer applies
             continue
         if user.updated_at and user.updated_at > row.deactivated_at + UNTOUCHED_SLACK:
