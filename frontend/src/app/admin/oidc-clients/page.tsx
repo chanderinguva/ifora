@@ -18,8 +18,8 @@ const SCOPE_HELP: Record<string, string> = {
 };
 const lines = (s: string) => s.split("\n").map((x) => x.trim()).filter(Boolean);
 
-type Draft = { name: string; description: string; client_type: "public" | "confidential"; redirect_uris: string; post_logout: string; scopes: string[]; first_party: boolean };
-const empty = (): Draft => ({ name: "", description: "", client_type: "public", redirect_uris: "", post_logout: "", scopes: ["openid", "profile", "email"], first_party: false });
+type Draft = { name: string; description: string; client_type: "public" | "confidential" | "service"; redirect_uris: string; post_logout: string; scopes: string[]; first_party: boolean; service_scopes: string; audiences: string };
+const empty = (): Draft => ({ name: "", description: "", client_type: "public", redirect_uris: "", post_logout: "", scopes: ["openid", "profile", "email"], first_party: false, service_scopes: "", audiences: "" });
 
 export default function OidcClientsPage() {
   const me = useCurrentUser();
@@ -98,7 +98,25 @@ export default function OidcClientsPage() {
                 <input type="radio" name="ctype" checked={draft.client_type === "confidential"} onChange={() => setDraft({ ...draft, client_type: "confidential" })} />
                 <span><strong>Confidential</strong> (server-side web app): gets a client secret, shown once.</span>
               </label>
+              {me.is_super_admin && (
+                <label className="flex items-start gap-2 text-sm">
+                  <input type="radio" name="ctype" checked={draft.client_type === "service"} onChange={() => setDraft({ ...draft, client_type: "service" })} />
+                  <span><strong>Service</strong> (machine to machine): no user, authenticates with a secret and gets tokens for itself (client credentials).</span>
+                </label>
+              )}
             </fieldset>
+            {draft.client_type === "service" ? (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="c-sscopes">Scopes (one per line)</Label>
+                  <textarea id="c-sscopes" className={fieldClass + " h-24 font-mono"} placeholder="invoices:read" value={draft.service_scopes} onChange={(e) => setDraft({ ...draft, service_scopes: e.target.value })} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="c-audiences">Audiences / resources (one per line)</Label>
+                  <textarea id="c-audiences" className={fieldClass + " h-24 font-mono"} placeholder="https://api.example.com" value={draft.audiences} onChange={(e) => setDraft({ ...draft, audiences: e.target.value })} />
+                </div>
+              </div>
+            ) : (<>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="c-redirects">Redirect URIs (one per line)</Label>
@@ -118,19 +136,23 @@ export default function OidcClientsPage() {
                 </label>
               ))}
             </fieldset>
-            {me.is_super_admin && (
+            </>)}
+            {me.is_super_admin && draft.client_type !== "service" && (
               <label className="flex items-start gap-2 text-sm">
                 <input type="checkbox" checked={draft.first_party} onChange={(e) => setDraft({ ...draft, first_party: e.target.checked })} />
                 <span><strong>First-party application</strong>: skips the consent screen. Users still have to sign in, and scopes are still limited to the list above. Use only for applications you operate.</span>
               </label>
             )}
             <div className="flex gap-2">
-              <Button disabled={!draft.name.trim() || lines(draft.redirect_uris).length === 0}
+              <Button disabled={!draft.name.trim() || (draft.client_type === "service" ? lines(draft.service_scopes).length === 0 || lines(draft.audiences).length === 0 : lines(draft.redirect_uris).length === 0)}
                 onClick={() => run(async () => {
                   const r = await http<OidcClient>("/admin/oidc/clients", { method: "POST", body: {
                     name: draft.name, description: draft.description || null, client_type: draft.client_type,
-                    redirect_uris: lines(draft.redirect_uris), post_logout_redirect_uris: lines(draft.post_logout),
-                    allowed_scopes: draft.scopes, first_party: draft.first_party,
+                    redirect_uris: draft.client_type === "service" ? [] : lines(draft.redirect_uris),
+                    post_logout_redirect_uris: draft.client_type === "service" ? [] : lines(draft.post_logout),
+                    allowed_scopes: draft.client_type === "service" ? lines(draft.service_scopes) : draft.scopes,
+                    allowed_audiences: draft.client_type === "service" ? lines(draft.audiences) : [],
+                    first_party: draft.client_type === "service" ? false : draft.first_party,
                   } });
                   if (r.client_secret) setReveal({ name: r.name, secret: r.client_secret });
                   setDraft(null);
@@ -157,9 +179,10 @@ export default function OidcClientsPage() {
             <CardContent className="space-y-3 text-sm">
               {c.description && <p className="text-muted-foreground">{c.description}</p>}
               <div>Client ID: <code className="select-all">{c.client_id}</code></div>
-              <div>Redirect URIs: <ul className="ml-4 list-disc font-mono text-xs">{c.redirect_uris.map((u) => <li key={u}>{u}</li>)}</ul></div>
+              {c.client_type !== "service" && <div>Redirect URIs: <ul className="ml-4 list-disc font-mono text-xs">{c.redirect_uris.map((u) => <li key={u}>{u}</li>)}</ul></div>}
+              {c.client_type === "service" && <div>Audiences: {c.allowed_audiences.map((a) => <code key={a} className="mr-2">{a}</code>)}</div>}
               <div>Scopes: {c.allowed_scopes.map((s) => <code key={s} className="mr-2">{s}</code>)}</div>
-              {c.client_type === "confidential" && (
+              {c.client_type !== "public" && (
                 <div className="space-y-2">
                   <div className="font-medium">Client secrets</div>
                   <ul className="space-y-1">

@@ -69,6 +69,7 @@ class OIDCClient(TenantOwned, Base):
     redirect_uris = Column(JSONB, nullable=False)
     post_logout_redirect_uris = Column(JSONB, nullable=False, default=list)
     allowed_scopes = Column(JSONB, nullable=False)
+    allowed_audiences = Column(JSONB, nullable=False, default=list, server_default="[]")  # service clients: resources they may request
     grant_types = Column(JSONB, nullable=False)
     created_by = Column(Integer, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_now)

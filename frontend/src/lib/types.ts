@@ -37,12 +37,13 @@ export type OidcClient = {
   client_id: string;
   name: string;
   description: string | null;
-  client_type: "public" | "confidential";
+  client_type: "public" | "confidential" | "service";
   first_party: boolean;
   status: "active" | "disabled";
   redirect_uris: string[];
   post_logout_redirect_uris: string[];
   allowed_scopes: string[];
+  allowed_audiences: string[];
   grant_types: string[];
   secrets: OidcSecret[];
   client_secret?: string;

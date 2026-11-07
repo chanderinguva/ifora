@@ -11,7 +11,7 @@ from backend.app.audit.model import AuditAction
 from backend.app.audit.service import record
 from backend.app.config import settings
 from backend.app.db import get_db
-from backend.app.oidc import cors, keys, refresh, tokens
+from backend.app.oidc import cors, introspect as intro, keys, refresh, tokens
 from backend.app.oidc.claims import user_claims
 from backend.app.oidc.clients import SUPPORTED_SCOPES
 from backend.app.oidc.models import OIDCClient
@@ -68,6 +68,12 @@ async def _token(request: Request, db: Session):
             record(db, AuditAction(action), request, None, user_id, "user", {"client_id": client.client_id, **meta})
 
         grant = form.get("grant_type")
+        if grant == "client_credentials":
+            body = tokens.client_credentials(db, client, form)
+            record(db, AuditAction.OIDC_TOKEN_ISSUED, request, None, client.id, "oidc_client",
+                   {"client_id": client.client_id, "scope": body["scope"], "grant": grant})
+            db.commit()
+            return JSONResponse(body, headers=NO_STORE)
         if grant == "refresh_token":
             body, user = refresh.rotate(db, client, form, audit)
         else:
@@ -129,7 +135,7 @@ def discovery():
         "jwks_uri": f"{iss}/oauth/jwks",
         "response_types_supported": ["code"],
         "response_modes_supported": ["query"],
-        "grant_types_supported": ["authorization_code", "refresh_token"],
+        "grant_types_supported": ["authorization_code", "refresh_token", "client_credentials"],
         "subject_types_supported": ["public"],
         "id_token_signing_alg_values_supported": ["RS256"],
         "scopes_supported": list(SUPPORTED_SCOPES),
@@ -138,6 +144,8 @@ def discovery():
         "claims_supported": ["sub", "iss", "aud", "exp", "iat", "auth_time", "nonce", "amr", "acr", "at_hash", "name", "given_name",
                              "family_name", "preferred_username", "zoneinfo", "locale", "updated_at", "email", "groups"],
         "authorization_response_iss_parameter_supported": True,
+        "introspection_endpoint": f"{iss}/oauth/introspect",
+        "introspection_endpoint_auth_methods_supported": ["client_secret_basic"],
         "end_session_endpoint": f"{iss}/oauth/logout",
         "prompt_values_supported": ["none", "login", "consent", "select_account"],
         "acr_values_supported": ["urn:identityforge:acr:1", "urn:identityforge:acr:2"],
@@ -145,6 +153,34 @@ def discovery():
         "request_parameter_supported": False,
         "request_uri_parameter_supported": False,
     }, headers={"Cache-Control": "public, max-age=300", "Access-Control-Allow-Origin": "*"})
+
+
+@router.post("/oauth/introspect")
+async def introspect(request: Request, db: Session = Depends(get_db)):
+    """RFC 7662. Only confidential/service clients, authenticated with their secret."""
+    ident = ratelimit.client_ip(request)
+    ratelimit.check("oauth_token", ident, settings.RATE_LIMIT_TOKEN_FAILURES)
+    try:
+        if not (request.headers.get("content-type") or "").lower().startswith(FORM):
+            raise tokens.TokenError("invalid_request", f"Content-Type must be {FORM}")
+        pairs = (await request.form()).multi_items()
+        form = dict(pairs)
+        if len(pairs) != len(form):
+            raise tokens.TokenError("invalid_request", "repeated parameter")
+        client = tokens.authenticate(db, request.headers.get("authorization"), form)
+        if client.client_type == "public":
+            raise tokens.TokenError("invalid_client", "client authentication failed", 401, 'Basic realm="oauth"')
+        raw = form.get("token")
+        if not raw or len(raw) > 4096:
+            raise tokens.TokenError("invalid_request", "token is required")
+        body = intro.introspect(db, client, raw, form.get("token_type_hint"))
+        db.commit()
+    except tokens.TokenError as e:
+        db.rollback()
+        if e.error == "invalid_client":
+            ratelimit.hit("oauth_token", ident, settings.RATE_LIMIT_TOKEN_WINDOW_SECONDS)
+        return _error(e)
+    return JSONResponse(body, headers=NO_STORE)
 
 
 @router.post("/oauth/revoke")
