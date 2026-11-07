@@ -67,7 +67,7 @@ def test_flag_off_means_user_changes_do_not_touch_memberships(db, admin, monkeyp
 
 # ---- guard rails: what a rule may look at -----------------------------------------------
 
-@pytest.mark.parametrize("attr", ["title", "phone", "location", "timezone", "locale", "bio", "first_name", "last_name"])
+@pytest.mark.parametrize("attr", ["title", "primary_phone", "city", "timezone", "locale", "nick_name", "first_name", "last_name"])
 def test_rules_cannot_use_attributes_users_can_edit(admin, attr):
     gid = new_group(admin)
     body = rule_body(gid)
@@ -116,7 +116,7 @@ def test_activation_adds_only_matching_active_users(db, admin):
     dept(db, "s2@example.com", "sales")             # case-insensitive
     dept(db, "e@example.com", "Engineering")
     dept(db, "none@example.com")
-    dept(db, "off@example.com", "Sales", status="inactive")
+    dept(db, "off@example.com", "Sales", status="deprovisioned")
     rid = make_rule(admin, gid)
     m = members(admin, gid)
     assert set(m) == {"s1@example.com", "s2@example.com"} and set(m.values()) == {rid}
@@ -134,7 +134,7 @@ def test_membership_follows_user_changes(db, admin):
     assert members(admin, gid) == {}                                # attribute moved out
     admin.patch(f"/admin/users/{uid}", {"profile_attributes": {"department": "Sales"}})
     assert members(admin, gid) == {"n@example.com": rid}
-    admin.patch(f"/admin/users/{uid}", {"status": "inactive"})
+    admin.patch(f"/admin/users/{uid}", {"status": "deprovisioned"})
     assert members(admin, gid) == {}                                # deactivated users drop out
     admin.patch(f"/admin/users/{uid}", {"status": "active"})
     assert members(admin, gid) == {"n@example.com": rid}

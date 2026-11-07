@@ -225,7 +225,7 @@ def test_create_get_roundtrip(scim, db):
     g = scim.get(f"/Users/{u['id']}")
     assert g.status_code == 200 and g.json()["id"] == u["id"] and g.headers["etag"] == r.headers["etag"]
     row = stored(db, u["id"])
-    assert row.get_profile_attributes()["department"] == "Sales" and row.get_profile_attributes()["phone"] == "+44 1"
+    assert row.get_profile_attributes()["department"] == "Sales" and row.get_profile_attributes()["primary_phone"] == "+44 1"
     assert "password" not in json.dumps(u).lower()
 
 
@@ -345,7 +345,7 @@ def test_filters(people, f, expected):
 
 @pytest.mark.parametrize("f", [
     'userName xx "a"', 'unknown eq "a"', 'userName eq', 'userName eq "unterminated', '(userName eq "a"',
-    'userName eq "a")', 'userName gt "a"', 'not (userName eq "a")', 'emails[type eq "work"].value eq "a"',
+    'userName eq "a")', 'userName gt 5', 'not userName eq "a"', 'emails[type eq "work"].bogus eq "a"',
     'password eq "x"', 'is_admin eq true', 'userName eq a', '', 'userName eq "a" and', 'and userName eq "a"',
     'active co "t"', "(" * 30 + 'userName eq "a"' + ")" * 30, 'userName eq "' + "a" * 1100 + '"',
     " or ".join(['userName eq "a"'] * 40),
@@ -367,7 +367,7 @@ def test_filter_parser_precedence_and_escapes():
 def test_okta_deactivate_and_reactivate_path_shapes(scim, db):
     u = mk(scim, "okta")
     assert scim.patch(f"/Users/{u['id']}", [{"op": "replace", "path": "active", "value": False}]).json()["active"] is False
-    assert stored(db, u["id"]).status == "inactive"
+    assert stored(db, u["id"]).status == "deprovisioned"
     assert scim.patch(f"/Users/{u['id']}", [{"op": "replace", "value": {"active": True}}]).json()["active"] is True
     assert stored(db, u["id"]).status == "active"
 
@@ -673,8 +673,8 @@ def test_rule_managed_memberships_cannot_be_removed(scim, admin, db):
 
 def test_discovery_documents(scim):
     spc = scim.get("/ServiceProviderConfig").json()
-    assert spc["patch"]["supported"] is True and spc["bulk"]["supported"] is False
-    assert spc["sort"]["supported"] is False and spc["changePassword"]["supported"] is False
+    assert spc["patch"]["supported"] is True and spc["bulk"]["supported"] is True
+    assert spc["sort"]["supported"] is True and spc["changePassword"]["supported"] is False
     assert spc["filter"] == {"supported": True, "maxResults": 200} and spc["etag"]["supported"] is True
     assert spc["authenticationSchemes"][0]["type"] == "oauthbearertoken"
     assert {r["id"] for r in scim.get("/ResourceTypes").json()["Resources"]} == {"User", "Group"}
@@ -685,11 +685,11 @@ def test_discovery_documents(scim):
 
 
 def test_unsupported_features_say_so(scim):
-    assert scim.post("/Bulk", {}).status_code == 501
+    assert scim.get("/Bulk").status_code == 405
     assert scim.get("/Me").status_code == 501
-    assert scim.post("/Users/.search", {}).status_code == 501
+    assert scim.post("/.search", {}).status_code == 501
     assert scim.get("/Nope").json() == {"schemas": [ERR], "status": "404", "detail": "Resource not found"}
-    assert scim.get("/Users", sortBy="userName").status_code == 200  # ignored, advertised as unsupported
+    assert scim.get("/Users", sortBy="userName").status_code == 200
 
 
 def test_request_hygiene(scim):

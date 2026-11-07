@@ -110,7 +110,7 @@ def test_admin_api_cannot_see_or_touch_other_tenant_users(db, tenant_b, super_ad
     other = user_in(tenant_b, "victim@example.com")
     assert all(u["email"] != "victim@example.com" for u in super_admin.get("/admin/users").json()["items"])
     assert super_admin.get(f"/admin/users/{other.id}").status_code == 404
-    assert super_admin.patch(f"/admin/users/{other.id}", {"status": "inactive"}).status_code == 404
+    assert super_admin.patch(f"/admin/users/{other.id}", {"status": "deprovisioned"}).status_code == 404
     assert super_admin.delete(f"/admin/users/{other.id}").status_code == 404
     assert super_admin.post(f"/admin/users/{other.id}/password", {"new_password": STRONG}).status_code == 404
 
@@ -153,3 +153,30 @@ def test_no_context_blocks_aggregates_too():
     with pytest.raises(TenantContextMissing):
         s.execute(select(func.count()).select_from(User))
     s.close()
+
+
+def test_membership_rows_carry_their_tenant_and_cannot_cross_tenants(db, tenant_b):
+    from sqlalchemy import insert, select
+    from sqlalchemy.exc import DBAPIError
+
+    from backend.app.groups.model import user_group_association as m
+
+    u = make_user(db, "member-a@example.com")
+    g = Group(name="ga")
+    db.add(g)
+    db.commit()
+    db.execute(insert(m).values(user_id=u.id, group_id=g.id))      # tenant_id is filled by the database
+    db.commit()
+    assert db.execute(select(m.c.tenant_id)).scalar() == u.tenant_id
+
+    sb = b_session(tenant_b)
+    gb = Group(name="gb")
+    sb.add(gb)
+    sb.commit()
+    gb_id = gb.id
+    sb.close()
+    from backend.app.db import engine
+
+    with engine.connect() as conn:
+        with pytest.raises(DBAPIError, match="same tenant"):
+            conn.execute(insert(m).values(user_id=u.id, group_id=gb_id))

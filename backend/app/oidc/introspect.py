@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from backend.app.config import settings
 from backend.app.oidc import keys, refresh
 from backend.app.oidc.authorize import get_consent, now
-from backend.app.oidc.models import OIDCClient, RefreshToken
+from backend.app.oidc.models import AccessToken, OIDCClient, RefreshToken
 from backend.app.users.model import User
 
 INACTIVE: Dict = {"active": False}
@@ -62,7 +62,45 @@ def _access(db: Session, caller: OIDCClient, raw: str) -> Dict:
     return out
 
 
+def _opaque_row(db: Session, raw: str, audience: str | None = None):
+    row = db.query(AccessToken).filter(AccessToken.token_hash == refresh._h(raw)).first()
+    if row is None or row.revoked_at is not None or row.expires_at <= now():
+        return None, None
+    issued_to = db.get(OIDCClient, row.client_pk)
+    if issued_to is None or issued_to.status != "active":
+        return None, None
+    if row.user_id is not None:
+        user = db.get(User, row.user_id)
+        if user is None or user.status != "active":
+            return None, None
+        if not issued_to.first_party and get_consent(db, user.id, issued_to) is None:
+            return None, None
+    if audience is not None and row.audience != audience:
+        return None, None
+    return row, issued_to
+
+
+def opaque_claims(db: Session, raw: str, audience: str | None = None):
+    """Claims of a live opaque access token (for userinfo), or None."""
+    row, issued_to = _opaque_row(db, raw, audience)
+    if row is None:
+        return None
+    return {"sub": row.sub, "scope": " ".join(row.scopes), "client_id": issued_to.client_id}
+
+
+def _opaque(db: Session, caller: OIDCClient, raw: str) -> Dict:
+    row, issued_to = _opaque_row(db, raw)
+    if row is None:
+        return INACTIVE
+    if issued_to.id != caller.id and row.audience not in (caller.allowed_audiences or []):
+        return INACTIVE
+    return {"active": True, "token_type": "Bearer", "scope": " ".join(row.scopes), "client_id": issued_to.client_id, "sub": row.sub,
+            "aud": row.audience, "iss": settings.OIDC_ISSUER, "iat": int(row.created_at.timestamp()), "exp": int(row.expires_at.timestamp())}
+
+
 def introspect(db: Session, caller: OIDCClient, raw: str, hint: str | None) -> Dict:
+    if raw.startswith("idf_at_"):
+        return _opaque(db, caller, raw)
     looks_jwt = raw.count(".") == 2
     if hint == "refresh_token" and not looks_jwt:
         return _refresh(db, caller, raw)

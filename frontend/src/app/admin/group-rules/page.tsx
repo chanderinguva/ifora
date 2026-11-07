@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge, PageHeader, fieldClass, td, th } from "@/components/bits";
 import { http, qs, type Page } from "@/lib/http";
+import { API_URL } from "@/lib/api";
 import type { Group, GroupRule, ProfileAttribute, RuleCondition } from "@/lib/types";
 
 const OPERATORS: [string, string][] = [
@@ -20,7 +21,7 @@ type Field = { key: string; label: string; type: string; options?: string[] | nu
 const ACCOUNT_FIELDS: Field[] = [
   { key: "email", label: "Email", type: "string" },
   { key: "username", label: "Username", type: "string" },
-  { key: "status", label: "Account status", type: "enum", options: ["active", "inactive", "suspended"] },
+  { key: "status", label: "Account status", type: "enum", options: ["staged", "provisioned", "active", "recovery", "password_expired", "locked_out", "suspended", "deprovisioned"] },
 ];
 const BOOL_OPS = ["equals", "not_equals", "is_set", "is_not_set"];
 const NUM_OPS = ["equals", "not_equals", "is_set", "is_not_set"];
@@ -28,8 +29,17 @@ const ENUM_OPS = ["equals", "not_equals", "is_set", "is_not_set"];
 const opsFor = (type: string) => (type === "boolean" ? BOOL_OPS : type === "number" ? NUM_OPS : type === "enum" ? ENUM_OPS : OPERATORS.map(([v]) => v));
 const blank = (): RuleCondition => ({ attribute: "department", operator: "equals", value: "" });
 
-type Draft = { id?: number; name: string; match: "all" | "any"; conditions: RuleCondition[]; group_ids: number[] };
-const emptyDraft = (): Draft => ({ name: "", match: "all", conditions: [blank()], group_ids: [] });
+type Draft = { id?: number; name: string; kind: "basic" | "expression"; match: "all" | "any"; conditions: RuleCondition[]; expression: string; group_ids: number[] };
+const emptyDraft = (): Draft => ({ name: "", kind: "basic", match: "all", conditions: [blank()], expression: "", group_ids: [] });
+
+async function download(path: string, fallbackName: string) {
+  const r = await fetch(`${API_URL}/api/v1${path}`, { credentials: "include" });
+  if (!r.ok) throw new Error("Download failed");
+  const url = URL.createObjectURL(await r.blob());
+  const a = document.createElement("a");
+  a.href = url; a.download = fallbackName; a.click();
+  URL.revokeObjectURL(url);
+}
 
 export default function GroupRulesPage() {
   const [rules, setRules] = useState<GroupRule[] | null>(null);
@@ -39,6 +49,7 @@ export default function GroupRulesPage() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [preview, setPreview] = useState<{ count: number; sample: { email: string }[] } | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [createGroups, setCreateGroups] = useState(true);
 
   const load = useCallback(() => {
     http<{ group_rules: boolean }>("/admin/features").then((f) => {
@@ -82,8 +93,28 @@ export default function GroupRulesPage() {
   return (
     <div>
       <PageHeader title="Group rules">
+        <Button variant="outline" onClick={() => run(() => download("/admin/group-rules/template", "group-rules-template.json"), "Template downloaded: edit it, then Import")}>Download template</Button>
+        <Button variant="outline" onClick={() => run(() => download("/admin/group-rules/export", "group-rules.json"), "Rules exported")}>Export</Button>
+        <label className="inline-flex h-10 cursor-pointer items-center rounded-md border px-4 text-sm font-medium hover:bg-accent">
+          Import
+          <input type="file" accept="application/json,.json" className="sr-only" data-testid="rules-import"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (!file) return;
+              run(async () => {
+                if (file.size > 500_000) throw new Error("File is too large");
+                let document: unknown;
+                try { document = JSON.parse(await file.text()); } catch { throw new Error("That file is not valid JSON"); }
+                await http("/admin/group-rules/import", { method: "POST", body: { document, create_missing_groups: createGroups } });
+              }, "Rules imported as inactive. Review and activate them.");
+            }} />
+        </label>
         <Button onClick={() => { setDraft(emptyDraft()); setPreview(null); }}><Plus className="mr-1 h-4 w-4" /> Add rule</Button>
       </PageHeader>
+      <label className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
+        <input type="checkbox" checked={createGroups} onChange={(e) => setCreateGroups(e.target.checked)} /> When importing, create groups that do not exist yet
+      </label>
       <p className="mb-4 max-w-2xl text-sm text-muted-foreground">
         A rule adds matching active users to one or more groups automatically, and removes them when they stop matching. Rules can use
         only administrator-managed attributes (email, username, status, department, employee ID…), never fields users edit themselves.
@@ -101,7 +132,27 @@ export default function GroupRulesPage() {
               <Input id="r-name" maxLength={100} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
             </div>
 
-            <div className="space-y-2">
+            <div className="flex gap-4 text-sm" role="radiogroup" aria-label="Rule type">
+              {([["basic", "Basic (conditions)"], ["expression", "Okta Expression Language"]] as const).map(([k, l]) => (
+                <label key={k} className="flex items-center gap-2"><input type="radio" name="rule-kind" checked={draft.kind === k} onChange={() => { setPreview(null); setDraft({ ...draft, kind: k }); }} /> {l}</label>
+              ))}
+            </div>
+
+            {draft.kind === "expression" && (
+              <div className="space-y-2">
+                <Label htmlFor="r-expr">Expression</Label>
+                <textarea id="r-expr" rows={3} maxLength={1000} spellCheck={false} className={fieldClass + " font-mono text-xs"}
+                  placeholder={'user.department == "Sales" && user.userType != "Contractor"'}
+                  value={draft.expression} onChange={(e) => setDraft({ ...draft, expression: e.target.value })} />
+                <p className="text-xs text-muted-foreground">
+                  Must be true or false. Use <code>user.&lt;attribute&gt;</code> (camelCase like <code>user.employeeNumber</code> or snake_case; <code>user.login</code> is the username),
+                  <code> == != &lt; &lt;= &gt; &gt;= &amp;&amp; || ! ?:</code>, and <code>String.stringContains</code>, <code>String.len</code>, <code>String.toLowerCase</code>, <code>String.substring</code>,
+                  <code> String.replace</code>, <code>Convert.toInt</code>, <code>Arrays.contains</code>. Comparisons are case-sensitive. Group-membership functions are not supported.
+                </p>
+              </div>
+            )}
+
+            {draft.kind === "basic" && <div className="space-y-2">
               <div className="flex items-center gap-2 text-sm">
                 <span>If</span>
                 <select aria-label="Match mode" className={fieldClass + " !w-auto"} value={draft.match} onChange={(e) => setDraft({ ...draft, match: e.target.value as "all" | "any" })}>
@@ -150,7 +201,7 @@ export default function GroupRulesPage() {
                   <a className="underline underline-offset-4" href="/admin/profile-editor">Profile editor</a>.
                 </p>
               )}
-            </div>
+            </div>}
 
             <fieldset className="space-y-2">
               <legend className="text-sm font-medium">Then assign to</legend>
@@ -174,12 +225,12 @@ export default function GroupRulesPage() {
             )}
             <div className="flex flex-wrap gap-2">
               <Button type="button" variant="outline"
-                onClick={() => run(async () => setPreview(await http("/admin/group-rules/preview", { method: "POST", body: { match: draft.match, conditions: draft.conditions } })), "Preview updated")}>
+                onClick={() => run(async () => setPreview(await http("/admin/group-rules/preview", { method: "POST", body: { kind: draft.kind, match: draft.match, conditions: draft.conditions, expression: draft.expression } })), "Preview updated")}>
                 Preview matches
               </Button>
               <Button type="button" disabled={!draft.name.trim() || draft.group_ids.length === 0}
                 onClick={() => run(async () => {
-                  const body = { name: draft.name, match: draft.match, conditions: draft.conditions, group_ids: draft.group_ids };
+                  const body = { name: draft.name, kind: draft.kind, match: draft.match, conditions: draft.kind === "basic" ? draft.conditions : [], expression: draft.kind === "expression" ? draft.expression : null, group_ids: draft.group_ids };
                   if (draft.id) await http(`/admin/group-rules/${draft.id}`, { method: "PUT", body });
                   else await http("/admin/group-rules", { method: "POST", body });
                   setDraft(null);
@@ -199,14 +250,14 @@ export default function GroupRulesPage() {
             <tbody>
               {rules?.map((r) => (
                 <tr key={r.id} className="border-b last:border-0 align-top">
-                  <td className={td + " font-medium"}>{r.name}</td>
+                  <td className={td + " font-medium"}>{r.name}{r.kind === "expression" && <span className="ml-2 text-xs font-normal text-muted-foreground">EL</span>}</td>
                   <td className={td + " font-mono text-xs"}>{r.expression}</td>
                   <td className={td}>{r.groups.map((g) => g.name).join(", ") || "—"}</td>
-                  <td className={td}><Badge tone={r.status === "active" ? "good" : "neutral"}>{r.status}</Badge></td>
+                  <td className={td}><Badge tone={r.status === "active" ? "good" : "neutral"}>{r.status}</Badge>{r.sync_state === "pending" && <Badge tone="info">syncing…</Badge>}</td>
                   <td className={td + " space-x-2 text-right whitespace-nowrap"}>
                     {r.status === "inactive" ? (
                       <>
-                        <Button size="sm" variant="outline" onClick={() => { setPreview(null); setDraft({ id: r.id, name: r.name, match: r.match, conditions: r.conditions, group_ids: r.groups.map((g) => g.id) }); }}>Edit</Button>
+                        <Button size="sm" variant="outline" onClick={() => { setPreview(null); setDraft({ id: r.id, name: r.name, kind: r.kind, match: r.match, conditions: r.kind === "basic" ? r.conditions : [blank()], expression: r.kind === "expression" ? r.expression : "", group_ids: r.groups.map((g) => g.id) }); }}>Edit</Button>
                         <Button size="sm" onClick={() => run(() => http(`/admin/group-rules/${r.id}/activate`, { method: "POST" }), "Rule activated; matching users were added")}>Activate</Button>
                       </>
                     ) : (

@@ -127,7 +127,7 @@ def test_set_attribute_and_attribute_changed_trigger(db, admin):
 
 
 def test_set_attribute_rejects_self_editable_and_reserved(admin):
-    for attr in ("title", "bio", "is_admin", "email", "nope"):
+    for attr in ("title", "nick_name", "is_admin", "email", "nope"):
         r = admin.post("/admin/recipes", {"name": f"r-{attr}", "definition": definition(
             "user.created", [step("s1", "set_attribute", {"attribute": attr, "value": "x"})])})
         assert r.status_code == 422, attr
@@ -139,7 +139,7 @@ def test_deactivate_activate_and_admins_are_untouchable(db, admin):
     u = new_user(admin)
     run_worker()
     db.expire_all()
-    assert db.get(User, u["id"]).status == "inactive"
+    assert db.get(User, u["id"]).status == "deprovisioned"
     make_recipe(admin, definition("manual", [step("s1", "activate_user", {"user": "{{trigger.payload.uid}}"})]), "act")
     act_id = db.query(Recipe).filter(Recipe.name == "act").one().id
     assert admin.post(f"/admin/recipes/{act_id}/run", {"payload": {"uid": u["id"]}}).status_code == 202
@@ -559,7 +559,7 @@ def test_recipes_cannot_escalate_privileges(db, admin):
 
 
 def test_untrusted_user_editable_fields_are_refused(admin):
-    for left in ("trigger.user.first_name", "trigger.user.attributes.title", "trigger.user.attributes.bio"):
+    for left in ("trigger.user.first_name", "trigger.user.attributes.title", "trigger.user.attributes.nick_name"):
         r = admin.post("/admin/recipes", {"name": f"t-{left}", "definition": definition("user.created", [
             step("c", "condition", {"match": "all", "conditions": [{"left": left, "operator": "equals", "value": "admin"}]})])})
         assert r.status_code == 422 and "edited by the user" in r.json()["detail"], left

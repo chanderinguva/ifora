@@ -13,7 +13,7 @@ from typing import Optional
 from sqlalchemy import delete, exists, select
 from sqlalchemy.orm import Session
 
-from backend.app.oidc.models import AuthorizationCode, PendingAuthRequest, RefreshToken
+from backend.app.oidc.models import AccessToken, AuthorizationCode, PendingAuthRequest, RefreshToken
 from backend.app.tenancy import unscoped
 
 GRACE = timedelta(hours=1)
@@ -27,6 +27,7 @@ def purge(db: Session, now: Optional[datetime] = None) -> dict:
         out["pending_requests"] = db.execute(
             delete(PendingAuthRequest).where(PendingAuthRequest.expires_at < now - GRACE)
         ).rowcount
+        out["access_tokens"] = db.execute(delete(AccessToken).where(AccessToken.expires_at < now - GRACE)).rowcount
         out["refresh_tokens"] = db.execute(
             delete(RefreshToken).where(RefreshToken.absolute_expires_at < now)
         ).rowcount

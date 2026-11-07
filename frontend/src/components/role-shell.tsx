@@ -4,6 +4,7 @@ import { LayoutDashboard, Users, Shield, ScrollText, Home, Settings, Workflow, A
 import { AppShell, type NavGroup } from "./app-shell";
 import { useCurrentUser } from "./auth-guard";
 import { inAdminView } from "@/lib/roles";
+import { CommandPalette } from "./command-palette";
 
 export const ADMIN_NAV: NavGroup[] = [
   { items: [{ href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard }] },
@@ -40,6 +41,7 @@ export function RoleShell({ children }: { children: React.ReactNode }) {
   return (
     <AppShell title={admin ? "Administration" : "My account"} nav={admin ? ADMIN_NAV : USER_NAV}>
       {children}
+      {admin && <CommandPalette nav={ADMIN_NAV} />}
     </AppShell>
   );
 }

@@ -18,7 +18,7 @@ _Last updated: 2026-11-05_
 | System audit events | Done | Recorded in the same transaction; viewer with filter |
 | Admin dashboard | Done | Real counts from the database, recent activity |
 | User dashboard | Done | Profile, groups, change password, active sessions |
-| Browser & API tests | Done | 148 API integration tests (real Postgres test DB) + 15 Playwright browser tests (the policy spec needs a throwaway admin, see below) (incl. a Chrome virtual authenticator) |
+| Browser & API tests | Done | 553 API integration tests (real Postgres test DB) + 27 Playwright browser tests (2 opt-in: demo app, admin MFA policy) (the policy spec needs a throwaway admin, see below) (incl. a Chrome virtual authenticator) |
 | Security review | **Partial** | Self-review recorded in ADR 003; no independent review yet |
 
 ## Hardening done after Phase 1
@@ -35,9 +35,8 @@ _Last updated: 2026-11-05_
 - Secrets live in gitignored `docker/.env`; compose refuses to start without them. Postgres/Redis bind to 127.0.0.1 only.
 
 ## Not done / known gaps
-- Email-based password reset.
 - `SESSION_COOKIE_SECURE` is off (plain HTTP in dev); turn it on behind TLS. Behind a reverse proxy, configure uvicorn `--proxy-headers`/`--forwarded-allow-ips` so rate limiting sees real client IPs.
-- Frontend runs `next dev` inside Docker (development mode).
+- The default compose stack still runs `next dev`; a production target exists (`FRONTEND_TARGET=prod`, compiled `next start`, non-root, built and smoke-tested with `/login` returning 200 but not load-tested).
 - No independent security review yet.
 
 ## Running
@@ -63,3 +62,8 @@ docker exec -w /app/backend identityforge-api python -m pytest -q
 cd frontend && set -a && . ../.env && set +a && npx playwright test
 ```
 `.env` must contain `ADMIN_EMAIL` and `ADMIN_PASSWORD` of an existing super admin. If that admin has enrolled an authenticator app (as the policy requires), also set `ADMIN_TOTP_SECRET` (its base32 secret); without a second factor and with the policy on, the admin cannot reach the admin area, so run the suite with `ADMIN_MFA_REQUIRED=false` on the backend instead. `role-switch.spec.ts` needs `E2E_ROLE_ADMIN_EMAIL`/`E2E_ROLE_ADMIN_PASSWORD` for a throwaway admin and a backend with `ADMIN_MFA_REQUIRED=false`. `admin-mfa-policy.spec.ts` needs `E2E_POLICY_ADMIN_EMAIL`, `E2E_POLICY_ADMIN_PASSWORD` and `E2E_ENROLMENT_CODE` for a throwaway admin with no factor (never the real admin); it is skipped otherwise.
+
+## Account lifecycle and recovery (added later)
+- Okta-style statuses; deactivation removes every group membership (ADR 006 addendum).
+- Invitations and email password reset (`/auth/forgot-password`, `/auth/reset-password`, admin `send-invite` / `send-reset`); needs `SMTP_*` and `PUBLIC_APP_URL`. Tokens are single use, hashed, 30 min (reset) / 72 h (invite), carried in the URL fragment. Unverified against a real mail server: tests use an in-process mailer.
+- Forced password change: an admin reset with `require_change` sets `password_expired`; sign-in then returns `password_change_required` and the user proves the old password (`/auth/change-expired-password`).

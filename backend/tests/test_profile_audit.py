@@ -6,8 +6,8 @@ from tests.conftest import STRONG, Api, make_user
 def test_profile_read_and_update(member):
     p = member.get("/me/profile").json()
     assert p["email"] == "member@example.com" and "title" in p["editable_attributes"]
-    r = member.patch("/me/profile", {"first_name": "Mia", "profile_attributes": {"title": "Dev", "phone": "123"}})
-    assert r.status_code == 200 and r.json()["profile_attributes"] == {"title": "Dev", "phone": "123"}
+    r = member.patch("/me/profile", {"first_name": "Mia", "profile_attributes": {"title": "Dev", "primary_phone": "123"}})
+    assert r.status_code == 200 and r.json()["profile_attributes"] == {"title": "Dev", "primary_phone": "123"}
 
 
 def test_user_cannot_edit_admin_managed_attributes(member, admin):

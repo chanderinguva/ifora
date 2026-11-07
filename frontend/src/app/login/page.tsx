@@ -8,7 +8,9 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { getCurrentUser, login, loginMfa, loginWithPasskey } from "@/lib/auth-client";
+import Link from "next/link";
 import { KeyRound } from "lucide-react";
+import { ExpiredPasswordForm } from "@/components/password-form";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { inAdminView } from "@/lib/roles";
@@ -43,6 +45,7 @@ export default function LoginPage() {
   useEffect(() => setHydrated(true), []);
   const [mfaToken, setMfaToken] = useState<string | null>(null);
   const [code, setCode] = useState("");
+  const [expired, setExpired] = useState<{ email: string; password: string } | null>(null);
 
   const {
     register,
@@ -98,6 +101,10 @@ export default function LoginPage() {
 
     try {
       const challenge = await login(data.email, data.password);
+      if (challenge && "passwordChange" in challenge) {
+        setExpired({ email: data.email, password: data.password });
+        return;
+      }
       if (challenge) {
         setMfaToken(challenge.mfaToken);
         return;
@@ -116,7 +123,7 @@ export default function LoginPage() {
       <Card className="w-full max-w-md">
         <CardHeader>
           <Logo size="lg" className="mb-4" />
-          <CardTitle>{mfaToken ? "Two-step verification" : "Sign In"}</CardTitle>
+          <CardTitle>{expired ? "Change your password" : mfaToken ? "Two-step verification" : "Sign In"}</CardTitle>
           <CardDescription>
             {mfaToken
               ? "Enter the 6-digit code from your authenticator app, or a recovery code."
@@ -132,7 +139,14 @@ export default function LoginPage() {
           </CardContent>
         )}
 
-        {mfaToken && (
+        {expired && (
+          <CardContent>
+            <ExpiredPasswordForm email={expired.email} current={expired.password}
+              onDone={() => { setExpired(null); setError(null); }} />
+          </CardContent>
+        )}
+
+        {mfaToken && !expired && (
           <CardContent>
             <form method="post" onSubmit={onMfaSubmit} className="space-y-4">
               <div className="space-y-2">
@@ -165,7 +179,7 @@ export default function LoginPage() {
           </CardContent>
         )}
 
-        <CardContent className={mfaToken ? "hidden" : undefined}>
+        <CardContent className={mfaToken || expired ? "hidden" : undefined}>
           <form method="post" onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
@@ -195,6 +209,7 @@ export default function LoginPage() {
               {errors.password && (
                 <p className="text-sm text-destructive">{errors.password.message}</p>
               )}
+              <Link href="/forgot-password" className="inline-block text-xs underline-offset-4 hover:underline">Forgot your password?</Link>
             </div>
 
             <Button type="submit" className="w-full" disabled={isSubmitting || !hydrated}>

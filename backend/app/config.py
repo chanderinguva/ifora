@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     OIDC_JWKS_CACHE_SECONDS: int = Field(default=300)
     # Edition feature flag: attribute-based group rules (Okta-style).
     GROUP_RULES_ENABLED: bool = Field(default=True)
+    # Activating a rule in a directory larger than this is finished by the worker in batches instead of inside the request.
+    GROUP_RULES_SYNC_MAX_USERS: int = Field(default=500)
+    GROUP_RULES_BATCH_SIZE: int = Field(default=200)
     # Recipe engine (ADR 008). Kill switch + limits. RECIPE_ENCRYPTION_KEY is a third, separate Fernet key;
     # empty = connections (stored secrets) and webhook triggers are unavailable.
     RECIPES_JOB_RETENTION_DAYS: int = Field(default=30)  # finished jobs and their step history are deleted after this many days (0 = keep)
@@ -59,6 +62,7 @@ class Settings(BaseSettings):
     RECIPES_WEBHOOK_MAX_BODY_BYTES: int = Field(default=65536)
     RECIPES_WEBHOOK_REPLAY_SECONDS: int = Field(default=300)
     RECIPES_MAX_RECIPES: int = Field(default=100)
+    SCIM_ACCEPT_LEGACY_GROUP_IDS: bool = Field(default=True)  # accept integer group ids on lookup (new ids are opaque UUIDs)
     RECIPES_DEFAULT_RATE_PER_HOUR: int = Field(default=0)  # live jobs per recipe per rolling hour when the recipe sets none (0 = unlimited)
     RECIPES_ALERT_WINDOW_MINUTES: int = Field(default=60)
     RECIPES_ALERT_MIN_JOBS: int = Field(default=5)  # finished jobs in the window before a failure rate means anything
@@ -70,6 +74,10 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str = Field(default="")
     SMTP_FROM: str = Field(default="")
     SMTP_STARTTLS: bool = Field(default=True)
+    # Links in invite / password-reset emails point here (the web app's public URL).
+    PUBLIC_APP_URL: str = Field(default="http://localhost:3000")
+    PASSWORD_RESET_MINUTES: int = Field(default=30)
+    INVITE_HOURS: int = Field(default=72)
     RECIPES_EMAIL_ALLOWED_DOMAINS: str = Field(default="")  # comma separated, in addition to addresses of existing users
     RECIPES_MAX_EMAILS_PER_JOB: int = Field(default=25)
     MFA_CHALLENGE_MINUTES: int = Field(default=5)

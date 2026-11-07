@@ -28,8 +28,9 @@ SCHEMA_URN = "urn:ietf:params:scim:schemas:core:2.0:Schema"
 
 # SCIM attribute -> profile catalog key
 CORE_PROFILE = {"title": "title", "locale": "locale", "timezone": "timezone"}
-ENTERPRISE_PROFILE = {"department": "department", "costCenter": "cost_center", "employeeNumber": "employee_id"}
-MAPPED_KEYS = set(CORE_PROFILE.values()) | set(ENTERPRISE_PROFILE.values()) | {"phone", "manager"}
+ENTERPRISE_PROFILE = {"department": "department", "costCenter": "cost_center", "employeeNumber": "employee_number",
+                      "organization": "organization", "division": "division"}
+MAPPED_KEYS = set(CORE_PROFILE.values()) | set(ENTERPRISE_PROFILE.values()) | {"primary_phone", "manager"}
 _USERNAME = re.compile(r"^[a-z0-9][a-z0-9._@+\-]{1,99}$")
 
 
@@ -85,8 +86,8 @@ def render_user(db: Session, user, external_id: Optional[str]) -> Dict[str, Any]
     for scim_key, key in CORE_PROFILE.items():
         if attrs.get(key) not in (None, ""):
             doc[scim_key] = attrs[key]
-    if attrs.get("phone") not in (None, ""):
-        doc["phoneNumbers"] = [{"value": str(attrs["phone"]), "type": "work", "primary": True}]
+    if attrs.get("primary_phone") not in (None, ""):
+        doc["phoneNumbers"] = [{"value": str(attrs["primary_phone"]), "type": "work", "primary": True}]
     ent = {sk: attrs[k] for sk, k in ENTERPRISE_PROFILE.items() if attrs.get(k) not in (None, "")}
     if attrs.get("manager") not in (None, ""):
         ent["manager"] = {"value": str(attrs["manager"])}
@@ -100,7 +101,7 @@ def render_user(db: Session, user, external_id: Optional[str]) -> Dict[str, Any]
         doc["schemas"].append(PROFILE_URN)
     visible = [g for g in user.groups if not g.is_system_group]
     doc["groups"] = [
-        {"value": str(g.id), "display": g.name, "$ref": f"{base_url()}/Groups/{g.id}"} for g in sorted(visible, key=lambda g: g.id)
+        {"value": g.public_id, "display": g.name, "$ref": f"{base_url()}/Groups/{g.public_id}"} for g in sorted(visible, key=lambda g: g.id)
     ]
     return doc
 
@@ -196,7 +197,7 @@ def ingest_user(db: Session, doc: Any, *, current_attrs: Dict[str, Any], current
             desired[key] = doc[scim_key]
     phone = _pick(doc.get("phoneNumbers"), "phoneNumbers")
     if "phoneNumbers" in doc:
-        desired["phone"] = phone
+        desired["primary_phone"] = phone
     ent = doc.get(ENTERPRISE_URN)
     if ent is not None and not isinstance(ent, dict):
         raise invalid_value("Enterprise extension must be an object")
@@ -234,7 +235,7 @@ def ingest_user(db: Session, doc: Any, *, current_attrs: Dict[str, Any], current
 def render_group(group, members: List[Any], external_id: Optional[str]) -> Dict[str, Any]:
     doc: Dict[str, Any] = {
         "schemas": [GROUP_URN],
-        "id": str(group.id),
+        "id": group.public_id,
         "displayName": group.name,
         "members": [
             {"value": u.public_id, "display": f"{u.first_name} {u.last_name}", "type": "User",
@@ -252,6 +253,6 @@ def group_meta(group, member_ids: List[int], external_id: Optional[str]) -> Dict
         "resourceType": "Group",
         "created": group.created_at.isoformat() if group.created_at else None,
         "lastModified": group.updated_at.isoformat() if group.updated_at else None,
-        "location": f"{base_url()}/Groups/{group.id}",
+        "location": f"{base_url()}/Groups/{group.public_id}",
         "version": etag("g", group.updated_at, group.name, external_id, sorted(member_ids)),
     }

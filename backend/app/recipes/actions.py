@@ -29,6 +29,7 @@ from backend.app.recipes.http_client import (
 from backend.app.recipes.models import RecipeConnection
 from backend.app.config import settings
 from backend.app.recipes.redact import redact, redact_text, scrub
+from backend.app.users import lifecycle
 from backend.app.users.model import User
 
 logger = structlog.get_logger(__name__)
@@ -163,12 +164,8 @@ def _set_status(rc: RunCtx, cfg: dict, status: str):
         raise StepError("recipes cannot change administrator accounts")
     changed = user.status != status
     if changed and not rc.dry:
-        user.status = status
-        rc.db.flush()
-        if status == "inactive":
-            revoke_user_sessions(rc.db, user.id)
-        group_rules.evaluate_user(rc.db, user)
-        audit_as_recipe(rc, AuditAction.USER_DEACTIVATED if status == "inactive" else AuditAction.USER_ACTIVATED,
+        lifecycle.set_status(rc.db, user, status, None, None, audit=False)
+        audit_as_recipe(rc, AuditAction.USER_DEACTIVATED if status == "deprovisioned" else AuditAction.USER_ACTIVATED,
                         user.id, "user", {"changed": {"status": status}})
     return {"user_id": user.id}, {"user_id": user.id, "changed": changed}
 
@@ -178,7 +175,7 @@ def _activate(rc, cfg):
 
 
 def _deactivate(rc, cfg):
-    return _set_status(rc, cfg, "inactive")
+    return _set_status(rc, cfg, "deprovisioned")
 
 
 def _log(rc: RunCtx, cfg: dict):
@@ -363,18 +360,10 @@ def _slack(rc: RunCtx, cfg: dict):
 
 
 _ADDR = re.compile(r"^[A-Za-z0-9._%+'-]{1,64}@([A-Za-z0-9-]{1,63}\.)+[A-Za-z]{2,24}$")
-mail_overrides: Dict[str, Any] = {}  # test seam: {"send": callable(EmailMessage)}
-
+from backend.app import mailer  # noqa: E402
 
 def _smtp_send(msg: EmailMessage) -> None:
-    if "send" in mail_overrides:
-        return mail_overrides["send"](msg)
-    with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=settings.RECIPES_HTTP_TIMEOUT_SECONDS) as smtp:
-        if settings.SMTP_STARTTLS:
-            smtp.starttls()
-        if settings.SMTP_USERNAME:
-            smtp.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
-        smtp.send_message(msg)
+    mailer.send(msg, timeout=settings.RECIPES_HTTP_TIMEOUT_SECONDS)
 
 
 def _email(rc: RunCtx, cfg: dict):
@@ -392,7 +381,7 @@ def _email(rc: RunCtx, cfg: dict):
     inp = {"to": to, "subject": subject[:200], "body": body[:2000]}
     if rc.dry:
         return inp, {"to": to, "sent": False, "dry_run": True}
-    if not (settings.SMTP_HOST and settings.SMTP_FROM) and "send" not in mail_overrides:
+    if not mailer.configured():
         raise StepError("email is not configured on this server")
     from backend.app.recipes.models import RecipeJobStep
     done = rc.db.query(RecipeJobStep).filter(RecipeJobStep.job_id == rc.job_id, RecipeJobStep.type == "send_email",

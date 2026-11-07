@@ -7,17 +7,19 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse
-from sqlalchemy import String, cast, delete, exists, func, insert, select, update
+from sqlalchemy import String, cast, delete, exists, func, insert, literal, select, true, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from backend.app.audit.model import AuditAction
 from backend.app.auth.sessions_util import revoke_user_sessions
+from backend.app.users import lifecycle
 from backend.app.groups import rules as group_rules
 from backend.app.groups.model import Group, user_group_association as assoc
 from backend.app.oidc.models import RefreshToken
 from backend.app.profiles import catalog as profile_catalog
-from backend.app.scim import discovery, filter as flt, mapping
+from backend.app.config import settings
+from backend.app.scim import discovery, filter as flt, mapping, projection, retention
 from backend.app.scim.auth import Ctx, audit, get_ctx
 from backend.app.scim.errors import (
     MEDIA_TYPE, ScimError, invalid_syntax, invalid_value, mutability, not_found, uniqueness,
@@ -171,9 +173,26 @@ def get_schema(sid: str, ctx: Ctx = Depends(get_ctx)):
     raise not_found()
 
 
-@router.api_route("/Bulk", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
-def bulk(ctx: Ctx = Depends(get_ctx)):
-    raise ScimError(501, "Bulk operations are not supported")
+@router.post("/Bulk")
+def bulk_endpoint(body: Any = Depends(read_json), ctx: Ctx = Depends(get_ctx)):
+    from backend.app.scim import bulk as bulk_mod
+
+    table = {
+        ("POST", "users", False): lambda c, r, i, d: create_user(r, d, c),
+        ("PUT", "users", True): lambda c, r, i, d: replace_user(i, r, d, c),
+        ("PATCH", "users", True): lambda c, r, i, d: patch_user(i, r, d, c),
+        ("DELETE", "users", True): lambda c, r, i, d: delete_user(i, r, c),
+        ("POST", "groups", False): lambda c, r, i, d: create_group(d, c),
+        ("PUT", "groups", True): lambda c, r, i, d: replace_group(i, r, d, c),
+        ("PATCH", "groups", True): lambda c, r, i, d: patch_group(i, r, d, c),
+        ("DELETE", "groups", True): lambda c, r, i, d: delete_group(i, r, c),
+    }
+    return respond(bulk_mod.execute(ctx, body, table, MAX_BODY))
+
+
+@router.api_route("/Bulk", methods=["GET", "PUT", "PATCH", "DELETE"])
+def bulk_method_not_allowed(ctx: Ctx = Depends(get_ctx)):
+    raise ScimError(405, "Bulk accepts POST only")
 
 
 @router.api_route("/Me", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
@@ -182,10 +201,62 @@ def me(ctx: Ctx = Depends(get_ctx)):
 
 
 @router.api_route("/.search", methods=["POST"])
-@router.api_route("/Users/.search", methods=["POST"])
-@router.api_route("/Groups/.search", methods=["POST"])
-def search(ctx: Ctx = Depends(get_ctx)):
-    raise ScimError(501, "POST search is not supported; use GET with a filter")
+def search_root(ctx: Ctx = Depends(get_ctx)):
+    raise ScimError(501, "Cross-resource search is not supported; POST to /Users/.search or /Groups/.search")
+
+
+SEARCH_URN = "urn:ietf:params:scim:api:messages:2.0:SearchRequest"
+
+
+def _search_params(body: Any) -> dict:
+    if not isinstance(body, dict) or SEARCH_URN not in (body.get("schemas") or []):
+        raise invalid_syntax("Body must be a SearchRequest")
+    out = {}
+    for k in ("filter", "sortBy", "sortOrder", "attributes", "excludedAttributes"):
+        v = body.get(k)
+        if v is not None and not isinstance(v, (str, list)):
+            raise invalid_syntax(f"{k} must be a string")
+        out[k] = ",".join(v) if isinstance(v, list) and k in ("attributes", "excludedAttributes") else v
+    for k in ("startIndex", "count"):
+        v = body.get(k)
+        if v is not None and (isinstance(v, bool) or not isinstance(v, int)):
+            raise invalid_syntax(f"{k} must be an integer")
+        out[k] = None if v is None else str(v)
+    return out
+
+
+def _search(kind: str, body: Any, ctx: Ctx):
+    p = _search_params(body)
+    fn = _users_page if kind == "users" else _groups_page
+    doc = fn(ctx, p["filter"], p["startIndex"], p["count"], p["sortBy"], p["sortOrder"])
+    attrs, excl = projection.parse(p["attributes"]), projection.parse(p["excludedAttributes"])
+    if attrs or excl:
+        doc = projection.apply(doc, attrs, excl)
+    return respond(doc)
+
+
+@router.post("/Users/.search")
+def search_users(body: Any = Depends(read_json), ctx: Ctx = Depends(get_ctx)):
+    return _search("users", body, ctx)
+
+
+@router.post("/Groups/.search")
+def search_groups(body: Any = Depends(read_json), ctx: Ctx = Depends(get_ctx)):
+    return _search("groups", body, ctx)
+
+
+def _order(attrs: dict, sort_by: Optional[str], sort_order: Optional[str], tiebreak):
+    """ORDER BY for sortBy/sortOrder. Strings sort case-insensitively; missing values last; id breaks ties."""
+    if sort_order is not None and sort_order.lower() not in ("ascending", "descending"):
+        raise invalid_value("sortOrder must be ascending or descending")
+    if not sort_by:
+        return [tiebreak]
+    attr = attrs.get(sort_by.strip().lower())
+    if attr is None or attr.expr is None or attr.kind not in ("str", "date", "bool") or sort_by.strip().lower().startswith(("emails.t", "emails.p")):
+        raise invalid_value(f"Cannot sort by '{sort_by[:60]}'")
+    col = func.lower(attr.expr) if attr.kind == "str" else attr.expr
+    desc_ = (sort_order or "ascending").lower() == "descending"
+    return [(col.desc() if desc_ else col.asc()).nulls_last(), tiebreak]
 
 
 # ---- users --------------------------------------------------------------------------------------
@@ -201,6 +272,10 @@ USER_FILTER_ATTRS = {
     "name.familyname": flt.Attr("str", User.last_name),
     "emails.value": flt.Attr("str", User.email),
     "emails": flt.Attr("str", User.email),
+    "emails.type": flt.Attr("str", literal("work")),      # we store one email and always render it as the primary work address
+    "emails.primary": flt.Attr("bool", true()),
+    "meta.lastmodified": flt.Attr("date", User.updated_at),
+    "meta.created": flt.Attr("date", User.created_at),
 }
 
 
@@ -241,18 +316,24 @@ def _deactivate_side_effects(db: Session, user: User) -> None:
                .values(revoked_at=datetime.now(timezone.utc)))
 
 
-@router.get("/Users")
-def list_users(request: Request, filter: Optional[str] = None, startIndex: Optional[str] = None,
-               count: Optional[str] = None, ctx: Ctx = Depends(get_ctx)):
+def _users_page(ctx: Ctx, filter, startIndex, count, sortBy=None, sortOrder=None) -> dict:
     db = ctx.db
     start, cnt = page_params(startIndex, count)
     q = db.query(User)
     if filter is not None:
         q = q.filter(flt.build(filter, USER_FILTER_ATTRS))
+    order = _order(USER_FILTER_ATTRS, sortBy, sortOrder, User.id)
     total = q.count()
-    users = (q.options(selectinload(User.groups)).order_by(User.id).offset(start - 1).limit(cnt).all()) if cnt else []
+    users = (q.options(selectinload(User.groups)).order_by(*order).offset(start - 1).limit(cnt).all()) if cnt else []
     ext = _ext_ids(db, "user", [u.id for u in users])
-    return respond(list_response([render_user_resource(db, u, ext.get(u.id))[0] for u in users], total, start))
+    return list_response([render_user_resource(db, u, ext.get(u.id))[0] for u in users], total, start)
+
+
+@router.get("/Users")
+def list_users(request: Request, filter: Optional[str] = None, startIndex: Optional[str] = None,
+               count: Optional[str] = None, sortBy: Optional[str] = None, sortOrder: Optional[str] = None,
+               ctx: Ctx = Depends(get_ctx)):
+    return respond(_users_page(ctx, filter, startIndex, count, sortBy, sortOrder))
 
 
 @router.get("/Users/{uid}")
@@ -271,7 +352,7 @@ def create_user(request: Request, body: Any = Depends(read_json), ctx: Ctx = Dep
         email=data["email"], username=data["username"], first_name=data["first_name"], last_name=data["last_name"],
         password=secrets.token_urlsafe(24),  # unknown to everyone; the password attribute is never read (ADR 007 D5)
     )
-    user.status = "inactive" if data["active"] is False else "active"
+    user.status = "deprovisioned" if data["active"] is False else "active"
     user.set_profile_attributes(data["profile"])
     db.add(user)
     try:
@@ -308,12 +389,13 @@ def apply_user_update(ctx: Ctx, user: User, data: dict) -> None:
         _set_external_id(db, "user", user.id, data["external_id"])
         changed.append("externalId")
     action = AuditAction.SCIM_USER_UPDATED
-    if data["active"] is True and user.status in ("inactive", "pending_activation"):
-        user.status = "active"
+    if data["active"] is True and user.status != "active":
+        lifecycle.set_status(db, user, "active", ctx.request, None, audit=False)
         changed.append("active")
         action = AuditAction.SCIM_USER_ACTIVATED
-    elif data["active"] is False and user.status != "inactive":
-        user.status = "inactive"
+        retention.clear_deactivation(db, user)
+    elif data["active"] is False and user.status != "deprovisioned":
+        lifecycle.set_status(db, user, "deprovisioned", ctx.request, None, audit=False)  # also leaves every group
         changed.append("active")
         action = AuditAction.SCIM_USER_DEACTIVATED
         _deactivate_side_effects(db, user)
@@ -321,6 +403,9 @@ def apply_user_update(ctx: Ctx, user: User, data: dict) -> None:
         user.updated_at = datetime.now(timezone.utc)
         db.flush()
         group_rules.evaluate_user(db, user, ctx.request, None)
+        db.flush()
+        if user.status == "deprovisioned" and action == AuditAction.SCIM_USER_DEACTIVATED:
+            retention.mark_deactivated(db, user, ctx.token)
         audit(db, action, ctx.request, ctx.token, user.id, "user", {"changed": changed})
     _commit(db)
     db.refresh(user)
@@ -365,12 +450,14 @@ def delete_user(uid: str, request: Request, ctx: Ctx = Depends(get_ctx)):
     _guard_admin(user)
     cur_ext = _ext_ids(db, "user", [user.id]).get(user.id)
     check_if_match(request, mapping.user_meta(user, cur_ext)["version"])
-    if user.status != "inactive":
-        user.status = "inactive"
+    if user.status != "deprovisioned":
+        lifecycle.set_status(db, user, "deprovisioned", request, None, audit=False)
         user.updated_at = datetime.now(timezone.utc)
         _deactivate_side_effects(db, user)
         db.flush()
         group_rules.evaluate_user(db, user, request, None)
+        db.flush()
+        retention.mark_deactivated(db, user, ctx.token)
         audit(db, AuditAction.SCIM_USER_DEACTIVATED, request, ctx.token, user.id, "user", {"via": "delete"})
         _commit(db)
     return Response(status_code=204)
@@ -384,16 +471,21 @@ def _group_members_exists(pred):
 
 _ext_group = select(ScimLink.external_id).where(ScimLink.group_id == Group.id).correlate(Group).scalar_subquery()
 GROUP_FILTER_ATTRS = {
-    "id": flt.Attr("str", cast(Group.id, String)),
+    "id": flt.Attr("str", Group.public_id),
     "displayname": flt.Attr("str", Group.name),
     "externalid": flt.Attr("str", _ext_group),
     "members.value": flt.Attr("str", None, exists=_group_members_exists),
+    "meta.lastmodified": flt.Attr("date", Group.updated_at),
+    "meta.created": flt.Attr("date", Group.created_at),
 }
 
 
 def _get_group(db: Session, gid: str) -> Group:
     g = None
-    if gid.isdigit() and len(gid) < 10:
+    if len(gid) <= 36 and not gid.isdigit():
+        g = db.query(Group).filter(Group.public_id == gid).first()
+    elif gid.isdigit() and len(gid) < 10 and settings.SCIM_ACCEPT_LEGACY_GROUP_IDS:
+        # integer ids were what earlier versions handed out; IdPs that stored them keep working until switched off
         g = db.query(Group).filter(Group.id == int(gid)).first()
     if g is None or g.is_system_group:
         raise not_found("Group not found")
@@ -474,18 +566,23 @@ def _sync_members(ctx: Ctx, g: Group, public_ids: List[str]) -> Dict[str, int]:
     return {"added": len(added), "removed": len(gone)}
 
 
-@router.get("/Groups")
-def list_groups(filter: Optional[str] = None, startIndex: Optional[str] = None, count: Optional[str] = None,
-                ctx: Ctx = Depends(get_ctx)):
+def _groups_page(ctx: Ctx, filter, startIndex, count, sortBy=None, sortOrder=None) -> dict:
     db = ctx.db
     start, cnt = page_params(startIndex, count)
     q = db.query(Group).filter(Group.is_system_group.is_(False))
     if filter is not None:
         q = q.filter(flt.build(filter, GROUP_FILTER_ATTRS))
+    order = _order(GROUP_FILTER_ATTRS, sortBy, sortOrder, Group.id)
     total = q.count()
-    groups = q.order_by(Group.id).offset(start - 1).limit(cnt).all() if cnt else []
+    groups = q.order_by(*order).offset(start - 1).limit(cnt).all() if cnt else []
     ext = _ext_ids(db, "group", [g.id for g in groups])
-    return respond(list_response([render_group_resource(db, g, ext.get(g.id))[0] for g in groups], total, start))
+    return list_response([render_group_resource(db, g, ext.get(g.id))[0] for g in groups], total, start)
+
+
+@router.get("/Groups")
+def list_groups(filter: Optional[str] = None, startIndex: Optional[str] = None, count: Optional[str] = None,
+                sortBy: Optional[str] = None, sortOrder: Optional[str] = None, ctx: Ctx = Depends(get_ctx)):
+    return respond(_groups_page(ctx, filter, startIndex, count, sortBy, sortOrder))
 
 
 @router.get("/Groups/{gid}")

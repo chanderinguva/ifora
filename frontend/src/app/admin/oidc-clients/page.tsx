@@ -18,8 +18,8 @@ const SCOPE_HELP: Record<string, string> = {
 };
 const lines = (s: string) => s.split("\n").map((x) => x.trim()).filter(Boolean);
 
-type Draft = { name: string; description: string; client_type: "public" | "confidential" | "service"; redirect_uris: string; post_logout: string; scopes: string[]; first_party: boolean; service_scopes: string; audiences: string; auth_method: "client_secret_basic" | "private_key_jwt"; jwks: string };
-const empty = (): Draft => ({ name: "", description: "", client_type: "public", redirect_uris: "", post_logout: "", scopes: ["openid", "profile", "email"], first_party: false, service_scopes: "", audiences: "", auth_method: "client_secret_basic", jwks: "" });
+type Draft = { name: string; description: string; client_type: "public" | "confidential" | "service"; redirect_uris: string; post_logout: string; scopes: string[]; first_party: boolean; service_scopes: string; audiences: string; auth_method: "client_secret_basic" | "private_key_jwt"; jwks: string; token_format: "jwt" | "opaque" };
+const empty = (): Draft => ({ name: "", description: "", client_type: "public", redirect_uris: "", post_logout: "", scopes: ["openid", "profile", "email"], first_party: false, service_scopes: "", audiences: "", auth_method: "client_secret_basic", jwks: "", token_format: "jwt" });
 
 export default function OidcClientsPage() {
   const me = useCurrentUser();
@@ -156,6 +156,12 @@ export default function OidcClientsPage() {
               ))}
             </fieldset>
             </>)}
+            {draft.client_type !== "public" && (
+              <label className="flex items-start gap-2 text-sm">
+                <input type="checkbox" checked={draft.token_format === "opaque"} onChange={(e) => setDraft({ ...draft, token_format: e.target.checked ? "opaque" : "jwt" })} />
+                <span><strong>Opaque access tokens</strong>: random reference tokens instead of JWTs. They can be revoked immediately (<code>/oauth/revoke</code>) and stop working the moment the user is deactivated, but resource servers must call introspection to check them.</span>
+              </label>
+            )}
             {me.is_super_admin && draft.client_type !== "service" && (
               <label className="flex items-start gap-2 text-sm">
                 <input type="checkbox" checked={draft.first_party} onChange={(e) => setDraft({ ...draft, first_party: e.target.checked })} />
@@ -178,6 +184,7 @@ export default function OidcClientsPage() {
                     allowed_scopes: draft.client_type === "service" ? lines(draft.service_scopes) : draft.scopes,
                     allowed_audiences: draft.client_type === "service" ? lines(draft.audiences) : [],
                     first_party: draft.client_type === "service" ? false : draft.first_party,
+                    access_token_format: draft.client_type === "public" ? "jwt" : draft.token_format,
                   } });
                   if (r.client_secret) setReveal({ name: r.name, secret: r.client_secret });
                   setDraft(null);
@@ -199,6 +206,7 @@ export default function OidcClientsPage() {
                 <Badge tone={c.status === "active" ? "good" : "bad"}>{c.status}</Badge>
                 <Badge>{c.client_type}</Badge>
                 {c.first_party && <Badge tone="info">first-party</Badge>}
+                {c.access_token_format === "opaque" && <Badge tone="info">opaque tokens</Badge>}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">

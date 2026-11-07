@@ -75,7 +75,7 @@ export function UserMenu({
         className="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
         onClick={() => onOpenChange(!open)}
       >
-        <span data-testid="current-user" className="max-w-[9rem] truncate sm:max-w-[16rem]">{user.email}</span>
+        <span data-testid="current-user" className="max-w-[5.5rem] truncate min-[480px]:max-w-[9rem] sm:max-w-[16rem]">{user.email}</span>
         {roleLabel && <span className="hidden text-xs text-muted-foreground sm:inline">{roleLabel}</span>}
         <ChevronDown className="h-4 w-4" aria-hidden="true" />
       </button>
@@ -118,6 +118,8 @@ export function UserMenu({
             onClick={async () => {
               try {
                 await logout();
+              } catch {
+                // whatever went wrong, leave the page: the login screen shows the real state of the session
               } finally {
                 router.replace("/login");
               }

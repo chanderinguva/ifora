@@ -48,7 +48,7 @@ Consequence: the server is liberal in what it accepts (case-insensitive `op`, st
 | `emails[primary or first work]` | `users.email` | Unique per tenant; if absent and `userName` is a valid email it is used; otherwise 400 `invalidValue`. Only one email is stored |
 | `name.givenName` / `name.familyName` | `first_name` / `last_name` | Required (not blank) |
 | `displayName` | computed | Read-only; accepted and ignored on write |
-| `active` | `status` | `true` -> `active`, `false` -> `inactive` (see D6). Strings `"True"/"False"` (any case) are accepted |
+| `active` | `status` | `true` -> `active`, `false` -> `deprovisioned` (see D6). Strings `"True"/"False"` (any case) are accepted |
 | `externalId` | `scim_links.external_id` | Per tenant and per resource type; unique (409 `uniqueness`) |
 | `title`, `locale`, `timezone` | profile `title`, `locale`, `timezone` | Core attributes, types validated by the catalog |
 | `phoneNumbers[work]` | profile `phone` | |
@@ -70,7 +70,7 @@ How admin is determined (checked in code): `users.is_admin` / `users.is_super_ad
 - Known gap: there is no "invite / set password by email" flow yet, so SCIM users cannot sign in until an admin resets the password or SSO exists.
 
 ### D6. Deprovisioning (**REVIEW**)
-`active: false`, and `DELETE /Users/{id}`, both **deactivate** (`status = inactive`), revoke all sessions and OIDC refresh tokens, and keep the row, audit trail and group memberships. `DELETE` returns 204 and is idempotent. Hard delete via SCIM is not implemented; an admin can still delete a user in the admin UI. Reactivation (`active: true`) restores `active` status and re-runs group rules. Rationale: IdPs often send DELETE for "unassign from app", which must be reversible; hard delete destroys the audit link.
+`active: false`, and `DELETE /Users/{id}`, both **deactivate** (`status = deprovisioned`), revoke all sessions and OIDC refresh tokens, **remove the user from every group** (the platform-wide offboarding rule, `users/lifecycle.py`), and keep the row and audit trail. `DELETE` returns 204 and is idempotent. Hard delete via SCIM is not implemented; an admin can still delete a user in the admin UI. Reactivation (`active: true`) restores `active` status and re-runs group rules; manual memberships are not restored. Rationale: IdPs often send DELETE for "unassign from app", which must be reversible; hard delete destroys the audit link.
 
 ### D7. Groups
 - `id` = the group's integer id as a string (groups have no public id yet; they are tenant-scoped and token-protected). `displayName` = `groups.name` (case-insensitive unique, 409 `uniqueness`), `externalId` via `scim_links`, `members` = users (`value`, `display`, `$ref`).
@@ -118,9 +118,9 @@ The engine renders the resource to its SCIM JSON, applies the operations generic
 |---|---|---|---|
 | S1 | Core server | Tokens (admin API + UI), Users and Groups CRUD, PATCH, filter, pagination, discovery, audit, tests | **Done** (branch `feature-scim-server`) |
 | S2 | Conformance | Run against Entra's SCIM validator and Okta's SCIM test suite (Runscope) and fix deviations; real tenant tests | Not started |
-| S3 | Token scopes | Read-only / users-only tokens, token IP allow-list, rotate with overlap | Not started |
+| S3 | Token scopes | Read-only / users-only tokens, token IP allow-list, rotate with overlap | **Done.** Migration 0025. `read_only` (GET/HEAD only) and `users_only` (`/Groups` refused) are checked after authentication and answer 403; the IP allow-list (`allowed_cidrs`, IPv4/IPv6) answers exactly like a bad token (401) and is audited with reason `ip_not_allowed`; a peer address that is not a valid IP never matches a non-empty list. `PUT /admin/scim/tokens/{id}/restrictions` and `POST .../rotate` (`overlap_hours` 0-720; the old token keeps working until `now+overlap` but never past its own expiry, 0 revokes at once; the replacement inherits the restrictions) are super-admin only and audited. The address checked is the direct peer (see ADR 003: configure the ASGI proxy-header handling behind a proxy) |
 | S4 | Sign-in for provisioned users | Invite / set-password email or SSO, "must change password" | Not started (depends on SSO) |
-| S5 | Attribute projection | `attributes` / `excludedAttributes`, `valuePath` in filters, `not`, `gt/lt` on `meta.lastModified` | Not started |
-| S6 | Hard delete / retention | Optional hard-delete policy per token after N days inactive | Not started |
-| S7 | Bulk, `/.search`, sorting | Only if a customer requires it | Not planned |
-| S8 | Group public ids | Opaque group ids instead of integers; `groups.external_id` | Not started |
+| S5 | Attribute projection | `attributes` / `excludedAttributes`, `valuePath` in filters, `not`, `gt/lt` on `meta.lastModified` | **Done** (filters: `not`, `gt/ge/lt/le`, valuePath, date comparison on `meta.*`; `attributes`/`excludedAttributes` on every Users/Groups response) |
+| S6 | Hard delete / retention | Optional hard-delete policy per token after N days inactive | **Done.** `scim_tokens.hard_delete_after_days` (7-3650). Users a token deactivated are tracked in `scim_deprovisioned`; `purge-scim` (and the recipes worker, hourly) deletes those still inactive after N days, never administrators, and never an account changed by anyone after the deprovisioning. Audited as `SCIM_USER_PURGED` |
+| S7 | Bulk, `/.search`, sorting | **Done**: `sortBy`/`sortOrder`; `POST /Users/.search` and `/Groups/.search`; `POST /Bulk` (max 100 ops, 1 MB; per-operation commit, `failOnErrors`, `bulkId:` back-references, per-operation token scopes; no forward references; cross-resource `/.search` is 501) | Done |
+| S8 | Group public ids | Opaque group ids instead of integers; `groups.external_id` | **Done for ids.** `groups.public_id` (UUID, backfilled) is the SCIM `id`, member `value` and `$ref`; integer ids still resolve while `SCIM_ACCEPT_LEGACY_GROUP_IDS` is on (default) so IdPs that stored them keep working. Group `externalId` stays in `scim_links` (same behaviour as users), not in a `groups.external_id` column |

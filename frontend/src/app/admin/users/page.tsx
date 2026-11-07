@@ -12,7 +12,7 @@ import { Badge, PageHeader, Pager, fieldClass, fmt, td, th } from "@/components/
 import { useCurrentUser } from "@/components/auth-guard";
 import { http, qs, type Page } from "@/lib/http";
 import { AttrField, toApi } from "@/components/attr-field";
-import type { Group, ProfileAttribute, User } from "@/lib/types";
+import { USER_STATUSES, statusTone, type Group, type ProfileAttribute, type User } from "@/lib/types";
 
 const PAGE_SIZE = 15;
 
@@ -75,8 +75,7 @@ export default function UsersPage() {
           }}
         >
           <option value="">All statuses</option>
-          <option value="active">Active</option>
-          <option value="inactive">Inactive</option>
+          {USER_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
         </select>
       </div>
 
@@ -111,7 +110,7 @@ export default function UsersPage() {
                     {u.is_super_admin ? <Badge tone="info">Super admin</Badge> : u.is_admin ? <Badge tone="info">Admin</Badge> : <Badge>User</Badge>}
                   </td>
                   <td className={td}>
-                    <Badge tone={u.status === "active" ? "good" : "bad"}>{u.status}</Badge>
+                    <Badge tone={statusTone(u.status)}>{u.status.replace("_", " ")}</Badge>
                   </td>
                   <td className={td}>{fmt(u.last_login_at)}</td>
                 </tr>
@@ -136,7 +135,7 @@ function CreateUser({ canMakeAdmin, onDone }: { canMakeAdmin: boolean; onDone: (
   const [f, setF] = useState({ email: "", first_name: "", last_name: "", username: "", password: "", is_admin: false });
   const [schema, setSchema] = useState<ProfileAttribute[]>([]);
   const [attrs, setAttrs] = useState<Record<string, string>>({});
-  const [pwMode, setPwMode] = useState<"set" | "generate">("generate");
+  const [pwMode, setPwMode] = useState<"set" | "generate" | "invite">("generate");
   const [groups, setGroups] = useState<Group[]>([]);
   const [picked, setPicked] = useState<number[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -160,9 +159,11 @@ function CreateUser({ canMakeAdmin, onDone }: { canMakeAdmin: boolean; onDone: (
       };
       if (f.username.trim()) body.username = f.username.trim();
       if (pwMode === "set") body.password = f.password;
+      else if (pwMode === "invite") body.send_invite = true;
       else body.generate_password = true;
-      const r = await http<{ temporary_password?: string }>("/admin/users", { method: "POST", body });
-      if (r.temporary_password) setCreated({ email: f.email, password: r.temporary_password });
+      const r = await http<{ temporary_password?: string; invitation_sent?: boolean }>("/admin/users", { method: "POST", body });
+      if (r.invitation_sent === false) setError("The user was created, but the invitation email could not be sent. Use “Send invite” on their page to retry.");
+      else if (r.temporary_password) setCreated({ email: f.email, password: r.temporary_password });
       else onDone();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed");
@@ -255,6 +256,10 @@ function CreateUser({ canMakeAdmin, onDone }: { canMakeAdmin: boolean; onDone: (
             <label className="flex items-center gap-2 text-sm">
               <input type="radio" name="pwmode" checked={pwMode === "set"} onChange={() => setPwMode("set")} />
               I will set a password
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="radio" name="pwmode" checked={pwMode === "invite"} onChange={() => setPwMode("invite")} />
+              Email an invitation (the person chooses their own password; needs SMTP configured)
             </label>
             {pwMode === "set" && (
               <div className="space-y-1">

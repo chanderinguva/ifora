@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Menu, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
+import { Menu, Search, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCurrentUser } from "./auth-guard";
 import { Breadcrumbs } from "./breadcrumbs";
@@ -130,7 +130,15 @@ export function AppShell({ title, nav, children }: { title: string; nav: NavGrou
           </button>
           <LogoLink href={home} className="md:hidden" />
           <Breadcrumbs groups={nav} className="hidden sm:block" />
-          <div className="ml-auto flex items-center gap-3">
+          <div className="ml-auto flex items-center gap-2 sm:gap-3">
+            {user.is_admin && !user.acting_as_user && (
+              <button className={cn(iconButton, "w-auto gap-2 px-3 text-sm text-muted-foreground")} aria-label="Search" data-testid="open-search"
+                onClick={() => window.dispatchEvent(new Event("open-command-palette"))}>
+                <Search className="h-4 w-4" aria-hidden="true" />
+                <span className="hidden sm:inline">Search</span>
+                <kbd className="hidden rounded border px-1 text-[10px] sm:inline">⌘K</kbd>
+              </button>
+            )}
             <ThemeToggle />
             <UserMenu open={menuOpen} onOpenChange={setMenuOpen} stepUp={stepUp} onStepUpChange={setStepUp} />
           </div>

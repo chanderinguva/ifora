@@ -5,6 +5,8 @@ boundary: it is how a super admin who lost every sign-in factor gets back in.
     python -m backend.cli issue-enrollment-code admin@example.com
     python -m backend.cli recipes-worker [--once] [--interval 2]
     python -m backend.cli purge-oidc
+    python -m backend.cli purge-scim
+    python -m backend.cli sync-group-rules
 
 Removes the user's authenticator app, recovery codes and passkeys, lifts the passkey-required
 policy, clears any lockout, and ends all their sessions. The password is NOT changed or shown.
@@ -105,9 +107,24 @@ def recipes_worker(interval: float = 2.0, once: bool = False, out=print) -> int:
     import os
 
     beat = os.environ.get("RECIPES_WORKER_HEARTBEAT_FILE")
+    last_purge = 0.0
     while True:
         engine.heartbeat(beat)
         stats = engine.process_once()
+        try:
+            from backend.app.groups import rules as group_rules
+
+            group_rules.sync_pending_all()  # finishes large group-rule activations in batches
+        except Exception:  # noqa: BLE001 - never stop the worker for housekeeping
+            pass
+        if not once and time.monotonic() - last_purge > 3600:  # housekeeping rides on the worker: SCIM retention, hourly
+            last_purge = time.monotonic()
+            try:
+                from backend.app.scim import retention
+
+                retention.purge_all()
+            except Exception:  # noqa: BLE001 - never stop the worker for housekeeping
+                pass
         if once:
             out(f"recipes: {stats}")
             return 0
@@ -126,6 +143,28 @@ def purge_oidc(out=print) -> int:
         db.close()
 
 
+def purge_scim(out=print) -> int:
+    """Apply per-token SCIM retention: delete users a token deactivated more than N days ago (cron-friendly)."""
+    from backend.app.scim import retention
+
+    out(f"purged scim users: {retention.purge_all()}")
+    return 0
+
+
+def sync_group_rules(out=print) -> int:
+    """Finish every pending group-rule activation now (the worker does this continuously)."""
+    from backend.app.groups import rules as group_rules
+
+    total = 0
+    while True:
+        n = group_rules.sync_pending_all()
+        total += n
+        if n == 0:
+            break
+    out(f"group rules synced: {total} users evaluated")
+    return 0
+
+
 def main(argv: Optional[list] = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m backend.cli", description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -141,8 +180,14 @@ def main(argv: Optional[list] = None) -> int:
     w = sub.add_parser("recipes-worker", help="run the recipe engine worker loop")
     w.add_argument("--once", action="store_true", help="process due work once and exit")
     w.add_argument("--interval", type=float, default=2.0, help="seconds between polls")
+    sub.add_parser("sync-group-rules", help="finish pending group-rule activations")
+    sub.add_parser("purge-scim", help="delete users deprovisioned through SCIM past their token's retention period")
     sub.add_parser("purge-oidc", help="delete expired OIDC pending requests, refresh tokens and codes")
     args = parser.parse_args(argv)
+    if args.cmd == "sync-group-rules":
+        return sync_group_rules()
+    if args.cmd == "purge-scim":
+        return purge_scim()
     if args.cmd == "purge-oidc":
         return purge_oidc()
     if args.cmd == "recipes-worker":

@@ -53,6 +53,8 @@ services:
       - OIDC_KEY_ENCRYPTION_KEY=${OIDC_KEY_ENCRYPTION_KEY:-}
       - RECIPE_ENCRYPTION_KEY=${RECIPE_ENCRYPTION_KEY:-}
       - SMTP_HOST=${SMTP_HOST:-}
+      - PUBLIC_APP_URL=${PUBLIC_APP_URL:-http://localhost:3000}
+      - SESSION_COOKIE_SECURE=${SESSION_COOKIE_SECURE:-false}
       - SMTP_PORT=${SMTP_PORT:-587}
       - SMTP_USERNAME=${SMTP_USERNAME:-}
       - SMTP_PASSWORD=${SMTP_PASSWORD:-}
@@ -73,6 +75,9 @@ services:
     build:
       context: ..
       dockerfile: docker/frontend/Dockerfile
+      target: ${FRONTEND_TARGET:-dev}   # dev (default) or prod: see docker/.env.example
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     container_name: identityforge-frontend
     restart: unless-stopped
     depends_on:
@@ -80,7 +85,7 @@ services:
         condition: service_healthy
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
-      - NODE_ENV=development
+      - NODE_ENV=${FRONTEND_NODE_ENV:-development}
     ports:
       - "3000:3000"
 

@@ -12,7 +12,7 @@ import { Badge, PageHeader, fmt } from "@/components/bits";
 import { useCurrentUser } from "@/components/auth-guard";
 import { http } from "@/lib/http";
 import { AttrField, fromApi, toApi } from "@/components/attr-field";
-import type { ProfileAttribute, User } from "@/lib/types";
+import { USER_STATUSES, statusTone, type ProfileAttribute, type User } from "@/lib/types";
 
 
 export default function UserDetail() {
@@ -26,6 +26,7 @@ export default function UserDetail() {
   const [attrs, setAttrs] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [newPw, setNewPw] = useState("");
+  const [requireChange, setRequireChange] = useState(false);
 
   const apply = useCallback((u: User) => {
     setUser(u);
@@ -55,7 +56,7 @@ export default function UserDetail() {
 
   const resetPw = () =>
     run(async () => {
-      await http(`/admin/users/${id}/password`, { method: "POST", body: { new_password: newPw } });
+      await http(`/admin/users/${id}/password`, { method: "POST", body: { new_password: newPw, require_change: requireChange } });
       setNewPw("");
     }, "Password reset; all of the user's sessions were ended");
 
@@ -75,7 +76,7 @@ export default function UserDetail() {
         <Link href="/admin/users" className="text-sm underline-offset-4 hover:underline">← All users</Link>
       </PageHeader>
       <div className="mb-4 flex flex-wrap gap-2 text-sm">
-        <Badge tone={user.status === "active" ? "good" : "bad"}>{user.status}</Badge>
+        <Badge tone={statusTone(user.status)}>{user.status.replace("_", " ")}</Badge>
         {user.mfa_enabled && <Badge tone="good">MFA</Badge>}
         {(user.passkey_count ?? 0) > 0 && <Badge tone="good">{user.passkey_count} passkey{user.passkey_count === 1 ? "" : "s"}</Badge>}
         {user.passkey_required && <Badge tone="info">passkey required</Badge>}
@@ -143,12 +144,27 @@ export default function UserDetail() {
             variant="outline"
             disabled={protectedTarget}
             onClick={() =>
-              run(async () => apply(await http<User>(`/admin/users/${id}`, { method: "PATCH", body: { status: user.status === "active" ? "inactive" : "active" } })),
-                user.status === "active" ? "User deactivated; their sessions were ended" : "User activated")
+              run(async () => apply(await http<User>(`/admin/users/${id}`, { method: "PATCH", body: { status: user.status === "active" ? "deprovisioned" : "active" } })),
+                user.status === "active" ? "User deactivated; sessions ended and removed from all groups" : "User activated")
             }
           >
             {user.status === "active" ? "Deactivate" : "Activate"}
           </Button>
+        )}
+        {!isSelf && !user.is_super_admin && (
+          <select
+            aria-label="Set account status"
+            className="h-10 rounded-md border bg-background px-3 text-sm"
+            value={user.status}
+            disabled={protectedTarget}
+            onChange={(e) => {
+              const next = e.target.value;
+              if (next === "deprovisioned" && !confirm("Deactivate this user? They are signed out everywhere and removed from every group.")) return;
+              run(async () => apply(await http<User>(`/admin/users/${id}`, { method: "PATCH", body: { status: next } })), `Status set to ${next.replace("_", " ")}`);
+            }}
+          >
+            {USER_STATUSES.map((s) => <option key={s.value} value={s.value} title={s.hint}>{s.label}</option>)}
+          </select>
         )}
         {(user.mfa_enabled || (user.passkey_count ?? 0) > 0 || user.passkey_required) && !isSelf && !protectedTarget && (
           <Button
@@ -215,9 +231,25 @@ export default function UserDetail() {
             >
             <Label htmlFor="newpw">New password</Label>
             <Input id="newpw" type="password" autoComplete="new-password" value={newPw} onChange={(e) => setNewPw(e.target.value)} />
-            <Button type="submit" variant="outline" disabled={!newPw}>
-              Reset password
-            </Button>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={requireChange} onChange={(e) => setRequireChange(e.target.checked)} />
+              Require the user to choose a new password at next sign-in
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" variant="outline" disabled={!newPw}>
+                Reset password
+              </Button>
+              {(user.status === "staged" || user.status === "provisioned") && (
+                <Button type="button" variant="outline" onClick={() => run(() => http(`/admin/users/${id}/send-invite`, { method: "POST" }), "Invitation email sent")}>
+                  Send invite
+                </Button>
+              )}
+              {["active", "provisioned", "recovery", "password_expired", "locked_out"].includes(user.status) && (
+                <Button type="button" variant="outline" onClick={() => run(() => http(`/admin/users/${id}/send-reset`, { method: "POST" }), "Password reset email sent")}>
+                  Email a reset link
+                </Button>
+              )}
+            </div>
             </form>
           </CardContent>
         </Card>
