@@ -16,7 +16,7 @@ export function ConnectedAppsCard() {
   const load = useCallback(() => http<{ items: App[] }>("/me/consents").then((r) => setApps(r.items)).catch(() => setApps([])), []);
   useEffect(() => { load(); }, [load]);
 
-  if (!apps || apps.length === 0) return null; // nothing connected: no card to explain
+  if (!apps || (apps.length === 0 && !msg)) return null; // nothing connected: no card, except to confirm a withdrawal just made
   return (
     <Card className="mb-6" data-testid="connected-apps">
       <CardHeader><CardTitle>Connected applications</CardTitle></CardHeader>
