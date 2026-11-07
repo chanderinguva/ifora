@@ -345,7 +345,7 @@ def test_filters(people, f, expected):
 
 @pytest.mark.parametrize("f", [
     'userName xx "a"', 'unknown eq "a"', 'userName eq', 'userName eq "unterminated', '(userName eq "a"',
-    'userName eq "a")', 'userName gt "a"', 'not (userName eq "a")', 'emails[type eq "work"].value eq "a"',
+    'userName eq "a")', 'userName gt 5', 'not userName eq "a"', 'emails[type eq "work"].bogus eq "a"',
     'password eq "x"', 'is_admin eq true', 'userName eq a', '', 'userName eq "a" and', 'and userName eq "a"',
     'active co "t"', "(" * 30 + 'userName eq "a"' + ")" * 30, 'userName eq "' + "a" * 1100 + '"',
     " or ".join(['userName eq "a"'] * 40),

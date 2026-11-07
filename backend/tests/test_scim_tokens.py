@@ -207,3 +207,108 @@ def test_user_resource_lists_groups_by_opaque_id(db, super_admin):
     g = s.post("/Groups", {"schemas": [GROUP], "displayName": "Team", "members": [{"value": u["id"]}]}).json()
     got = s.get(f"/Users/{u['id']}").json()
     assert got["groups"][0]["value"] == g["id"] and got["groups"][0]["$ref"].endswith(f"/Groups/{g['id']}")
+
+
+# ---- S5: filters and projection ----------------------------------------------------------------------------------------
+
+def users(scim, *names):
+    return [mk(scim, n) for n in names]
+
+
+def names_of(r):
+    assert r.status_code == 200, r.text
+    return sorted(x["userName"] for x in r.json()["Resources"] if x["userName"] != "root")
+
+
+def test_not_operator(db, super_admin):
+    s = Scim(issue(super_admin)["token"])
+    users(s, "alice", "bob", "carol")
+    assert names_of(s.get("/Users", filter='not (userName eq "bob")')) == ["alice", "carol"]
+    assert names_of(s.get("/Users", filter='not (userName sw "a" or userName sw "b")')) == ["carol"]
+    assert names_of(s.get("/Users", filter='userName pr and not (externalId pr)')) == ["alice", "bob", "carol"]   # NULL counts as not matching
+    for bad in ('not userName eq "x"', 'not (userName eq "x"', 'not ()'):
+        assert s.get("/Users", filter=bad).status_code == 400, bad
+
+
+def test_order_operators_on_strings_and_dates(db, super_admin):
+    s = Scim(issue(super_admin)["token"])
+    users(s, "alice", "bob", "carol")
+    assert names_of(s.get("/Users", filter='userName gt "alice" and userName lt "carol"')) == ["bob"]
+    assert names_of(s.get("/Users", filter='userName ge "bob"')) == ["bob", "carol"]
+    future, past = "2999-01-01T00:00:00Z", "2000-01-01T00:00:00Z"
+    assert names_of(s.get("/Users", filter=f'meta.lastModified gt "{past}"')) == ["alice", "bob", "carol"]
+    assert names_of(s.get("/Users", filter=f'meta.lastModified gt "{future}"')) == []
+    assert names_of(s.get("/Users", filter=f'meta.created le "{future}" and meta.created ge "{past}"')) == ["alice", "bob", "carol"]
+    assert s.get("/Users", filter='meta.lastModified gt "yesterday"').status_code == 400
+    assert s.get("/Users", filter='meta.lastModified co "2024"').status_code == 400
+    assert s.get("/Users", filter='active gt "x"').status_code == 400
+    assert s.get("/Users", filter='meta.lastModified pr').status_code == 200
+
+
+def test_incremental_sync_by_last_modified(db, super_admin):
+    s = Scim(issue(super_admin)["token"])
+    a, b = users(s, "alice", "bob")
+    cutoff = s.get(f"/Users/{a['id']}").json()["meta"]["lastModified"]
+    s.patch(f"/Users/{b['id']}", [{"op": "replace", "path": "name.givenName", "value": "Robert"}])
+    assert names_of(s.get("/Users", filter=f'meta.lastModified gt "{cutoff}"')) == ["bob"]
+    g = s.post("/Groups", {"schemas": [GROUP], "displayName": "Late"}).json()
+    r = s.get("/Groups", filter=f'meta.lastModified ge "{g["meta"]["lastModified"]}"')
+    assert [x["displayName"] for x in r.json()["Resources"]] == ["Late"]
+
+
+def test_value_path_filters(db, super_admin):
+    s = Scim(issue(super_admin)["token"])
+    users(s, "alice", "bob")
+    assert names_of(s.get("/Users", filter='emails[type eq "work"]')) == ["alice", "bob"]
+    assert names_of(s.get("/Users", filter='emails[type eq "home"]')) == []
+    assert names_of(s.get("/Users", filter='emails[type eq "work" and value sw "al"]')) == ["alice"]
+    assert names_of(s.get("/Users", filter='emails[type eq "work"].value ew "bob@example.com"')) == ["bob"]
+    assert names_of(s.get("/Users", filter='emails[primary eq true and not (value co "bob")]')) == ["alice"]
+    assert names_of(s.get("/Users", filter='emails[value pr] and userName eq "bob"')) == ["bob"]
+    for bad in ('emails[type eq "work"', 'emails[emails[type eq "x"]]', 'emails[bogus eq "x"]', 'nope[type eq "work"]', 'emails[]'):
+        assert s.get("/Users", filter=bad).status_code == 400, bad
+    u = mk(s, "dave")
+    g = s.post("/Groups", {"schemas": [GROUP], "displayName": "Dev", "members": [{"value": u["id"]}]}).json()
+    r = s.get("/Groups", filter=f'members[value eq "{u["id"]}"]')
+    assert [x["id"] for x in r.json()["Resources"]] == [g["id"]]
+
+
+def test_attributes_projection(db, super_admin):
+    s = Scim(issue(super_admin)["token"])
+    u = mk(s, "alice")
+    r = s.get(f"/Users/{u['id']}", attributes="userName,name.givenName,emails.value")
+    d = r.json()
+    assert r.status_code == 200 and set(d) == {"schemas", "id", "userName", "name", "emails"}
+    assert d["name"] == {"givenName": "Jane"} and d["emails"] == [{"value": "alice@example.com"}]
+    assert r.headers["content-type"].startswith("application/scim+json") and r.headers["etag"]
+    lst = s.get("/Users", attributes="userName").json()
+    assert all(set(x) == {"schemas", "id", "userName"} for x in lst["Resources"]) and lst["totalResults"] >= 1
+    assert lst["schemas"] == ["urn:ietf:params:scim:api:messages:2.0:ListResponse"]
+    assert set(s.get(f"/Users/{u['id']}", attributes="USERNAME").json()) == {"schemas", "id", "userName"}      # case-insensitive
+    assert set(s.get(f"/Users/{u['id']}", attributes="nonsense").json()) == {"schemas", "id"}
+
+
+def test_excluded_attributes_projection(db, super_admin):
+    s = Scim(issue(super_admin)["token"])
+    u = mk(s, "alice")
+    d = s.get(f"/Users/{u['id']}", excludedAttributes="emails,name.familyName,meta").json()
+    assert "emails" not in d and "meta" not in d and "familyName" not in d["name"] and d["name"]["givenName"] == "Jane" and d["userName"] == "alice"
+    d = s.get(f"/Users/{u['id']}", excludedAttributes="id,schemas").json()
+    assert d["id"] == u["id"] and d["schemas"]                                                      # always returned
+    assert s.get(f"/Users/{u['id']}", attributes="userName", excludedAttributes="emails").status_code == 400
+    ent = "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"
+    full = s.get(f"/Users/{u['id']}").json()
+    if ent in full:
+        assert ent not in s.get(f"/Users/{u['id']}", excludedAttributes=ent).json()
+
+
+def test_projection_applies_to_writes_and_groups_and_never_to_errors(db, super_admin):
+    s = Scim(issue(super_admin)["token"])
+    r = s.c.post("/scim/v2/Users?attributes=userName", content=__import__("json").dumps(user_body("zed")), headers=s.h)
+    assert r.status_code == 201 and set(r.json()) == {"schemas", "id", "userName"} and r.headers["location"]
+    g = s.post("/Groups", {"schemas": [GROUP], "displayName": "Ops"}).json()
+    d = s.get(f"/Groups/{g['id']}", attributes="displayName").json()
+    assert set(d) == {"schemas", "id", "displayName"}
+    assert "members" not in s.get(f"/Groups/{g['id']}", excludedAttributes="members").json()
+    err = s.get("/Users/does-not-exist", attributes="userName")
+    assert err.status_code == 404 and err.json()["status"] == "404"

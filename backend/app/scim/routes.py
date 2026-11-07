@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse
-from sqlalchemy import String, cast, delete, exists, func, insert, select, update
+from sqlalchemy import String, cast, delete, exists, func, insert, literal, select, true, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -202,6 +202,10 @@ USER_FILTER_ATTRS = {
     "name.familyname": flt.Attr("str", User.last_name),
     "emails.value": flt.Attr("str", User.email),
     "emails": flt.Attr("str", User.email),
+    "emails.type": flt.Attr("str", literal("work")),      # we store one email and always render it as the primary work address
+    "emails.primary": flt.Attr("bool", true()),
+    "meta.lastmodified": flt.Attr("date", User.updated_at),
+    "meta.created": flt.Attr("date", User.created_at),
 }
 
 
@@ -395,6 +399,8 @@ GROUP_FILTER_ATTRS = {
     "displayname": flt.Attr("str", Group.name),
     "externalid": flt.Attr("str", _ext_group),
     "members.value": flt.Attr("str", None, exists=_group_members_exists),
+    "meta.lastmodified": flt.Attr("date", Group.updated_at),
+    "meta.created": flt.Attr("date", Group.created_at),
 }
 
 

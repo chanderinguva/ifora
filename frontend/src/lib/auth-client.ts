@@ -82,14 +82,22 @@ export async function logout(): Promise<void> {
   if (!csrfToken) {
     await getCurrentUser(); // refreshes the CSRF token after a reload
   }
-  const response = await fetch(`${API_URL}/api/v1/logout`, {
+  const send = () => fetch(`${API_URL}/api/v1/logout`, {
     method: "POST",
     credentials: "include",
     headers: { "X-CSRF-Token": csrfToken ?? "" },
   });
+  let response = await send();
+  if (response.status === 403) {
+    // stale CSRF token (the session was renewed elsewhere): fetch a fresh one and try once more
+    csrfToken = null;
+    await getCurrentUser();
+    response = await send();
+  }
   csrfToken = null;
 
-  if (!response.ok) {
+  // 401 means there is no session any more, which is exactly what the user asked for
+  if (!response.ok && response.status !== 401) {
     throw new Error("Logout failed");
   }
 }

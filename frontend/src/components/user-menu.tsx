@@ -118,6 +118,8 @@ export function UserMenu({
             onClick={async () => {
               try {
                 await logout();
+              } catch {
+                // whatever went wrong, leave the page: the login screen shows the real state of the session
               } finally {
                 router.replace("/login");
               }

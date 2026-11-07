@@ -1,11 +1,14 @@
 """The /scim/v2 sub-application: its own error handlers so every failure is a SCIM error (RFC 7644 3.12)."""
 
+import json
+
 import structlog
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.exceptions import HTTPException
 
+from backend.app.scim import projection
 from backend.app.scim.errors import ScimError
 from backend.app.scim.routes import ScimResponse, router
 
@@ -39,6 +42,28 @@ def create_scim_app() -> FastAPI:
     async def unexpected(request, exc):
         logger.error("scim.unexpected", error=type(exc).__name__)
         return ScimResponse(ScimError(500, "Internal server error").body(), status_code=500)
+
+    @app.middleware("http")
+    async def shape_response(request, call_next):
+        """`attributes` / `excludedAttributes` apply to every Users and Groups response (RFC 7644 3.4.2.5, 3.9)."""
+        q = request.query_params
+        if "attributes" not in q and "excludedAttributes" not in q:
+            return await call_next(request)
+        attrs, excl = projection.parse(q.get("attributes")), projection.parse(q.get("excludedAttributes"))
+        resp = await call_next(request)
+        if resp.status_code >= 300 or resp.status_code == 204:
+            return resp
+        raw = b"".join([chunk async for chunk in resp.body_iterator])
+        try:
+            body = projection.apply(json.loads(raw), attrs, excl)
+        except ScimError as e:
+            return ScimResponse(e.body(), status_code=e.status)
+        except ValueError:
+            body = None
+        if body is None:
+            return ScimResponse(json.loads(raw), status_code=resp.status_code)
+        headers = {k: v for k, v in resp.headers.items() if k.lower() not in ("content-length", "content-type")}
+        return ScimResponse(body, status_code=resp.status_code, headers=headers)
 
     app.include_router(router)
     return app
