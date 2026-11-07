@@ -14,6 +14,16 @@ async def health_check():
     return {"status": "healthy", "environment": settings.ENVIRONMENT}
 
 
+OIDC_PUBLIC_PREFIXES = ("/oauth/token", "/oauth/userinfo", "/oauth/jwks", "/oauth/revoke", "/.well-known/")
+
+
+class _AppCORS(CORSMiddleware):
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope["path"].startswith(OIDC_PUBLIC_PREFIXES):
+            return await self.app(scope, receive, send)
+        return await super().__call__(scope, receive, send)
+
+
 def create_app() -> FastAPI:
     """Create and configure FastAPI application."""
     app = FastAPI(
@@ -25,9 +35,10 @@ def create_app() -> FastAPI:
         openapi_url="/openapi.json",
     )
 
-    # CORS: explicit origins only (credentials are allowed, so never "*")
+    # CORS: explicit origins only (credentials are allowed, so never "*"). The OIDC protocol endpoints are not
+    # credentialed and set their own narrow headers (oidc/cors.py), so the cookie-API policy stays out of their way.
     app.add_middleware(
-        CORSMiddleware,
+        _AppCORS,
         allow_origins=settings.CORS_ORIGINS,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],

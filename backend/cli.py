@@ -4,6 +4,7 @@ boundary: it is how a super admin who lost every sign-in factor gets back in.
     python -m backend.cli reset-factors admin@example.com [--yes]
     python -m backend.cli issue-enrollment-code admin@example.com
     python -m backend.cli recipes-worker [--once] [--interval 2]
+    python -m backend.cli purge-oidc
 
 Removes the user's authenticator app, recovery codes and passkeys, lifts the passkey-required
 policy, clears any lockout, and ends all their sessions. The password is NOT changed or shown.
@@ -109,6 +110,18 @@ def recipes_worker(interval: float = 2.0, once: bool = False, out=print) -> int:
         time.sleep(interval)
 
 
+def purge_oidc(out=print) -> int:
+    """Delete expired OIDC pending requests, refresh families and authorization codes (cron-friendly)."""
+    from backend.app.oidc import purge
+
+    db = tenant_session()
+    try:
+        out("purged: " + ", ".join(f"{k}={v}" for k, v in purge.purge(db).items()))
+        return 0
+    finally:
+        db.close()
+
+
 def main(argv: Optional[list] = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m backend.cli", description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -123,7 +136,10 @@ def main(argv: Optional[list] = None) -> int:
     w = sub.add_parser("recipes-worker", help="run the recipe engine worker loop")
     w.add_argument("--once", action="store_true", help="process due work once and exit")
     w.add_argument("--interval", type=float, default=2.0, help="seconds between polls")
+    sub.add_parser("purge-oidc", help="delete expired OIDC pending requests, refresh tokens and codes")
     args = parser.parse_args(argv)
+    if args.cmd == "purge-oidc":
+        return purge_oidc()
     if args.cmd == "recipes-worker":
         return recipes_worker(args.interval, args.once)
     if args.cmd == "rotate-signing-key":

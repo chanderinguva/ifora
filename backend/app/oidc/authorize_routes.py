@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from backend.app import ratelimit
 from backend.app.audit.model import AuditAction
 from backend.app.audit.service import record
 from backend.app.auth.deps import get_session_and_user
@@ -37,6 +38,9 @@ def _optional_session(request: Request, db: Session):
 
 @public_router.get("/oauth/authorize")
 def authorize(request: Request, db: Session = Depends(get_db)):
+    ident = ratelimit.client_ip(request)  # every request parks a row or mints a code, so volume is capped per IP
+    ratelimit.check("oauth_authorize", ident, settings.RATE_LIMIT_AUTHORIZE_REQUESTS)
+    ratelimit.hit("oauth_authorize", ident, settings.RATE_LIMIT_AUTHORIZE_WINDOW_SECONDS)
     q = dict(request.query_params)
     if len(request.query_params.multi_items()) != len(q):  # RFC 6749 §3.1: parameters MUST NOT repeat
         return JSONResponse({"error": "invalid_request", "error_description": "repeated parameter"}, 400, headers=NO_STORE)
