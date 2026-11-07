@@ -19,7 +19,7 @@ import {
 import type { Group, User } from "@/lib/types";
 
 type Ctx = {
-  meta: RecipeMeta; groups: Group[]; connections: Connection[]; connectionsAvailable: boolean; trigger: string; root: StepNode[];
+  meta: RecipeMeta; groups: Group[]; connections: Connection[]; connectionsAvailable: boolean; trigger: string; root: StepNode[]; other?: StepNode[]; handler?: boolean;
 };
 
 const USER_PILL = "{{trigger.user.id}}";
@@ -90,7 +90,8 @@ function StepForm({ step, ctx, onChange }: { step: StepNode; ctx: Ctx; onChange:
   const cfg = step.config;
   const set = (patch: Record<string, any>) => onChange({ ...step, config: { ...cfg, ...patch } });
   const before = stepsBefore(ctx.root, step.id);
-  const pills = [...(ctx.meta.triggers.find((t) => t.type === ctx.trigger)?.fields ?? []), ...stepPills(ctx.meta, before)];
+  const errorPills: Pill[] = ctx.handler ? [{ path: "error.message", label: "Error message" }, { path: "error.step_id", label: "Failed step" }] : [];
+  const pills = [...(ctx.meta.triggers.find((t) => t.type === ctx.trigger)?.fields ?? []), ...stepPills(ctx.meta, before), ...errorPills];
   const payload = ctx.meta.triggers.find((t) => t.type === ctx.trigger)?.payload_pills ?? false;
   const userField = (
     <div className="space-y-1"><Label>Target user</Label><PillInput label="Target user" value={cfg.user ?? ""} onChange={(v) => set({ user: v })} pills={pills} payload={payload} /></div>
@@ -231,7 +232,7 @@ function StepList({ steps, ctx, onChange, depth }: { steps: StepNode[]; ctx: Ctx
           <optgroup label="Control">{addable.filter((m) => m.kind === "control").map((m) => <option key={m.type} value={m.type}>{m.label}</option>)}</optgroup>
         </Select>
         <Button type="button" variant="secondary" size="sm" disabled={allSteps(root).length >= ctx.meta.limits.max_steps}
-          onClick={() => { const n: StepNode = { id: nextStepId(root), type, config: defaultConfig(type, ctx), on_error: "fail", max_attempts: 3 }; if (type === "condition") { n.then = []; n.else = []; } onChange([...steps, n]); }}>
+          onClick={() => { const n: StepNode = { id: nextStepId([...root, ...(ctx.other ?? [])]), type, config: defaultConfig(type, ctx), on_error: "fail", max_attempts: 3 }; if (type === "condition") { n.then = []; n.else = []; } onChange([...steps, n]); }}>
           <Plus className="mr-1 h-4 w-4" /> Add step
         </Button>
       </div>
@@ -349,7 +350,13 @@ export default function RecipeBuilderPage() {
       </Card>
 
       <h2 className="mb-2 text-lg font-semibold">Then do these steps</h2>
-      <StepList steps={def.steps} ctx={ctx} depth={0} onChange={(s) => edit({ ...def, steps: s })} />
+      <StepList steps={def.steps} ctx={{ ...ctx, other: def.on_error ?? [] }} depth={0} onChange={(s) => edit({ ...def, steps: s })} />
+
+      <h2 className="mb-1 mt-6 text-lg font-semibold">If a step fails</h2>
+      <p className="mb-2 text-sm text-muted-foreground">Optional. These steps run after a step fails for good (after its retries), with the error message and failed step as datapills. The job is still recorded as failed.</p>
+      <div data-testid="error-handler">
+        <StepList steps={def.on_error ?? []} ctx={{ ...ctx, root: def.on_error ?? [], other: def.steps, handler: true }} depth={0} onChange={(s) => edit({ ...def, on_error: s })} />
+      </div>
 
       <Card className="mt-6" data-testid="test-card">
         <CardHeader className="py-3"><CardTitle className="text-base">Test (dry run of the draft)</CardTitle></CardHeader>

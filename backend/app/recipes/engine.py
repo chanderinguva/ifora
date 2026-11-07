@@ -23,6 +23,35 @@ from backend.app.tenancy import Tenant, tenant_session, unscoped
 logger = structlog.get_logger(__name__)
 
 BACKOFF_CAP_SECONDS = 300
+HEARTBEAT_KEY = "recipes:worker:heartbeat"
+HEARTBEAT_STALE_SECONDS = 30
+
+
+def heartbeat(path: Optional[str] = None) -> None:
+    """Tell the world the worker loop is alive: a Redis key (the admin UI shows it) and optionally a file (the compose
+    health check reads its mtime, so the check works without Redis or the API)."""
+    from backend.app import ratelimit
+
+    try:
+        ratelimit._redis().set(HEARTBEAT_KEY, utcnow().isoformat(), ex=120)
+    except Exception:  # noqa: BLE001 - a Redis hiccup must not stop the worker
+        pass
+    if path:
+        try:
+            with open(path, "w") as f:
+                f.write(utcnow().isoformat())
+        except OSError:
+            pass
+
+
+def worker_last_seen() -> Optional[datetime]:
+    from backend.app import ratelimit
+
+    try:
+        v = ratelimit._redis().get(HEARTBEAT_KEY)
+        return datetime.fromisoformat(v.decode()) if v else None
+    except Exception:  # noqa: BLE001
+        return None
 OUTBOX_RETENTION_DAYS = 7
 
 
@@ -170,6 +199,14 @@ def _finish(db: Session, job: RecipeJob, status: str, now: datetime, error: Opti
     db.commit()
 
 
+def _end(db: Session, job: RecipeJob, status: str, now: datetime, error: Optional[str] = None) -> str:
+    """Finish at the natural end of the main steps or of the error handler. A job whose handler ran has still failed."""
+    if job.in_handler:
+        status, error = "failed", job.error or error
+    _finish(db, job, status, now, error)
+    return status
+
+
 def _step_row(job: RecipeJob, seq: int, instr: dict, status: str, attempt: int, inp, out, err, started, finished):
     return RecipeJobStep(
         job_id=job.id, seq=seq, step_id=instr["id"], type=instr["type"], status=status, attempt=attempt,
@@ -186,6 +223,9 @@ def execute_job(db: Session, job_id: int, now: datetime) -> str:
         if job is None or job.status != "running":
             return job.status if job else "missing"
         recipe = db.get(Recipe, job.recipe_id)
+        if job.cancel_requested:
+            _finish(db, job, "cancelled", now, "cancelled by an administrator")
+            return "cancelled"
         if job.mode == "live" and (recipe is None or not recipe.enabled):
             _finish(db, job, "cancelled", now, "recipe disabled or deleted")
             return "cancelled"
@@ -195,12 +235,11 @@ def execute_job(db: Session, job_id: int, now: datetime) -> str:
         if (now - job.created_at).total_seconds() > settings.RECIPES_MAX_RUNTIME_SECONDS:
             _finish(db, job, "failed", now, "stopped: maximum runtime exceeded")
             return "failed"
-        program = compile_program(job.definition["steps"])
+        program = compile_program(job.definition.get("on_error", []) if job.in_handler else job.definition["steps"])
         while job.pc < len(program) and program[job.pc]["type"] == "jump":
             job.pc = program[job.pc]["to"]
         if job.pc >= len(program):
-            _finish(db, job, "succeeded", now)
-            return "succeeded"
+            return _end(db, job, "succeeded", now)
         instr = program[job.pc]
         seq = job.executed_steps + 1
         attempt = job.attempt + 1
@@ -209,6 +248,7 @@ def execute_job(db: Session, job_id: int, now: datetime) -> str:
             "steps": {k: {"output": v} for k, v in (job.step_outputs or {}).items()},
             "recipe": {"id": job.recipe_id, "name": recipe.name if recipe else "", "version": job.version or 0},
             "job": {"id": job.id},
+            "error": (job.step_outputs or {}).get("_error", {}),
         }
         rc = actions.RunCtx(db, job.recipe_id, job.id, instr["id"], data, job.mode == "dry_run", taint)
         db.info["recipe_origin"] = {"recipe_id": job.recipe_id, "job_id": job.id, "depth": job.depth}
@@ -249,9 +289,8 @@ def execute_job(db: Session, job_id: int, now: datetime) -> str:
             job.locked_until = now + timedelta(seconds=settings.RECIPES_LEASE_SECONDS) if job.mode == "live" else job.locked_until
             db.add(_step_row(job, seq, instr, "succeeded", attempt, inp, out, None, started, now))
             if stop is not None:
-                _finish(db, job, "succeeded" if stop[0] == "success" else "failed", now,
-                        None if stop[0] == "success" else (stop[1] or "stopped by a stop step"))
-                return job.status
+                return _end(db, job, "succeeded" if stop[0] == "success" else "failed", now,
+                            None if stop[0] == "success" else (stop[1] or "stopped by a stop step"))
             db.commit()
             continue
         # failure ---------------------------------------------------------------------------------
@@ -272,7 +311,20 @@ def execute_job(db: Session, job_id: int, now: datetime) -> str:
             db.commit()
             continue
         job.executed_steps = seq
-        _finish(db, job, "failed", now, f"step '{instr['id']}': {err.message}")
+        msg = f"step '{instr['id']}': {err.message}"
+        if job.in_handler:
+            _finish(db, job, "failed", now, f"{job.error or ''} | error handler {msg}")
+            return "failed"
+        if job.definition.get("on_error") and job.mode in ("live", "dry_run"):
+            # the Monitor / On-error idea (ADR 008 R-M2): run the handler steps, then the job still ends as failed
+            job.error = msg[:500]
+            job.in_handler, job.pc, job.attempt = True, 0, 0
+            outputs = dict(job.step_outputs or {})
+            outputs["_error"] = {"message": err.message, "step_id": instr["id"]}
+            job.step_outputs = outputs
+            db.commit()
+            continue
+        _finish(db, job, "failed", now, msg)
         return "failed"
 
 
@@ -326,6 +378,18 @@ def claim_jobs(db: Session, now: datetime) -> List[int]:
     return ids
 
 
+def prune_jobs(db: Session, now: datetime) -> int:
+    """Delete finished jobs (and, by cascade, their step history) older than RECIPES_JOB_RETENTION_DAYS. 0 keeps everything."""
+    days = settings.RECIPES_JOB_RETENTION_DAYS
+    if days <= 0:
+        return 0
+    n = db.query(RecipeJob).filter(
+        RecipeJob.status.in_(("succeeded", "failed", "cancelled")), RecipeJob.finished_at < now - timedelta(days=days)
+    ).delete(synchronize_session=False)
+    db.commit()
+    return n
+
+
 def process_tenant(db: Session, now: datetime) -> Dict[str, int]:
     stats = dispatch_outbox(db, now)
     stats["scheduled"] = schedule_due(db, now)
@@ -334,6 +398,7 @@ def process_tenant(db: Session, now: datetime) -> Dict[str, int]:
     for jid in ids:
         execute_job(db, jid, now)
         stats["ran"] += 1
+    prune_jobs(db, now)
     db.query(RecipeOutbox).filter(
         RecipeOutbox.dispatched_at.is_not(None), RecipeOutbox.dispatched_at < now - timedelta(days=OUTBOX_RETENTION_DAYS)
     ).delete(synchronize_session=False)

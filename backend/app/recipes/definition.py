@@ -3,6 +3,7 @@
 Definition JSON::
 
     {"trigger": {"type": "user.created", "config": {}, "filter": [{"left": "...", "operator": "...", "value": "..."}]},
+     "on_error": [ ...steps run when a step fails for good (optional; see ADR 008 R-M2)... ],
      "steps": [{"id": "s1", "type": "add_to_group", "name": "...", "config": {...}, "on_error": "fail",
                 "max_attempts": 3},
                {"id": "c1", "type": "condition", "config": {"match": "all", "conditions": [...]},
@@ -165,6 +166,8 @@ def taint_checker(db: Session) -> Callable[[str], None]:
 
     def check(path: str) -> None:
         segs = path.split(".")
+        if segs[0] == "error":  # may carry text from a remote system or a user-controlled value
+            raise tpl.TemplateError(f"'{path}' cannot be used to change accounts or make decisions; use it in log or http steps")
         if segs[:2] == ["trigger", "user"]:
             ok = len(segs) == 3 and segs[2] in _SAFE_USER_FIELDS
             ok = ok or (len(segs) == 4 and segs[2] == "attributes" and segs[3] in managed)
@@ -185,8 +188,15 @@ def trigger_field_paths(trigger_type: str, db: Session) -> List[Dict[str, str]]:
     return out
 
 
-def _pill_allowed(path: str, trigger_type: str, earlier_steps: Dict[str, str], db_keys: set) -> None:
+ERROR_PILLS = ("error.message", "error.step_id")
+
+
+def _pill_allowed(path: str, trigger_type: str, earlier_steps: Dict[str, str], db_keys: set, handler: bool = False) -> None:
     segs = path.split(".")
+    if segs[0] == "error":
+        if handler and path in ERROR_PILLS:
+            return
+        raise tpl.TemplateError("error details are only available in the 'on error' steps" if not handler else f"unknown datapill '{path}'")
     if segs[0] == "trigger":
         if path in {p for p, _ in TRIGGER_FIELDS.get(trigger_type, [])}:
             return
@@ -220,8 +230,8 @@ def validate_definition(db: Session, definition: Any, *, for_publish: bool = Fal
     """Return the normalised definition or raise DefinitionError."""
     import json
 
-    if not isinstance(definition, dict) or set(definition) - {"trigger", "steps"}:
-        raise DefinitionError("definition must contain 'trigger' and 'steps' only")
+    if not isinstance(definition, dict) or set(definition) - {"trigger", "steps", "on_error"}:
+        raise DefinitionError("definition must contain 'trigger', 'steps' and optionally 'on_error' only")
     if len(json.dumps(definition)) > MAX_DEFINITION_BYTES:
         raise DefinitionError("definition is too large")
     trig = definition.get("trigger")
@@ -252,7 +262,9 @@ def validate_definition(db: Session, definition: Any, *, for_publish: bool = Fal
         raise DefinitionError(f"trigger filter: {e}")
 
     seen: Dict[str, str] = {}
+    used: set = set()
     count = [0]
+    mode = {"handler": False}
 
     def walk(steps: Any, depth: int) -> List[dict]:
         if not isinstance(steps, list):
@@ -267,7 +279,7 @@ def validate_definition(db: Session, definition: Any, *, for_publish: bool = Fal
             sid, stype = st.get("id"), st.get("type")
             if not isinstance(sid, str) or not _ID.match(sid):
                 raise DefinitionError("step ids must look like s1, notify_admin (lowercase letters, digits, _)")
-            if sid in seen:
+            if sid in used:
                 raise DefinitionError(f"duplicate step id '{sid}'")
             if stype not in STEP_TYPES:
                 raise DefinitionError(f"step '{sid}': unknown type '{stype}'")
@@ -283,21 +295,22 @@ def validate_definition(db: Session, definition: Any, *, for_publish: bool = Fal
             if name is not None and (not isinstance(name, str) or len(name) > 100):
                 raise DefinitionError(f"{where}: name is too long")
             try:
-                _check_step(db, stype, cfg, ttype, dict(seen), managed, taint, where)
+                _check_step(db, stype, cfg, ttype, dict(seen), managed, taint, where, mode["handler"])
             except tpl.TemplateError as e:
                 raise DefinitionError(f"{where}: {e}")
             node = {"id": sid, "type": stype, "name": name, "config": cfg, "on_error": on_error, "max_attempts": attempts}
             seen[sid] = stype
+            used.add(sid)
             if stype == "condition":
                 if depth >= MAX_NESTING:
                     raise DefinitionError(f"conditions can be nested at most {MAX_NESTING} deep")
                 try:
                     cfg["conditions"] = cond.validate(cfg["match"], cfg["conditions"])
                     for c in cfg["conditions"]:
-                        _pill_allowed(c["left"], ttype, seen, managed)
+                        _pill_allowed(c["left"], ttype, seen, managed, mode["handler"])
                         taint(c["left"])
                         for p in tpl.pills_in(c["value"]):
-                            _pill_allowed(p, ttype, seen, managed)
+                            _pill_allowed(p, ttype, seen, managed, mode["handler"])
                             taint(p)
                 except tpl.TemplateError as e:
                     raise DefinitionError(f"{where}: {e}")
@@ -311,14 +324,22 @@ def validate_definition(db: Session, definition: Any, *, for_publish: bool = Fal
     steps = walk(definition.get("steps", []), 0)
     if for_publish and not steps:
         raise DefinitionError("add at least one step before publishing")
-    return {"trigger": {"type": ttype, "config": tcfg, "filter": flt}, "steps": steps}
+    out = {"trigger": {"type": ttype, "config": tcfg, "filter": flt}, "steps": steps}
+    handler_steps = definition.get("on_error") or []
+    if handler_steps:
+        # the handler sees the trigger and the error, not the outputs of the main steps (which of them ran is unknown)
+        mode["handler"] = True
+        seen.clear()
+        out["on_error"] = walk(handler_steps, 0)
+        mode["handler"] = False
+    return out
 
 
-def _check_step(db, stype, cfg, ttype, earlier, managed, taint, where) -> None:
+def _check_step(db, stype, cfg, ttype, earlier, managed, taint, where, handler=False) -> None:
     if stype in ("condition",):
         return
     for p in tpl.all_pills({k: v for k, v in cfg.items() if k != "connection_id"}):
-        _pill_allowed(p, ttype, earlier, managed)
+        _pill_allowed(p, ttype, earlier, managed, handler)
         if stype in STATE_CHANGING:
             taint(p)
     if stype in ("add_to_group", "remove_from_group"):

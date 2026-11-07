@@ -102,7 +102,11 @@ def recipes_worker(interval: float = 2.0, once: bool = False, out=print) -> int:
 
     from backend.app.recipes import engine
 
+    import os
+
+    beat = os.environ.get("RECIPES_WORKER_HEARTBEAT_FILE")
     while True:
+        engine.heartbeat(beat)
         stats = engine.process_once()
         if once:
             out(f"recipes: {stats}")

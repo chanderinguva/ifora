@@ -88,6 +88,9 @@ class RecipeJob(TenantOwned, Base):
     idempotency_key = Column(String(128), nullable=False)
     depth = Column(Integer, nullable=False, default=0)
     pc = Column(Integer, nullable=False, default=0)
+    in_handler = Column(Boolean, nullable=False, default=False, server_default="false")  # running the definition's on_error steps
+    cancel_requested = Column(Boolean, nullable=False, default=False, server_default="false")
+    rerun_of = Column(Integer, nullable=True)  # the job this one re-runs
     executed_steps = Column(Integer, nullable=False, default=0)
     attempt = Column(Integer, nullable=False, default=0)
     step_outputs = Column(JSONB, nullable=False, default=dict)

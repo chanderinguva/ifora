@@ -16,12 +16,19 @@ export default function JobHistoryPage() {
   const [recipes, setRecipes] = useState<RecipeSummary[]>([]);
   const [open, setOpen] = useState<Job | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [worker, setWorker] = useState<{ worker_running: boolean; worker_last_seen: string | null } | null>(null);
 
   const load = useCallback(() => {
     http<Page<Job>>(`/admin/recipes/jobs${qs({ page, page_size: 20, status, recipe_id: recipeId })}`)
       .then(setData).catch((e) => setErr(e.message));
   }, [page, status, recipeId]);
   useEffect(load, [load]);
+  useEffect(() => { http<{ worker_running: boolean; worker_last_seen: string | null }>("/admin/recipes/status").then(setWorker).catch(() => {}); }, []);
+  async function act(path: string, ok: string) {
+    setErr(null); setNote(null);
+    try { await http(path, { method: "POST" }); setNote(ok); load(); } catch (e) { setErr(e instanceof Error ? e.message : "Failed"); }
+  }
   useEffect(() => { http<{ items: RecipeSummary[] }>("/admin/recipes").then((r) => setRecipes(r.items)).catch(() => {}); }, []);
 
   return (
@@ -39,6 +46,12 @@ export default function JobHistoryPage() {
         </select>
         <button className="rounded border px-3 text-sm" onClick={load}>Refresh</button>
       </div>
+      {worker && !worker.worker_running && (
+        <Alert variant="warning" className="mb-4" data-testid="worker-warning"><AlertDescription>
+          No recipe worker has reported in{worker.worker_last_seen ? ` since ${fmt(worker.worker_last_seen)}` : ""}. Queued jobs wait until one runs (<code>docker compose up -d recipes-worker</code>).
+        </AlertDescription></Alert>
+      )}
+      {note && <Alert className="mb-4" role="status"><AlertDescription>{note}</AlertDescription></Alert>}
       {err && <Alert variant="destructive" className="mb-4"><AlertDescription>{err}</AlertDescription></Alert>}
       <Card><CardContent className="overflow-x-auto p-0">
         <table className="w-full" data-testid="jobs-table">
@@ -46,12 +59,19 @@ export default function JobHistoryPage() {
           <tbody>
             {data?.items.map((j) => (
               <tr key={j.id} className="border-b last:border-0">
-                <td className={td}>#{j.id}{j.mode === "dry_run" ? " (test)" : ""}</td>
+                <td className={td}>#{j.id}{j.mode === "dry_run" ? " (test)" : ""}{j.rerun_of ? ` (re-run of #${j.rerun_of})` : ""}</td>
                 <td className={td}>{j.recipe_name ?? j.recipe_id}{j.version ? ` v${j.version}` : ""}</td>
                 <td className={td}>{j.trigger_type}</td>
                 <td className={td}><Badge tone={statusTone(j.status)}>{j.status}</Badge></td>
                 <td className={td}>{fmt(j.created_at)}</td>
-                <td className={td + " text-right"}><button className="underline underline-offset-4" onClick={() => http<Job>(`/admin/recipes/jobs/${j.id}`).then(setOpen).catch((e) => setErr(e.message))}>Details</button></td>
+                <td className={td + " space-x-3 text-right"}>
+                  {j.mode === "live" && (j.status === "failed" || j.status === "cancelled") && (
+                    <button className="underline underline-offset-4" onClick={() => { if (confirm("Run this job again? Steps that already took effect (HTTP calls, changes) will happen again.")) act(`/admin/recipes/jobs/${j.id}/rerun`, `Job #${j.id} queued again`); }}>Re-run</button>
+                  )}
+                  {j.mode === "live" && (j.status === "queued" || j.status === "running") && !j.cancel_requested && (
+                    <button className="underline underline-offset-4" onClick={() => act(`/admin/recipes/jobs/${j.id}/cancel`, `Job #${j.id} will stop`)}>Cancel</button>
+                  )}
+                  <button className="underline underline-offset-4" onClick={() => http<Job>(`/admin/recipes/jobs/${j.id}`).then(setOpen).catch((e) => setErr(e.message))}>Details</button></td>
               </tr>
             ))}
             {data && data.items.length === 0 && <tr><td className={td} colSpan={6}>No jobs yet.</td></tr>}
