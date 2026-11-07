@@ -16,6 +16,7 @@ export type StepNode = {
 export type Definition = {
   trigger: { type: string; config: Record<string, any>; filter: Comparison[] };
   steps: StepNode[];
+  on_error?: StepNode[];
 };
 
 export type RecipeSummary = {
@@ -69,6 +70,9 @@ export type Job = {
   trigger_type: string;
   error: string | null;
   executed_steps: number;
+  in_handler?: boolean;
+  cancel_requested?: boolean;
+  rerun_of?: number | null;
   created_at: string;
   finished_at: string | null;
   trigger?: unknown;

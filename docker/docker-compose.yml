@@ -78,6 +78,36 @@ services:
     ports:
       - "3000:3000"
 
+  # Runs recipe triggers, schedules and jobs (ADR 008). Without it recipes are saved and published but never run.
+  recipes-worker:
+    build:
+      context: ..
+      dockerfile: docker/backend/Dockerfile
+    container_name: identityforge-recipes-worker
+    restart: unless-stopped
+    depends_on:
+      backend-api:
+        condition: service_healthy
+    entrypoint: ["python", "-m", "backend.cli", "recipes-worker"]
+    working_dir: /app
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://identityforge:${POSTGRES_PASSWORD}@postgres:5432/identityforge
+      - DATABASE_URL_ASYNC=postgresql+asyncpg://identityforge:${POSTGRES_PASSWORD}@postgres:5432/identityforge
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=${SECRET_KEY:?set SECRET_KEY in docker/.env}
+      - ADMIN_SECRET_KEY=${ADMIN_SECRET_KEY:?set ADMIN_SECRET_KEY in docker/.env}
+      - MFA_ENCRYPTION_KEY=${MFA_ENCRYPTION_KEY:?set MFA_ENCRYPTION_KEY in docker/.env}
+      - RECIPE_ENCRYPTION_KEY=${RECIPE_ENCRYPTION_KEY:-}
+      - RECIPES_ENABLED=${RECIPES_ENABLED:-true}
+      - RECIPES_WORKER_HEARTBEAT_FILE=/tmp/recipes-worker.alive
+      - ENVIRONMENT=development
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,time,sys; sys.exit(0 if time.time()-os.path.getmtime('/tmp/recipes-worker.alive') < 30 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
   # Optional separate-origin relying party for trying the OIDC provider: --profile demo (see demo/oidc-rp/README.md)
   demo-app:
     profiles: ["demo"]

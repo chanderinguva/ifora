@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     GROUP_RULES_ENABLED: bool = Field(default=True)
     # Recipe engine (ADR 008). Kill switch + limits. RECIPE_ENCRYPTION_KEY is a third, separate Fernet key;
     # empty = connections (stored secrets) and webhook triggers are unavailable.
+    RECIPES_JOB_RETENTION_DAYS: int = Field(default=30)  # finished jobs and their step history are deleted after this many days (0 = keep)
     RECIPES_ENABLED: bool = Field(default=True)
     RECIPE_ENCRYPTION_KEY: str = Field(default="")
     RECIPES_MAX_STEPS_PER_JOB: int = Field(default=50)

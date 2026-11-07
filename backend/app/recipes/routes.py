@@ -77,7 +77,8 @@ def _job_dict(j: RecipeJob, name: Optional[str] = None) -> dict:
     return {
         "id": j.id, "recipe_id": j.recipe_id, "recipe_name": name, "version": j.version, "mode": j.mode,
         "status": j.status, "trigger_type": j.trigger_type, "depth": j.depth, "executed_steps": j.executed_steps,
-        "attempt": j.attempt, "error": j.error,
+        "attempt": j.attempt, "error": j.error, "in_handler": j.in_handler, "cancel_requested": j.cancel_requested,
+        "rerun_of": j.rerun_of,
         "created_at": j.created_at.isoformat(),
         "started_at": j.started_at.isoformat() if j.started_at else None,
         "finished_at": j.finished_at.isoformat() if j.finished_at else None,
@@ -97,6 +98,7 @@ def _job_detail(db: Session, j: RecipeJob) -> dict:
             collect(s.get("else", []))
 
     collect(j.definition.get("steps", []))
+    collect(j.definition.get("on_error", []))
     return {
         **_job_dict(j, r.name if r else None),
         "trigger": redact(j.trigger),
@@ -135,8 +137,11 @@ def _audit(db, action, actor, r_id, meta=None, request=None):
 @router.get("/status")
 def status(_: User = Depends(require_admin)):
     ok = crypto.available()
+    seen = engine.worker_last_seen()
     return {"enabled": True, "connections_available": ok, "webhooks_available": ok,
-            "egress_restricted": bool(settings.RECIPES_HTTP_ALLOWED_HOSTS.strip())}
+            "egress_restricted": bool(settings.RECIPES_HTTP_ALLOWED_HOSTS.strip()),
+            "worker_last_seen": seen.isoformat() if seen else None,
+            "worker_running": bool(seen and (NOW() - seen).total_seconds() < engine.HEARTBEAT_STALE_SECONDS)}
 
 
 TRIGGER_INFO = {
@@ -210,6 +215,44 @@ def get_job(job_id: int, db: Session = Depends(get_db), _: User = Depends(requir
     if j is None:
         raise HTTPException(status_code=404, detail="Job not found")
     return _job_detail(db, j)
+
+
+@router.post("/jobs/{job_id}/rerun", status_code=202)
+def rerun_job(job_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    """Run the same definition and trigger again as a NEW job (Workato-style). At-least-once: effects the first run
+    already had (HTTP calls, group changes that were not idempotent) happen again, so this is an explicit admin action."""
+    j = db.get(RecipeJob, job_id)
+    if j is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if j.mode != "live" or j.status not in ("failed", "cancelled"):
+        raise HTTPException(status_code=409, detail="Only failed or cancelled jobs can be re-run")
+    r = db.get(Recipe, j.recipe_id)
+    if r is None or not r.enabled:
+        raise HTTPException(status_code=409, detail="Enable the recipe before re-running its jobs")
+    new = engine.create_job(db, r, j.definition, j.version, j.trigger, f"rerun:{j.id}:{uuid.uuid4().hex[:12]}", depth=j.depth)
+    new.rerun_of = j.id
+    _audit(db, AuditAction.RECIPE_JOB_RERUN, actor, r.id, {"job_id": new.id, "rerun_of": j.id}, request)
+    db.commit()
+    return _job_dict(new, r.name)
+
+
+@router.post("/jobs/{job_id}/cancel")
+def cancel_job(job_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    """Queued jobs are cancelled at once; a running job stops before its next step (a step already in flight finishes)."""
+    j = (db.query(RecipeJob).filter(RecipeJob.id == job_id).with_for_update().first())
+    if j is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if j.status not in ("queued", "running"):
+        raise HTTPException(status_code=409, detail="The job has already finished")
+    r = db.get(Recipe, j.recipe_id)
+    if j.status == "queued":
+        engine._finish(db, j, "cancelled", NOW(), "cancelled by an administrator")
+        db.commit()
+    else:
+        j.cancel_requested = True
+        _audit(db, AuditAction.RECIPE_JOB_CANCEL_REQUESTED, actor, j.recipe_id, {"job_id": j.id}, request)
+        db.commit()
+    return _job_dict(j, r.name if r else None)
 
 
 # ---- recipes ----------------------------------------------------------------------------------------------

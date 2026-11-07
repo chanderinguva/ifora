@@ -8,7 +8,7 @@ import json
 import re
 from typing import Any, Callable, Iterable, List, Optional
 
-ROOTS = ("trigger", "steps", "recipe", "job")
+ROOTS = ("trigger", "steps", "recipe", "job", "error")
 MAX_PATH_SEGMENTS = 10
 MAX_RENDERED = 10_000
 _SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")

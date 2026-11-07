@@ -102,8 +102,12 @@ New actions: `RECIPE_CREATED/UPDATED/DELETED/PUBLISHED/ENABLED/DISABLED`, `RECIP
 | ID | Milestone | Item |
 |---|---|---|
 | R-M1 | **done (this PR)** | Outbox + hooks, dispatcher/worker, 7 actions, conditions, datapills, SSRF-safe HTTP, connections, versions, dry run, job history, builder UI |
-| R-M2 | next | Re-run failed job, cancel running job, error-handler branch (Workato Monitor block), job retention/pruning policy, worker as a compose service + health endpoint |
+| R-M2 | **done** | Re-run (`POST /admin/recipes/jobs/{id}/rerun`: new job, same version and trigger, at-least-once, audited), cancel (queued: immediately; running: stops before its next step), `on_error` handler steps (see below), job retention (`RECIPES_JOB_RETENTION_DAYS`, default 30, 0 = keep; step history cascades), worker as compose service `recipes-worker` with a heartbeat file health check and a Redis heartbeat that the Jobs page and `/admin/recipes/status` show. Migration 0021 |
 | R-M3 | | More triggers (group created/deleted, session events, user delete, "attribute changed from X to Y"), loops over group members (bounded), approvals |
 | R-M4 | | Notification actions (email/Slack connectors), OAuth2 connections, per-connection allow-listed paths |
 | R-M5 | | Per-recipe owners and role-scoped recipe permissions, DB-level version immutability trigger, rate limits per recipe, metrics and alerting on failure rates |
 | R-M6 | | Visual graph editor, import/export of definitions, recipe templates |
+
+
+## R-M2 notes: error handler
+`definition.on_error` is an optional list of steps (same grammar). When a step fails for good (retries used up, not `on_error: continue`), the job switches to the handler steps with `{{error.message}}` and `{{error.step_id}}` available, then ends as **failed** with the original error (a handled error is still a failure in the history; there is no "swallow the error" mode). Rules: handler steps see the trigger, recipe, job and error, not the outputs of main steps (which of them ran is unknown); step ids are unique across both lists; `error.*` cannot be used in conditions or in account-changing steps (the text can carry remote-system or user-controlled content), only in log/HTTP steps. A deliberate `stop` step does not invoke the handler. A failing handler step ends the job and is reported. Dry runs execute the handler too. Re-run is explicit and may repeat effects the first run already had.
