@@ -30,6 +30,9 @@ class ClientCreate(BaseModel):
     token_endpoint_auth_method: Optional[str] = None  # confidential/service: client_secret_basic (default) | private_key_jwt
     jwks: Optional[dict] = None  # public keys, required for private_key_jwt
     first_party: bool = False
+    initiate_login_uri: Optional[str] = Field(None, max_length=2000)  # https (or loopback) URL that starts sign-in at the app
+    launch_url: Optional[str] = Field(None, max_length=2000)  # the application's home page (tile target / target_link_uri)
+    require_assignment: bool = False  # only assigned users may sign in; off here so the plain client API keeps its old behaviour
     application_id: Optional[int] = None  # attach to an existing OIDC application without a client (default: create one)
     access_token_format: str = Field("jwt", pattern="^(jwt|opaque)$")  # opaque: revocable via /oauth/revoke, checked by introspection
 
@@ -45,6 +48,7 @@ class ClientUpdate(BaseModel):
     status: Optional[str] = Field(None, pattern="^(active|disabled)$")
     first_party: Optional[bool] = None
     access_token_format: Optional[str] = Field(None, pattern="^(jwt|opaque)$")
+    initiate_login_uri: Optional[str] = Field(None, max_length=2000)  # empty string clears it
 
 
 class SecretCreate(BaseModel):
@@ -115,9 +119,13 @@ def create_client(body: ClientCreate, request: Request, db: Session = Depends(ge
             scopes = svc.validate_scopes(body.allowed_scopes)
             audiences = []
         jwks = svc.validate_jwks(body.jwks) if body.jwks is not None else None
+        initiate = svc.validate_redirect_uri(body.initiate_login_uri, "initiate login URI") if body.initiate_login_uri else None
+        if initiate and service:
+            raise svc.ClientError("a service client has no users to sign in")
     except svc.ClientError as e:
         _bad(e)
     client = OIDCClient(
+        initiate_login_uri=initiate,
         client_id=svc.new_client_id(),
         name=body.name.strip(),
         description=body.description,
@@ -137,9 +145,10 @@ def create_client(body: ClientCreate, request: Request, db: Session = Depends(ge
     db.add(client)
     db.flush()
     from backend.app.applications.entitlement import ensure_for_client
+    from backend.app.applications.routes import _launch_url
 
     if body.application_id is None:
-        ensure_for_client(db, client, actor.id)
+        ensure_for_client(db, client, actor.id, launch_url=_launch_url(body.launch_url), require_assignment=body.require_assignment)
     else:
         from backend.app.applications.models import Application
 
@@ -196,6 +205,14 @@ def update_client(pk: int, body: ClientUpdate, request: Request, db: Session = D
             changed["allowed_scopes"] = True
     except svc.ClientError as e:
         _bad(e)
+    if body.initiate_login_uri is not None:
+        try:
+            new = svc.validate_redirect_uri(body.initiate_login_uri, "initiate login URI") if body.initiate_login_uri else None
+        except svc.ClientError as e:
+            _bad(e)
+        if new and c.client_type == "service":
+            raise HTTPException(status_code=422, detail="a service client has no users to sign in")
+        c.initiate_login_uri = new; changed["initiate_login_uri"] = True
     if body.first_party is not None and body.first_party != c.first_party:
         _only_super_admin_sets_first_party(actor)
         c.first_party = body.first_party; changed["first_party"] = body.first_party

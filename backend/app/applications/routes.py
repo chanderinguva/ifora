@@ -6,7 +6,7 @@ import hashlib
 import uuid
 from datetime import datetime, timezone
 from typing import List, Optional
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
@@ -19,6 +19,7 @@ from backend.app.applications.models import Application, ApplicationAssignment, 
 from backend.app.audit.model import AuditAction
 from backend.app.audit.service import record
 from backend.app.auth.deps import get_current_user, require_admin
+from backend.app.config import settings
 from backend.app.db import get_db
 from backend.app.groups.model import Group
 from backend.app.oidc.models import OIDCClient
@@ -107,6 +108,57 @@ def create_application(body: AppBody, request: Request, db: Session = Depends(ge
     record(db, AuditAction.APPLICATION_CREATED, request, actor, a.id, "application", {"name": a.name, "sign_on_mode": a.sign_on_mode})
     db.commit()
     return _dict(db, a)
+
+
+# ---- OIDC templates ---------------------------------------------------------------------------------------------
+
+TEMPLATES = {
+    "web": {"label": "Web application", "client_type": "confidential", "needs_redirects": True, "has_secret": True,
+            "description": "Server-side app (Rails, Django, Spring, ASP.NET…). Authorization code flow with a client secret kept on the server."},
+    "spa": {"label": "Single-page application", "client_type": "public", "needs_redirects": True, "has_secret": False,
+            "description": "Browser app with no back end (React, Vue, Angular…). Authorization code flow with PKCE; no secret exists."},
+    "native": {"label": "Native / desktop app", "client_type": "public", "needs_redirects": True, "has_secret": False,
+               "description": "Mobile or desktop app. Authorization code flow with PKCE; use an https app-link or a loopback http://127.0.0.1 redirect (custom URL schemes are not supported yet)."},
+    "service": {"label": "Service (machine to machine)", "client_type": "service", "needs_redirects": False, "has_secret": True,
+                "description": "Back-end service with no user. Client credentials flow; super administrators only."},
+}
+
+
+class FromTemplate(BaseModel):
+    template: str
+    name: str = Field(..., min_length=1, max_length=100)
+    description: Optional[str] = Field(None, max_length=500)
+    redirect_uris: List[str] = Field(default_factory=list)
+    post_logout_redirect_uris: List[str] = Field(default_factory=list)
+    launch_url: Optional[str] = Field(None, max_length=2000)
+    initiate_login_uri: Optional[str] = Field(None, max_length=2000)
+    require_assignment: bool = True  # secure default for the unified flow (the plain client API keeps off)
+    allowed_scopes: Optional[List[str]] = None
+    allowed_audiences: List[str] = Field(default_factory=list)
+
+
+@router.get("/templates")
+def templates(_: User = Depends(require_admin)):
+    return {"items": [{"id": k, **v} for k, v in TEMPLATES.items()]}
+
+
+@router.post("/from-template", status_code=201)
+def from_template(body: FromTemplate, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    """An application and its OIDC client in one transaction; the client secret (if any) is returned once."""
+    from backend.app.oidc import client_routes as cr
+
+    t = TEMPLATES.get(body.template)
+    if t is None:
+        raise HTTPException(status_code=422, detail="Unknown template")
+    if db.query(Application.id).filter(Application.name == body.name.strip()).first():
+        raise HTTPException(status_code=409, detail="Application name already in use")
+    service = t["client_type"] == "service"
+    scopes = body.allowed_scopes or (["api:read"] if service else ["openid", "profile", "email"])
+    return cr.create_client(
+        cr.ClientCreate(name=body.name, description=body.description, client_type=t["client_type"], redirect_uris=body.redirect_uris,
+                        post_logout_redirect_uris=body.post_logout_redirect_uris, allowed_scopes=scopes, allowed_audiences=body.allowed_audiences,
+                        launch_url=body.launch_url, initiate_login_uri=body.initiate_login_uri, require_assignment=body.require_assignment),
+        request, db, actor)
 
 
 @router.get("/{app_id}")
@@ -318,8 +370,26 @@ def remove_assignment(app_id: int, assignment_id: int, request: Request, db: Ses
 
 # ---- My apps (any signed-in user) --------------------------------------------------------------------------------
 
-def _launchable(a: Application) -> bool:
-    return a.status == "active" and a.visible and a.sign_on_mode in ("bookmark", "oidc") and bool(a.launch_url)
+def _initiate_uri(db: Session, a: Application) -> Optional[str]:
+    if a.sign_on_mode != "oidc":
+        return None
+    return db.query(OIDCClient.initiate_login_uri).filter(OIDCClient.application_id == a.id).scalar()
+
+
+def _launchable(a: Application, initiate: Optional[str] = None) -> bool:
+    return a.status == "active" and a.visible and a.sign_on_mode in ("bookmark", "oidc") and bool(a.launch_url or initiate)
+
+
+def _launch_target(a: Application, initiate: Optional[str]) -> str:
+    """Bookmarks open the URL. An OIDC app with an initiate-login URI gets OIDC "third-party initiated login" (Core 1.0
+    section 4 of the OIDC Third Party Initiated Login spec): iss (+ target_link_uri); the app then starts a normal
+    authorization-code flow with its own state and PKCE, so nothing sensitive is in the URL and no unsolicited response exists."""
+    if a.sign_on_mode == "oidc" and initiate:
+        q = {"iss": settings.OIDC_ISSUER}
+        if a.launch_url:
+            q["target_link_uri"] = a.launch_url
+        return initiate + ("&" if "?" in initiate else "?") + urlencode(q)
+    return a.launch_url or ""
 
 
 @me_router.get("")
@@ -328,18 +398,19 @@ def my_apps(db: Session = Depends(get_db), user: User = Depends(get_current_user
     rows = db.query(Application).filter(Application.id.in_(ids or {0}), Application.status == "active", Application.visible.is_(True),
                                         Application.sign_on_mode != "none").order_by(Application.name).all()
     icons = {i for (i,) in db.query(ApplicationIcon.application_id).filter(ApplicationIcon.application_id.in_([a.id for a in rows] or [0])).all()}
-    return {"items": [{"id": a.id, "name": a.name, "description": a.description, "sign_on_mode": a.sign_on_mode, "launchable": _launchable(a),
+    return {"items": [{"id": a.id, "name": a.name, "description": a.description, "sign_on_mode": a.sign_on_mode, "launchable": _launchable(a, _initiate_uri(db, a)),
                        "has_icon": a.id in icons} for a in rows]}
 
 
 @me_router.post("/{app_id}/launch")
 def launch(app_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     a = db.get(Application, app_id)
-    if a is None or not _launchable(a) or not ent.is_entitled(db, a.id, user.id):
+    initiate = _initiate_uri(db, a) if a is not None else None
+    if a is None or not _launchable(a, initiate) or not ent.is_entitled(db, a.id, user.id):
         raise HTTPException(status_code=404, detail="Application not found")  # same answer whether it exists or not
     record(db, AuditAction.APPLICATION_LAUNCHED, request, user, a.id, "application", {"name": a.name})
     db.commit()
-    return {"url": a.launch_url}
+    return {"url": _launch_target(a, initiate)}
 
 
 @me_router.get("/{app_id}/icon")

@@ -29,3 +29,5 @@ export function appBody(a: Pick<AppSummary, "name" | "description" | "sign_on_mo
     launch_url: a.sign_on_mode === "none" ? null : a.launch_url || null, status: a.status, visible: a.visible, require_assignment: a.require_assignment,
   };
 }
+
+export type Template = { id: string; label: string; description: string; client_type: string; needs_redirects: boolean; has_secret: boolean };

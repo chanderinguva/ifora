@@ -73,6 +73,7 @@ class OIDCClient(TenantOwned, Base):
     jwks = Column(JSONB, nullable=True)  # public keys of a private_key_jwt client (inline: no remote fetching, so no SSRF)
     allowed_audiences = Column(JSONB, nullable=False, default=list, server_default="[]")  # service clients: resources they may request
     application_id = Column(Integer, ForeignKey("applications.id", ondelete="SET NULL"), nullable=True)  # the application this client signs users in to (ADR 010)
+    initiate_login_uri = Column(String(2000), nullable=True)  # OIDC third-party initiated login: where My apps sends the user to start the flow
     access_token_format = Column(String(8), nullable=False, default="jwt", server_default="jwt")  # jwt | opaque (opaque = revocable, introspect only)
     grant_types = Column(JSONB, nullable=False)
     created_by = Column(Integer, nullable=True)
