@@ -45,6 +45,11 @@ export default function UsersPage() {
   }, [q, status, page]);
 
   useEffect(() => {
+    const st = new URLSearchParams(window.location.search).get("status");
+    if (st) setStatus(st);
+  }, []);
+
+  useEffect(() => {
     const t = setTimeout(load, 200);
     return () => clearTimeout(t);
   }, [load]);
