@@ -18,10 +18,13 @@ test("SAML application: configure in the UI, then IdP- and SP-initiated sign-in 
   await loginAsAdmin(page);
   const name = `E2E SAML ${Date.now()}`;
   await page.goto("/admin/applications");
-  await page.getByRole("button", { name: /Add application/ }).click();
-  await page.locator("#a-kind").selectOption({ label: "SAML 2.0" });
+  await page.getByRole("button", { name: /Create App Integration/ }).click();
+  await page.getByTestId("method-saml").click();
+  await page.getByTestId("wizard-next").click();
   await page.locator("#a-name").fill(name);
-  await page.getByRole("button", { name: "Create", exact: true }).click();
+  await page.locator("#a-acs").fill(ACS);
+  await page.locator("#a-ent").fill(SP);
+  await page.getByTestId("wizard-create").click();
   await expect(page).toHaveURL(/\/admin\/applications\/(\d+)$/);
   const appId = page.url().split("/").pop()!;
   await expect(page.getByTestId("saml-idp-info")).toContainText("/saml/metadata");
