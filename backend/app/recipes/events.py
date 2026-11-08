@@ -19,6 +19,7 @@ EVENT_TYPES = (
     "user.created", "user.activated", "user.deactivated", "user.updated", "user.attribute_changed",
     "group.member_added", "group.member_removed", "login.failed",
     "user.deleted", "group.created", "group.deleted", "login.succeeded",
+    "session.logout", "mfa.enabled", "mfa.disabled", "password.changed",
 )
 _AUDIT_TO_EVENT = {
     "USER_CREATED": "user.created",
@@ -32,7 +33,13 @@ _AUDIT_TO_EVENT = {
     "GROUP_CREATED": "group.created",
     "GROUP_DELETED": "group.deleted",
     "LOGIN_SUCCESS": "login.succeeded",
+    "LOGOUT": "session.logout",
+    "MFA_ENABLED": "mfa.enabled",
+    "MFA_DISABLED": "mfa.disabled",
+    "USER_PASSWORD_CHANGED": "password.changed",
+    "PASSWORD_RESET_COMPLETED": "password.changed",
 }
+_USER_ONLY = ("session.logout", "mfa.enabled", "mfa.disabled", "password.changed")  # data = the user, from the target
 
 
 def user_snapshot(user) -> Dict[str, Any]:
@@ -107,6 +114,11 @@ def emit_from_audit(db: Session, action, actor, target_id, target_type, metadata
             if user is None:
                 return
             data = {"user": user_snapshot(user), "login": {"method": str(metadata.get("method", ""))}}
+        elif event_type in _USER_ONLY and target_id is not None:
+            user = db.get(User, int(target_id))
+            if user is None:
+                return
+            data = {"user": user_snapshot(user)}
         elif event_type.startswith("user.") and target_id is not None:
             user = db.get(User, int(target_id))
             if user is None:

@@ -84,10 +84,10 @@ async def log_audit(
         metadata=metadata,
     )
     db.add(audit_event)
-    if action == AuditAction.LOGIN_SUCCESS and actor_id is not None:
+    if action in (AuditAction.LOGIN_SUCCESS, AuditAction.LOGOUT) and actor_id is not None:
         from backend.app.recipes.events import emit_from_audit
 
-        emit_from_audit(db, action, None, actor_id, "user", metadata)  # same commit as the audit row
+        emit_from_audit(db, action, None, int(actor_id), "user", metadata)  # same commit as the audit row
     db.commit()
 
 
