@@ -48,8 +48,10 @@ def sign_on_denied(db: Session, client, user_id: int) -> bool:
     if app_id is None:
         return False
     app = db.get(Application, app_id)
-    if app is None:
-        return False
+    return False if app is None else application_denied(db, app, user_id)
+
+
+def application_denied(db: Session, app: "Application", user_id: int) -> bool:
     if app.status != "active":
         return True
     return bool(app.require_assignment) and not is_entitled(db, app.id, user_id)

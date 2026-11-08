@@ -24,6 +24,7 @@ from backend.app.db import get_db
 from backend.app.groups.model import Group
 from backend.app.oidc.models import OIDCClient
 from backend.app.provisioning.models import ProvisioningApp
+from backend.app.saml.models import SamlProvider
 from backend.app.users.model import User
 
 router = APIRouter(prefix="/admin/applications", tags=["applications"])
@@ -62,12 +63,14 @@ def _checked(body: AppBody) -> Optional[str]:
 
 def _dict(db: Session, a: Application) -> dict:
     client = db.query(OIDCClient).filter(OIDCClient.application_id == a.id).first()
+    saml = db.query(SamlProvider).filter(SamlProvider.application_id == a.id).first()
     prov = db.query(ProvisioningApp).filter(ProvisioningApp.application_id == a.id).first()
     n = lambda q: q.scalar() or 0  # noqa: E731
     return {
         "id": a.id, "public_id": a.public_id, "name": a.name, "description": a.description, "sign_on_mode": a.sign_on_mode,
         "launch_url": a.launch_url, "status": a.status, "visible": a.visible, "require_assignment": a.require_assignment,
         "oidc_client": {"id": client.id, "client_id": client.client_id, "name": client.name, "client_type": client.client_type} if client else None,
+        "saml": {"sp_entity_id": saml.sp_entity_id, "acs_url": saml.acs_url} if saml else None,
         "provisioning": {"id": prov.id, "kind": prov.kind, "enabled": prov.enabled} if prov else None,
         "has_icon": db.get(ApplicationIcon, a.id) is not None,
         "assigned_users": n(db.query(func.count(ApplicationAssignment.id)).filter(ApplicationAssignment.application_id == a.id, ApplicationAssignment.user_id.is_not(None))),
@@ -172,6 +175,8 @@ def update_application(app_id: int, body: AppBody, request: Request, db: Session
     url = _checked(body)
     if body.sign_on_mode == "oidc" and not db.query(OIDCClient.id).filter(OIDCClient.application_id == a.id).first() and a.sign_on_mode != "oidc":
         pass  # allowed: the client is attached next
+    if body.sign_on_mode != "saml" and db.query(SamlProvider.id).filter(SamlProvider.application_id == a.id).first():
+        raise HTTPException(status_code=409, detail="Remove the SAML configuration before changing the sign-on mode")
     if body.sign_on_mode != "oidc" and db.query(OIDCClient.id).filter(OIDCClient.application_id == a.id).first():
         raise HTTPException(status_code=409, detail="Detach the OIDC client before changing the sign-on mode")
     a.name, a.description, a.sign_on_mode, a.launch_url = body.name.strip(), body.description, body.sign_on_mode, url
@@ -370,20 +375,29 @@ def remove_assignment(app_id: int, assignment_id: int, request: Request, db: Ses
 
 # ---- My apps (any signed-in user) --------------------------------------------------------------------------------
 
+SAML_FACET = "saml"  # marker: the application has a SAML provider, launched through the UI continue page
+
+
 def _initiate_uri(db: Session, a: Application) -> Optional[str]:
+    if a.sign_on_mode == "saml":
+        return SAML_FACET if db.query(SamlProvider.id).filter(SamlProvider.application_id == a.id).first() else None
     if a.sign_on_mode != "oidc":
         return None
     return db.query(OIDCClient.initiate_login_uri).filter(OIDCClient.application_id == a.id).scalar()
 
 
 def _launchable(a: Application, initiate: Optional[str] = None) -> bool:
-    return a.status == "active" and a.visible and a.sign_on_mode in ("bookmark", "oidc") and bool(a.launch_url or initiate)
+    return a.status == "active" and a.visible and a.sign_on_mode in ("bookmark", "oidc", "saml") and bool(a.launch_url or initiate)
 
 
 def _launch_target(a: Application, initiate: Optional[str]) -> str:
     """Bookmarks open the URL. An OIDC app with an initiate-login URI gets OIDC "third-party initiated login" (Core 1.0
     section 4 of the OIDC Third Party Initiated Login spec): iss (+ target_link_uri); the app then starts a normal
     authorization-code flow with its own state and PKCE, so nothing sensitive is in the URL and no unsolicited response exists."""
+    if a.sign_on_mode == "saml":
+        from backend.app.saml.routes import ui_base
+
+        return f"{ui_base()}/saml/continue?app={a.id}"
     if a.sign_on_mode == "oidc" and initiate:
         q = {"iss": settings.OIDC_ISSUER}
         if a.launch_url:

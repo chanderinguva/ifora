@@ -1,2 +1,3 @@
 -r requirements.txt
 pytest>=8.0
+python3-saml>=1.16.0  # independent SAML SP validator used by the interop tests only

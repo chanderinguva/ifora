@@ -27,6 +27,9 @@ def purge(db: Session, now: Optional[datetime] = None) -> dict:
         out["pending_requests"] = db.execute(
             delete(PendingAuthRequest).where(PendingAuthRequest.expires_at < now - GRACE)
         ).rowcount
+        from backend.app.saml.models import SamlPendingRequest
+
+        out["saml_pending_requests"] = db.execute(delete(SamlPendingRequest).where(SamlPendingRequest.expires_at < now - GRACE)).rowcount
         out["access_tokens"] = db.execute(delete(AccessToken).where(AccessToken.expires_at < now - GRACE)).rowcount
         out["refresh_tokens"] = db.execute(
             delete(RefreshToken).where(RefreshToken.absolute_expires_at < now)

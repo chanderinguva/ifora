@@ -73,11 +73,12 @@ export default function Applications() {
             <select id="a-kind" className={fieldClass} value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
               <option value="bookmark">Bookmark (a link on the user&apos;s My apps page)</option>
               {templates.map((t) => <option key={t.id} value={t.id}>OIDC · {t.label}</option>)}
+              <option value="saml">SAML 2.0</option>
               <option value="none">Provisioning only (no sign-on)</option>
             </select>
             {tpl && <p className="text-xs text-muted-foreground">{tpl.description}</p>}</div>
           <div className="space-y-1"><Label htmlFor="a-name">Name</Label><Input id="a-name" value={form.name} maxLength={100} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
-          {form.kind !== "none" && form.kind !== "service" && (
+          {form.kind !== "none" && form.kind !== "service" && form.kind !== "saml" && (
             <div className="space-y-1"><Label htmlFor="a-url">Launch URL{form.kind === "bookmark" ? "" : " (home page, optional)"}</Label>
               <Input id="a-url" placeholder="https://app.example.com/" value={form.launch_url} onChange={(e) => setForm({ ...form, launch_url: e.target.value })} /></div>
           )}
