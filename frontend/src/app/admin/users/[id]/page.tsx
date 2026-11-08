@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Badge, PageHeader, fmt } from "@/components/bits";
 import { useCurrentUser } from "@/components/auth-guard";
 import { http } from "@/lib/http";
+import { UserActivity, UserApplications } from "@/components/user-tabs";
 import { AttrField, fromApi, toApi } from "@/components/attr-field";
 import { USER_STATUSES, statusTone, type ProfileAttribute, type User } from "@/lib/types";
 
@@ -25,6 +26,7 @@ export default function UserDetail() {
   const [schema, setSchema] = useState<ProfileAttribute[]>([]);
   const [attrs, setAttrs] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [tab, setTab] = useState<"profile" | "applications" | "activity">("profile");
   const [newPw, setNewPw] = useState("");
   const [requireChange, setRequireChange] = useState(false);
 
@@ -104,6 +106,15 @@ export default function UserDetail() {
         </Alert>
       )}
 
+      <div role="tablist" aria-label="User sections" className="mb-6 flex gap-1 border-b">
+        {([["profile", "Profile"], ["applications", "Applications"], ["activity", "Activity"]] as const).map(([k, l]) => (
+          <button key={k} role="tab" type="button" aria-selected={tab === k} data-testid={`utab-${k}`} onClick={() => setTab(k)}
+            className={`-mb-px border-b-2 px-4 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${tab === k ? "border-primary font-medium" : "border-transparent text-muted-foreground hover:text-foreground"}`}>{l}</button>
+        ))}
+      </div>
+      {tab === "applications" && <UserApplications userId={user.id} />}
+      {tab === "activity" && <UserActivity userId={user.id} />}
+      {tab === "profile" && (<>
       <Card className="mb-6">
         <CardHeader><CardTitle>Account</CardTitle></CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2">
@@ -276,6 +287,7 @@ export default function UserDetail() {
           </CardContent>
         </Card>
       )}
+      </>)}
     </div>
   );
 }

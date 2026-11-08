@@ -24,6 +24,19 @@ export default function UsersPage() {
   const [page, setPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [picked, setPicked] = useState<Set<number>>(new Set());
+  const [note, setNote] = useState<string | null>(null);
+  const toggle = (id: number) => setPicked((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  async function bulk(action: string) {
+    setNote(null);
+    try {
+      const r = await http<{ done: number; results: { user_id: number; ok: boolean; reason?: string }[] }>("/admin/users/bulk", { method: "POST", body: { user_ids: [...picked], action } });
+      const skipped = r.results.filter((x) => !x.ok);
+      setNote(`${r.done} user${r.done === 1 ? "" : "s"} updated${skipped.length ? `; ${skipped.length} skipped (${[...new Set(skipped.map((x) => x.reason))].join("; ")})` : ""}`);
+      setPicked(new Set());
+      load();
+    } catch (e) { setError(e instanceof Error ? e.message : "Failed"); }
+  }
 
   const load = useCallback(() => {
     http<Page<User>>(`/admin/users${qs({ q, status, page, page_size: PAGE_SIZE })}`)
@@ -85,11 +98,25 @@ export default function UsersPage() {
         </Alert>
       )}
 
+      {note && <Alert className="mb-4" role="status" data-testid="bulk-note"><AlertDescription>{note}</AlertDescription></Alert>}
+      {picked.size > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border bg-accent/40 p-2 text-sm" data-testid="bulk-bar">
+          <span className="px-2 font-medium">{picked.size} selected</span>
+          {([["activate", "Activate"], ["suspend", "Suspend"], ["unsuspend", "Unsuspend"], ["unlock", "Unlock"], ["deactivate", "Deactivate"]] as const).map(([a, l]) => (
+            <Button key={a} size="sm" variant={a === "deactivate" ? "destructive" : "outline"} data-testid={`bulk-${a}`}
+              onClick={() => { if (a !== "deactivate" || confirm(`Deactivate ${picked.size} user(s)? Sessions end and they are removed from all groups.`)) bulk(a); }}>{l}</Button>
+          ))}
+          <Button size="sm" variant="ghost" onClick={() => setPicked(new Set())}>Clear</Button>
+        </div>
+      )}
+
       <Card>
         <CardContent className="overflow-x-auto p-0">
           <table className="w-full" data-testid="users-table">
             <thead className="border-b">
               <tr>
+                <th className={th + " w-10"}><input type="checkbox" aria-label="Select all on this page" checked={!!data && data.items.length > 0 && data.items.every((u) => picked.has(u.id))}
+                  onChange={(e) => setPicked(e.target.checked && data ? new Set(data.items.map((u) => u.id)) : new Set())} /></th>
                 <th className={th}>Name</th>
                 <th className={th}>Email</th>
                 <th className={th}>Role</th>
@@ -100,6 +127,7 @@ export default function UsersPage() {
             <tbody>
               {data?.items.map((u) => (
                 <tr key={u.id} className="border-b last:border-0 hover:bg-accent/30">
+                  <td className={td}><input type="checkbox" aria-label={`Select ${u.email}`} checked={picked.has(u.id)} onChange={() => toggle(u.id)} /></td>
                   <td className={td}>
                     <Link className="font-medium underline-offset-4 hover:underline" href={`/admin/users/${u.id}`}>
                       {u.first_name} {u.last_name}
@@ -117,7 +145,7 @@ export default function UsersPage() {
               ))}
               {data && data.items.length === 0 && (
                 <tr>
-                  <td className={td} colSpan={5}>No users match.</td>
+                  <td className={td} colSpan={6}>No users match.</td>
                 </tr>
               )}
             </tbody>
