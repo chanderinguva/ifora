@@ -152,9 +152,9 @@ def _need(db: Session, rid: int, actor: User, level: str) -> Recipe:
     return r
 
 
-def _validated(db: Session, definition: Any, for_publish: bool = False) -> dict:
+def _validated(db: Session, definition: Any, for_publish: bool = False, actor: Optional[User] = None) -> dict:
     try:
-        return defn.validate_definition(db, definition, for_publish=for_publish)
+        return defn.validate_definition(db, definition, for_publish=for_publish, actor=actor)
     except defn.DefinitionError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -188,6 +188,10 @@ TRIGGER_INFO = {
     "group.created": ("A group is created", "Fires when an administrator creates a group."),
     "group.deleted": ("A group is deleted", "Fires when an administrator deletes a group."),
     "login.succeeded": ("A sign-in succeeds", "Fires after a completed sign-in (password and any second factor)."),
+    "session.logout": ("A user signs out", "Fires when a user ends their own session."),
+    "mfa.enabled": ("Multi-factor is turned on", "Fires when a user enables an authenticator app."),
+    "mfa.disabled": ("Multi-factor is turned off", "Fires when a user disables their authenticator app."),
+    "password.changed": ("A password changes", "Fires on a self-service change, an administrator reset, or a completed reset or invitation link."),
     "schedule": ("On a schedule", "Runs every N minutes (5 to 1440)."),
     "manual": ("Run manually", "Started by an administrator with the Run button."),
     "webhook": ("An external system calls a webhook", "Signed with a per-recipe secret (HMAC-SHA256)."),
@@ -391,7 +395,7 @@ def list_recipes(db: Session = Depends(get_db), actor: User = Depends(require_ad
 def _create(db: Session, actor: User, request: Request, name: str, description: Optional[str], definition: Any, meta: Optional[dict] = None) -> Recipe:
     if db.query(func.count(Recipe.id)).scalar() >= settings.RECIPES_MAX_RECIPES:
         raise HTTPException(status_code=409, detail=f"At most {settings.RECIPES_MAX_RECIPES} recipes")
-    d = _validated(db, definition)
+    d = _validated(db, definition, actor=actor)
     r = Recipe(public_id=secrets.token_urlsafe(16).replace("-", "a").replace("_", "b")[:22], name=name.strip(),
                description=description, enabled=False, draft=d, created_by=actor.id, owner_id=actor.id, editors=[])
     db.add(r)
@@ -530,7 +534,7 @@ def get_recipe(recipe_id: int, db: Session = Depends(get_db), actor: User = Depe
 def update_recipe(recipe_id: int, body: RecipeBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
     r = _need(db, recipe_id, actor, "edit")
     if body.definition is not None:
-        r.draft = _validated(db, body.definition)
+        r.draft = _validated(db, body.definition, actor=actor)
     r.name, r.description, r.updated_at = body.name.strip(), body.description, NOW()
     try:
         db.flush()
@@ -561,7 +565,7 @@ def _new_webhook_secret(r: Recipe) -> str:
 @router.post("/{recipe_id}/publish")
 def publish(recipe_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
     r = _need(db, recipe_id, actor, "manage")
-    d = _validated(db, r.draft, for_publish=True)
+    d = _validated(db, r.draft, for_publish=True, actor=actor)
     secret = None
     if d["trigger"]["type"] == "webhook":
         if not crypto.available():
@@ -687,7 +691,7 @@ def _sample_trigger(db: Session, d: dict, body: RunBody, admin: User) -> dict:
 def test_run(recipe_id: int, body: RunBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
     """Dry run of the DRAFT: nothing is written and no request is sent."""
     r = _need(db, recipe_id, actor, "edit")
-    d = _validated(db, r.draft)
+    d = _validated(db, r.draft, actor=actor)
     ctx = _sample_trigger(db, d, body, actor)
     _audit(db, AuditAction.RECIPE_TEST_RUN, actor, r.id, {"trigger": d["trigger"]["type"]}, request)
     job = engine.run_dry(db, r, d, ctx)
@@ -726,10 +730,16 @@ class ConnectionBody(BaseModel):
     token_url: Optional[str] = Field(None, max_length=2000)
     scope: Optional[str] = Field(None, max_length=500)
     secret: Optional[str] = Field(None, min_length=1, max_length=2000)
+    allowed_users: Optional[List[int]] = Field(None, max_length=50)  # admin ids; empty/None = every administrator
 
 
-def _conn_dict(c: RecipeConnection) -> dict:
+def _conn_dict(c: RecipeConnection, viewer: Optional[User] = None) -> dict:
+    from backend.app.recipes import access
+
+    manage = viewer is None or access.can_manage_connection(viewer, c)
     return {  # the secret is never part of any response
+        "restricted": access.restricted(c), "can_use": viewer is None or access.can_use_connection(viewer, c),
+        "can_manage": manage, "allowed_users": (c.allowed_users or []) if manage else None,
         "id": c.id, "name": c.name, "kind": c.kind, "header_name": c.header_name, "allowed_host": c.allowed_host,
         "allowed_paths": c.allowed_paths or [], "client_id": c.client_id, "token_url": c.token_url, "scope": c.scope,
         "has_secret": True, "created_at": c.created_at.isoformat(), "updated_at": c.updated_at.isoformat(),
@@ -782,9 +792,20 @@ def _apply_extras(c: RecipeConnection, body: ConnectionBody) -> None:
     c.client_id, c.token_url, c.scope = (body.client_id, body.token_url, body.scope or None) if oauth else (None, None, None)
 
 
+def _acl_ids(db: Session, ids: Optional[List[int]]) -> Optional[List[int]]:
+    """Validate the allow-list: every id must be an administrator of this tenant. Empty means no restriction."""
+    ids = sorted(set(ids or []))
+    if not ids:
+        return None
+    found = {u for (u,) in db.query(User.id).filter(User.id.in_(ids), User.is_admin.is_(True)).all()}
+    if found != set(ids):
+        raise HTTPException(status_code=422, detail="allowed_users must be administrators")
+    return ids
+
+
 @connections_router.get("")
-def list_connections(db: Session = Depends(get_db), _: User = Depends(require_admin)):
-    return {"items": [_conn_dict(c) for c in db.query(RecipeConnection).order_by(RecipeConnection.id).all()]}
+def list_connections(db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    return {"items": [_conn_dict(c, actor) for c in db.query(RecipeConnection).order_by(RecipeConnection.id).all()]}
 
 
 @connections_router.post("", status_code=201)
@@ -796,6 +817,7 @@ def create_connection(body: ConnectionBody, request: Request, db: Session = Depe
     c = RecipeConnection(name=body.name.strip(), kind=body.kind, header_name=body.header_name if body.kind == "header" else None,
                          allowed_host=host, secret_enc=crypto.encrypt(body.secret), created_by=actor.id)
     _apply_extras(c, body)
+    c.allowed_users = _acl_ids(db, body.allowed_users)
     db.add(c)
     try:
         db.flush()
@@ -804,7 +826,7 @@ def create_connection(body: ConnectionBody, request: Request, db: Session = Depe
         raise HTTPException(status_code=409, detail="Connection name already in use")
     record(db, AuditAction.RECIPE_CONNECTION_CREATED, request, actor, c.id, "recipe_connection", {"name": c.name, "host": host})
     db.commit()
-    return _conn_dict(c)
+    return _conn_dict(c, actor)
 
 
 @connections_router.put("/{cid}")
@@ -812,9 +834,15 @@ def update_connection(cid: int, body: ConnectionBody, request: Request, db: Sess
     c = db.get(RecipeConnection, cid)
     if c is None:
         raise HTTPException(status_code=404, detail="Connection not found")
+    from backend.app.recipes import access
+
+    if not access.can_manage_connection(actor, c):
+        raise HTTPException(status_code=403, detail="Only the creator of this connection or a super admin can change it")
     _need_key()
     host = _conn_checks(body)
     c.name, c.kind, c.allowed_host = body.name.strip(), body.kind, host
+    if body.allowed_users is not None:
+        c.allowed_users = _acl_ids(db, body.allowed_users)
     c.header_name = body.header_name if body.kind == "header" else None
     _apply_extras(c, body)
     rotated = bool(body.secret)
@@ -826,9 +854,10 @@ def update_connection(cid: int, body: ConnectionBody, request: Request, db: Sess
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="Connection name already in use")
-    record(db, AuditAction.RECIPE_CONNECTION_UPDATED, request, actor, c.id, "recipe_connection", {"name": c.name, "secret_rotated": rotated})
+    record(db, AuditAction.RECIPE_CONNECTION_UPDATED, request, actor, c.id, "recipe_connection",
+           {"name": c.name, "secret_rotated": rotated, "restricted": bool(c.allowed_users)})
     db.commit()
-    return _conn_dict(c)
+    return _conn_dict(c, actor)
 
 
 @connections_router.delete("/{cid}")
@@ -836,6 +865,10 @@ def delete_connection(cid: int, request: Request, db: Session = Depends(get_db),
     c = db.get(RecipeConnection, cid)
     if c is None:
         raise HTTPException(status_code=404, detail="Connection not found")
+    from backend.app.recipes import access
+
+    if not access.can_manage_connection(actor, c):
+        raise HTTPException(status_code=403, detail="Only the creator of this connection or a super admin can delete it")
     name = c.name
     db.delete(c)
     record(db, AuditAction.RECIPE_CONNECTION_DELETED, request, actor, cid, "recipe_connection", {"name": name})

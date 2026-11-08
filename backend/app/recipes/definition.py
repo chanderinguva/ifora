@@ -31,6 +31,7 @@ EVENT_TRIGGERS = (
     "user.created", "user.activated", "user.deactivated", "user.updated", "user.attribute_changed",
     "group.member_added", "group.member_removed", "login.failed",
     "user.deleted", "group.created", "group.deleted", "login.succeeded",
+    "session.logout", "mfa.enabled", "mfa.disabled", "password.changed",
 )
 TRIGGER_TYPES = EVENT_TRIGGERS + ("schedule", "manual", "webhook")
 ACTION_TYPES = (
@@ -75,7 +76,8 @@ class _TrigSchedule(_Cfg):
 
 TRIGGER_CFG = {
     **{t: _TrigNone for t in ("user.created", "user.activated", "user.deactivated", "user.updated", "manual", "webhook",
-                              "user.deleted", "group.created", "group.deleted", "login.succeeded")},
+                              "user.deleted", "group.created", "group.deleted", "login.succeeded",
+                              "session.logout", "mfa.enabled", "mfa.disabled", "password.changed")},
     "group.member_added": _TrigGroup, "group.member_removed": _TrigGroup,
     "user.attribute_changed": _TrigAttribute, "login.failed": _TrigLogin, "schedule": _TrigSchedule,
 }
@@ -168,6 +170,7 @@ TRIGGER_FIELDS = {
     "group.deleted": _COMMON + _GROUP,
     "user.deleted": _COMMON + [("trigger.user.id", "User id"), ("trigger.user.email", "User email")],
     "login.succeeded": _COMMON + _USER + [("trigger.login.method", "Sign-in method")],
+    **{t: _COMMON + _USER for t in ("session.logout", "mfa.enabled", "mfa.disabled", "password.changed")},
     "login.failed": _COMMON + _USER + [("trigger.login.consecutive_failures", "Consecutive failures")],
     "schedule": _COMMON + [("trigger.schedule.scheduled_for", "Scheduled for")],
     "manual": _COMMON + _USER + [("trigger.manual.started_by", "Started by (admin id)")],
@@ -176,7 +179,7 @@ TRIGGER_FIELDS = {
 _DYNAMIC_PREFIXES = {  # any suffix is allowed below these
     "trigger.user.attributes.": ("user.created", "user.activated", "user.deactivated", "user.updated",
                                  "user.attribute_changed", "group.member_added", "group.member_removed",
-                                 "login.failed", "login.succeeded", "manual"),
+                                 "login.failed", "login.succeeded", "session.logout", "mfa.enabled", "mfa.disabled", "password.changed", "manual"),
     "trigger.payload.": ("manual", "webhook"),
 }
 STEP_OUTPUTS = {
@@ -268,7 +271,7 @@ def _pyd(model, data, where):
         raise DefinitionError(f"{where}: {loc + ': ' if loc else ''}{err['msg']}")
 
 
-def validate_definition(db: Session, definition: Any, *, for_publish: bool = False) -> Dict[str, Any]:
+def validate_definition(db: Session, definition: Any, *, for_publish: bool = False, actor=None) -> Dict[str, Any]:
     """Return the normalised definition or raise DefinitionError."""
     import json
 
@@ -337,7 +340,7 @@ def validate_definition(db: Session, definition: Any, *, for_publish: bool = Fal
             if name is not None and (not isinstance(name, str) or len(name) > 100):
                 raise DefinitionError(f"{where}: name is too long")
             try:
-                _check_step(db, stype, cfg, ttype, dict(seen), managed, taint, where, mode["handler"], mode["loop"])
+                _check_step(db, stype, cfg, ttype, dict(seen), managed, taint, where, mode["handler"], mode["loop"], actor)
             except tpl.TemplateError as e:
                 raise DefinitionError(f"{where}: {e}")
             node = {"id": sid, "type": stype, "name": name, "config": cfg, "on_error": on_error, "max_attempts": attempts}
@@ -398,7 +401,19 @@ def validate_definition(db: Session, definition: Any, *, for_publish: bool = Fal
     return out
 
 
-def _check_step(db, stype, cfg, ttype, earlier, managed, taint, where, handler=False, in_loop=False) -> None:
+def _check_connection_use(db, cfg, actor) -> None:
+    from backend.app.recipes.access import can_use_connection
+
+    cid = cfg.get("connection_id")
+    if cid is None or actor is None:
+        return
+    c = db.get(RecipeConnection, cid)
+    if c is not None and not can_use_connection(actor, c):
+        raise tpl.TemplateError(f"you are not allowed to use the connection '{c.name}'")
+
+
+def _check_step(db, stype, cfg, ttype, earlier, managed, taint, where, handler=False, in_loop=False, actor=None) -> None:
+    _check_connection_use(db, cfg, actor)
     if stype in ("condition",):
         return
     for p in tpl.all_pills({k: v for k, v in cfg.items() if k != "connection_id"}):
