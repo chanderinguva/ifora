@@ -11,7 +11,7 @@ Status: **Done** / **Partial** / **Todo**. Work in order; each phase is one PR.
 | Directory > Groups | Rules, push groups, role assignment | Partial: groups, rules; Todo: group detail tabs (People, Applications, Admin roles) |
 | Directory > Profile Editor | User/app profile, mappings | Partial: user profile; Todo: per-app profile + attribute mapping UI |
 | Directory > Directory Integrations | AD/LDAP agents | Todo (out of scope until a connector is needed) |
-| Applications > Applications | Create App Integration wizard, catalog, tabs (General, Sign On, Assignments, Provisioning, Push Groups, Import) | **This PR**: wizard (method > type > settings). Partial: tabs exist as one page; Todo: tabbed app page, catalog |
+| Applications > Applications | Create App Integration wizard, catalog, tabs (General, Sign On, Assignments, Provisioning, Push Groups, Import) | Done: wizard, tabbed page, 16-entry bookmark catalog. Todo: SSO-capable catalog entries, Push Groups, Import |
 | Applications > Self Service | Request/approve | Todo |
 | Security > Authenticators | Enrol policy per factor | Partial: TOTP, passkeys; Todo: factor catalogue, email OTP |
 | Security > Authentication policies | Per-app sign-on policy: network, group, device, factor, re-auth frequency | Todo (largest gap) |
