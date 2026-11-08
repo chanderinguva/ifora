@@ -27,8 +27,11 @@ class ProvisioningApp(TenantOwned, Base):
     description = Column(String(500), nullable=True)
     kind = Column(String(8), nullable=False)  # scim | rest (gateway)
     base_url = Column(String(2000), nullable=False)
-    auth_type = Column(String(16), nullable=False)  # bearer | basic | header
+    auth_type = Column(String(16), nullable=False)  # bearer | basic | header | oauth2
     header_name = Column(String(100), nullable=True)
+    token_url = Column(String(2000), nullable=True)  # oauth2 (client credentials)
+    client_id = Column(String(255), nullable=True)
+    scope = Column(String(500), nullable=True)
     secret_enc = Column(Text, nullable=False)  # bearer token, header value, or "user:password"; never returned
     enabled = Column(Boolean, nullable=False, default=False, server_default="false")
     options = Column(JSONB, nullable=False, default=dict)  # push_new_users, push_updates, push_groups, deactivate, update_style, user_identifier

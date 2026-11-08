@@ -46,6 +46,10 @@ def create_app() -> FastAPI:
     )
 
     # Health check endpoint
+    from backend.app.metrics import router as metrics_router
+
+    app.include_router(metrics_router)
+
     @app.get("/health", include_in_schema=False)
     async def health():
         """Health check endpoint."""

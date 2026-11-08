@@ -9,18 +9,20 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge, PageHeader, fieldClass, td, th } from "@/components/bits";
 import { RecipeTabs } from "@/components/recipe-bits";
-import { http } from "@/lib/http";
+import { http, qs, type Page } from "@/lib/http";
 import type { Connection } from "@/lib/recipes";
+import type { User } from "@/lib/types";
 
 type Kind = Connection["kind"];
-type Draft = { id?: number; name: string; kind: Kind; header_name: string; allowed_host: string; paths: string; client_id: string; token_url: string; scope: string; secret: string };
-const empty = (): Draft => ({ name: "", kind: "bearer", header_name: "X-Api-Key", allowed_host: "", paths: "", client_id: "", token_url: "", scope: "", secret: "" });
+type Draft = { id?: number; name: string; kind: Kind; header_name: string; allowed_host: string; paths: string; client_id: string; token_url: string; scope: string; secret: string; allowed_users: number[] };
+const empty = (): Draft => ({ name: "", kind: "bearer", header_name: "X-Api-Key", allowed_host: "", paths: "", client_id: "", token_url: "", scope: "", secret: "", allowed_users: [] });
 const KIND_LABEL: Record<Kind, string> = { bearer: "Bearer token", header: "Custom header", oauth2_client_credentials: "OAuth2 client credentials", slack_webhook: "Slack webhook" };
 
 export default function ConnectionsPage() {
   const [items, setItems] = useState<Connection[] | null>(null);
   const [available, setAvailable] = useState(true);
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [admins, setAdmins] = useState<User[]>([]);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const load = useCallback(() => {
@@ -28,6 +30,7 @@ export default function ConnectionsPage() {
     http<{ items: Connection[] }>("/admin/recipe-connections").then((r) => setItems(r.items)).catch((e) => setMsg({ ok: false, text: e.message }));
   }, []);
   useEffect(load, [load]);
+  useEffect(() => { http<Page<User>>(`/admin/users${qs({ page_size: 100 })}`).then((p) => setAdmins(p.items.filter((u) => u.is_admin))).catch(() => {}); }, []);
 
   async function run(fn: () => Promise<unknown>, ok: string) {
     setMsg(null);
@@ -68,6 +71,18 @@ export default function ConnectionsPage() {
                 <textarea id="c-paths" rows={3} className={fieldClass} value={draft.paths} onChange={(e) => setDraft({ ...draft, paths: e.target.value })} />
                 <p className="text-xs text-muted-foreground">Empty = any path on the host. A prefix matches that path and everything below it.</p></div>
             )}
+            <fieldset className="space-y-1 sm:col-span-2" data-testid="connection-acl">
+              <legend className="text-sm font-medium">Who can use this connection in recipes</legend>
+              <p className="text-xs text-muted-foreground">Nobody ticked = every administrator. Otherwise only the ticked administrators, its creator and super admins can attach it to a recipe step, and only the creator or a super admin can change or delete it.</p>
+              <div className="flex flex-wrap gap-x-4 gap-y-1">
+                {admins.map((u) => (
+                  <label key={u.id} className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={draft.allowed_users.includes(u.id)}
+                      onChange={(e) => setDraft({ ...draft, allowed_users: e.target.checked ? [...draft.allowed_users, u.id] : draft.allowed_users.filter((x) => x !== u.id) })} /> {u.email}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
             <div className="space-y-1 sm:col-span-2"><Label htmlFor="c-secret">{draft.id ? "New secret (leave empty to keep the current one)" : draft.kind === "slack_webhook" ? "Webhook URL" : draft.kind === "oauth2_client_credentials" ? "Client secret" : "Secret"}</Label>
               <Input id="c-secret" type="password" autoComplete="off" value={draft.secret} onChange={(e) => setDraft({ ...draft, secret: e.target.value })} /></div>
           </div>
@@ -76,7 +91,7 @@ export default function ConnectionsPage() {
               const body = { name: draft.name, kind: draft.kind, header_name: draft.kind === "header" ? draft.header_name : null, allowed_host: draft.allowed_host,
                 allowed_paths: draft.kind === "slack_webhook" ? null : draft.paths.split("\n").map((p) => p.trim()).filter(Boolean),
                 client_id: draft.kind === "oauth2_client_credentials" ? draft.client_id : null, token_url: draft.kind === "oauth2_client_credentials" ? draft.token_url : null,
-                scope: draft.kind === "oauth2_client_credentials" ? draft.scope || null : null, secret: draft.secret || null };
+                scope: draft.kind === "oauth2_client_credentials" ? draft.scope || null : null, secret: draft.secret || null, allowed_users: draft.allowed_users };
               if (draft.id) await http(`/admin/recipe-connections/${draft.id}`, { method: "PUT", body }); else await http("/admin/recipe-connections", { method: "POST", body });
               setDraft(null);
             }, "Connection saved")}>Save connection</Button>
@@ -91,12 +106,12 @@ export default function ConnectionsPage() {
           <tbody>
             {items?.map((c) => (
               <tr key={c.id} className="border-b last:border-0">
-                <td className={td + " font-medium"}>{c.name}</td><td className={td}>{c.allowed_host}</td>
+                <td className={td + " font-medium"}>{c.name}{c.restricted && <> <Badge tone="info">restricted</Badge></>}</td><td className={td}>{c.allowed_host}</td>
                 <td className={td}>{c.kind === "header" ? c.header_name : KIND_LABEL[c.kind]}{c.allowed_paths && c.allowed_paths.length > 0 && <div className="text-xs text-muted-foreground">paths: {c.allowed_paths.join(", ")}</div>}</td>
                 <td className={td}><Badge tone="good">stored, hidden</Badge></td>
                 <td className={td + " space-x-2 whitespace-nowrap text-right"}>
-                  <Button size="sm" variant="outline" onClick={() => setDraft({ id: c.id, name: c.name, kind: c.kind, header_name: c.header_name ?? "X-Api-Key", allowed_host: c.allowed_host, paths: (c.allowed_paths ?? []).join("\n"), client_id: c.client_id ?? "", token_url: c.token_url ?? "", scope: c.scope ?? "", secret: "" })}>Edit</Button>
-                  <Button size="sm" variant="outline" onClick={() => { if (confirm(`Delete connection "${c.name}"? Recipes using it will fail until updated.`)) run(() => http(`/admin/recipe-connections/${c.id}`, { method: "DELETE" }), "Connection deleted"); }}>Delete</Button>
+                  <Button size="sm" variant="outline" disabled={c.can_manage === false} title={c.can_manage === false ? "Only its creator or a super admin can change this" : ""} onClick={() => setDraft({ id: c.id, name: c.name, kind: c.kind, header_name: c.header_name ?? "X-Api-Key", allowed_host: c.allowed_host, paths: (c.allowed_paths ?? []).join("\n"), client_id: c.client_id ?? "", token_url: c.token_url ?? "", scope: c.scope ?? "", secret: "", allowed_users: c.allowed_users ?? [] })}>Edit</Button>
+                  <Button size="sm" variant="outline" disabled={c.can_manage === false} onClick={() => { if (confirm(`Delete connection "${c.name}"? Recipes using it will fail until updated.`)) run(() => http(`/admin/recipe-connections/${c.id}`, { method: "DELETE" }), "Connection deleted"); }}>Delete</Button>
                 </td>
               </tr>
             ))}

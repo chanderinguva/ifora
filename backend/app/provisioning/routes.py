@@ -1,6 +1,7 @@
 """Admin API for outbound provisioning apps (ADR 009). Reading and assignments: any admin. Creating, changing,
 testing, syncing and deleting an app (it holds a credential and chooses where user data goes): super admins."""
 
+import ipaddress
 from urllib.parse import urlsplit
 import uuid
 from datetime import datetime, timezone
@@ -56,7 +57,10 @@ class AppBody(BaseModel):
     description: Optional[str] = Field(None, max_length=500)
     kind: str = Field(..., pattern="^(scim|rest)$")
     base_url: str = Field(..., min_length=8, max_length=2000)
-    auth_type: str = Field(..., pattern="^(bearer|basic|header)$")
+    auth_type: str = Field(..., pattern="^(bearer|basic|header|oauth2)$")
+    token_url: Optional[str] = Field(None, max_length=2000)  # oauth2
+    client_id: Optional[str] = Field(None, max_length=255)
+    scope: Optional[str] = Field(None, max_length=500)
     header_name: Optional[str] = Field(None, max_length=100)
     secret: Optional[str] = Field(None, min_length=1, max_length=2000)  # required on create; blank on update keeps the old one
     enabled: Optional[bool] = None
@@ -78,7 +82,6 @@ def _checked(db: Session, body: AppBody) -> Dict[str, Any]:
         raise HTTPException(status_code=422, detail=f"base_url: {e}")
     pol = adapters.http_overrides.get("policy") or hc.EgressPolicy.from_settings()
     try:
-        import ipaddress
         literal = ipaddress.ip_address(host.strip("[]"))
     except ValueError:
         literal = None
@@ -92,6 +95,21 @@ def _checked(db: Session, body: AppBody) -> Dict[str, Any]:
         h = (body.header_name or "").strip()
         if not h or h.lower() in ("host", "content-length", "content-type", "transfer-encoding", "connection"):
             raise HTTPException(status_code=422, detail="a usable header_name is required for header authentication")
+    if body.auth_type == "oauth2":
+        if not body.client_id or not body.token_url:
+            raise HTTPException(status_code=422, detail="client_id and token_url are required for OAuth2")
+        try:
+            t_scheme, t_host, _p, _x = hc.validate_url(body.token_url.strip(), pol)
+        except hc.EgressBlocked as e:
+            raise HTTPException(status_code=422, detail=f"token_url: {e}")
+        if t_scheme != "https" or t_host.lower() in ("localhost", "localhost.localdomain"):
+            raise HTTPException(status_code=422, detail="token_url must be a public https URL")
+        try:
+            tl = ipaddress.ip_address(t_host.strip("[]"))
+            if not hc.ip_allowed(str(tl), pol):
+                raise HTTPException(status_code=422, detail="token_url must be a public https URL")
+        except ValueError:
+            pass
     if body.auth_type == "basic" and body.secret and ":" not in body.secret:
         raise HTTPException(status_code=422, detail="basic authentication needs the secret as user:password")
     try:
@@ -108,7 +126,7 @@ def _dict(db: Session, a: ProvisioningApp) -> dict:
     cnt = lambda q: q.scalar() or 0  # noqa: E731
     return {
         "id": a.id, "public_id": a.public_id, "name": a.name, "description": a.description, "kind": a.kind,
-        "base_url": a.base_url, "auth_type": a.auth_type, "header_name": a.header_name, "has_secret": True,
+        "base_url": a.base_url, "auth_type": a.auth_type, "header_name": a.header_name, "token_url": a.token_url, "client_id": a.client_id, "scope": a.scope, "has_secret": True,
         "enabled": a.enabled, "options": service.options_of(a), "mapping": a.mapping or [], "rest_config": a.rest_config,
         "last_test": {"at": a.last_test_at.isoformat() if a.last_test_at else None, "ok": a.last_test_ok, "message": a.last_test_message},
         "assigned_users": cnt(db.query(func.count(ProvisioningAssignment.id)).filter(ProvisioningAssignment.app_id == a.id, ProvisioningAssignment.user_id.is_not(None))),
@@ -160,7 +178,8 @@ def create_app(body: AppBody, request: Request, db: Session = Depends(get_db), a
     a = ProvisioningApp(
         public_id=str(uuid.uuid4()), name=body.name.strip(), description=body.description, kind=body.kind, base_url=ck["url"],
         auth_type=body.auth_type, header_name=body.header_name if body.auth_type == "header" else None,
-        secret_enc=crypto.encrypt(body.secret), enabled=False, options=body.options.model_dump(), mapping=ck["rules"],
+        secret_enc=crypto.encrypt(body.secret), enabled=False, token_url=body.token_url if body.auth_type == "oauth2" else None,
+        client_id=body.client_id if body.auth_type == "oauth2" else None, scope=(body.scope or None) if body.auth_type == "oauth2" else None, options=body.options.model_dump(), mapping=ck["rules"],
         rest_config=ck["rest"], created_by=actor.id)
     db.add(a)
     try:
@@ -183,10 +202,14 @@ def update_app(app_id: int, body: AppBody, request: Request, db: Session = Depen
     a = _get(db, app_id)
     _need_key()
     ck = _checked(db, body)
-    connection_changed = (ck["url"], body.auth_type, body.header_name, body.kind) != (a.base_url, a.auth_type, a.header_name, a.kind) or bool(body.secret)
+    oa = body.auth_type == "oauth2"
+    new_oauth = (body.token_url if oa else None, body.client_id if oa else None, (body.scope or None) if oa else None)
+    connection_changed = ((ck["url"], body.auth_type, body.header_name, body.kind) != (a.base_url, a.auth_type, a.header_name, a.kind)
+                          or new_oauth != (a.token_url, a.client_id, a.scope) or bool(body.secret))
     behaviour_changed = (body.options.model_dump(), ck["rules"], ck["rest"]) != (service.options_of(a), a.mapping or [], a.rest_config)
     a.name, a.description, a.kind, a.base_url, a.auth_type = body.name.strip(), body.description, body.kind, ck["url"], body.auth_type
     a.header_name = body.header_name if body.auth_type == "header" else None
+    a.token_url, a.client_id, a.scope = new_oauth
     a.options, a.mapping, a.rest_config = body.options.model_dump(), ck["rules"], ck["rest"]
     if body.secret:
         a.secret_enc = crypto.encrypt(body.secret)
@@ -251,6 +274,21 @@ def sync_app(app_id: int, request: Request, db: Session = Depends(get_db), actor
     record(db, AuditAction.PROVISIONING_SYNC_REQUESTED, request, actor, a.id, "provisioning_app", queued)
     db.commit()
     return {"queued": queued}
+
+
+@router.post("/{app_id}/deprovision-all")
+def deprovision_all(app_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(_super)):
+    """Remove every assignment and queue the work: each provisioned account is deactivated/deleted per the app's policy.
+    Keep the app turned on until the queue is empty; delete it afterwards."""
+    a = _get(db, app_id)
+    if not a.enabled:
+        raise HTTPException(status_code=409, detail="Turn the application on first so the changes can be sent")
+    removed = db.query(ProvisioningAssignment).filter(ProvisioningAssignment.app_id == a.id).delete(synchronize_session=False)
+    db.flush()
+    queued = service.queue_full_sync(db, a)
+    record(db, AuditAction.PROVISIONING_SYNC_REQUESTED, request, actor, a.id, "provisioning_app", {**queued, "deprovision_all": True, "assignments_removed": removed})
+    db.commit()
+    return {"assignments_removed": removed, "queued": queued}
 
 
 @router.get("/{app_id}/preview")

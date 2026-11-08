@@ -85,7 +85,7 @@ def make_app(sa, **over):
 
 
 def body_of(app, **over):
-    keys = ("name", "description", "kind", "base_url", "auth_type", "header_name", "options", "mapping", "rest_config")
+    keys = ("name", "description", "kind", "base_url", "auth_type", "header_name", "token_url", "client_id", "scope", "options", "mapping", "rest_config")
     return {**{k: app[k] for k in keys}, **over}
 
 
@@ -538,3 +538,96 @@ def test_gateway_path_values_are_url_encoded(admin, super_admin, rest):
     run()
     find = [c for c in rest.calls if c[0] == "GET" and c[1] == "/api/users"]
     assert find and rest.users["100"]["email"] == "x.y+z@example.com"
+
+
+# ---- OAuth2 client credentials, deprovision-all ---------------------------------------------------------------
+
+class OAuthWorld:
+    """auth.example.com issues tokens; app.example.com (FakeScim) accepts only the current one."""
+
+    def __init__(self, scim: FakeScim):
+        self.scim, self.issued, self.token_calls, self.refuse = scim, 0, [], False
+
+    def __call__(self, req):
+        host = req.headers.get("host", "")
+        if host.startswith("auth.example.com"):
+            form = parse_qs(req.content.decode())
+            self.token_calls.append({k: v[0] for k, v in form.items()})
+            if self.refuse or form.get("client_secret") != ["s3cr3t"]:
+                return httpx.Response(401, json={"error": "invalid_client"})
+            self.issued += 1
+            self.scim.token = f"at-{self.issued}"
+            return httpx.Response(200, json={"access_token": self.scim.token, "expires_in": 3600, "token_type": "Bearer"})
+        return self.scim(req)
+
+
+@pytest.fixture
+def oauth_world(monkeypatch, rkey):
+    adapters._token_cache.clear()
+    w = OAuthWorld(FakeScim(token="none-yet"))
+    monkeypatch.setattr(adapters, "http_overrides", {"policy": EgressPolicy(), "resolver": public_resolver, "transport": httpx.MockTransport(w)})
+    yield w
+    adapters._token_cache.clear()
+
+
+def make_oauth(sa, **over):
+    return make_app(sa, auth_type="oauth2", secret="s3cr3t", client_id="idf", token_url="https://auth.example.com/oauth/token", scope="scim", **over)
+
+
+def test_oauth_app_gets_a_token_caches_it_and_provisions(db, admin, super_admin, oauth_world):
+    app = enable(super_admin, make_oauth(super_admin))
+    assert app["auth_type"] == "oauth2" and app["client_id"] == "idf" and "s3cr3t" not in json.dumps(app)
+    u = new_user(admin, "una@example.com")
+    assign_user(admin, app, u["id"])
+    run()
+    assert [r["userName"] for r in oauth_world.scim.users.values()] == ["una@example.com"]
+    assert oauth_world.issued == 1 and oauth_world.token_calls[0]["grant_type"] == "client_credentials" and oauth_world.token_calls[0]["scope"] == ["scim"][0]
+
+
+def test_oauth_token_is_refreshed_after_a_401(db, admin, super_admin, oauth_world):
+    app = enable(super_admin, make_oauth(super_admin))
+    u = new_user(admin, "vic@example.com")
+    assign_user(admin, app, u["id"])
+    run()
+    oauth_world.scim.token = "revoked-elsewhere"                     # the app stops accepting the cached token
+    admin.patch(f"/admin/users/{u['id']}", {"profile_attributes": {"title": "New title"}})
+    run()
+    assert oauth_world.issued == 2 and oauth_world.scim.users["r1"]["title"] == "New title"
+
+
+def test_oauth_bad_credentials_fail_the_test_without_leaking(super_admin, oauth_world):
+    app = make_app(super_admin, auth_type="oauth2", secret="wrong-secret", client_id="idf", token_url="https://auth.example.com/oauth/token")
+    r = super_admin.post(f"/admin/provisioning-apps/{app['id']}/test").json()
+    assert r["ok"] is False and "refused the credentials" in r["message"] and "wrong-secret" not in r["message"]
+
+
+def test_oauth_config_is_validated(super_admin, rkey):
+    base = {"name": "o", "kind": "scim", "base_url": BASE, "auth_type": "oauth2", "secret": "s"}
+    post = lambda **o: super_admin.post("/admin/provisioning-apps", {**base, **o})  # noqa: E731
+    assert post().status_code == 422                                                     # client_id/token_url missing
+    assert post(client_id="c", token_url="http://auth.example.com/t").status_code == 422   # https only
+    assert post(client_id="c", token_url="https://10.1.2.3/t").status_code == 422          # private
+    assert post(client_id="c", token_url="https://auth.example.com/t").status_code == 201
+
+
+def test_changing_oauth_settings_turns_provisioning_off(super_admin, oauth_world):
+    app = enable(super_admin, make_oauth(super_admin))
+    r = super_admin.put(f"/admin/provisioning-apps/{app['id']}", body_of(app, token_url="https://auth.example.com/v2/token", client_id="idf", scope="scim")).json()
+    assert r["enabled"] is False and r["last_test"]["ok"] is None
+
+
+def test_deprovision_all_clears_assignments_and_deactivates_everyone(db, admin, super_admin, remote):
+    app = enable(super_admin, make_app(super_admin))
+    gid = new_group(admin, "Everyone")
+    users = [new_user(admin, f"bulk{i}@example.com") for i in range(3)]
+    for u in users:
+        admin.post(f"/admin/groups/{gid}/members", {"user_id": u["id"]})
+    admin.post(f"/admin/provisioning-apps/{app['id']}/assignments", {"group_id": gid})
+    run()
+    assert len(remote.users) == 3 and all(r["active"] for r in remote.users.values())
+    assert admin.post(f"/admin/provisioning-apps/{app['id']}/deprovision-all").status_code == 403
+    r = super_admin.post(f"/admin/provisioning-apps/{app['id']}/deprovision-all").json()
+    assert r["assignments_removed"] == 1
+    run()
+    assert all(not rec["active"] for rec in remote.users.values())
+    assert admin.get(f"/admin/provisioning-apps/{app['id']}").json()["assigned_groups"] == 0

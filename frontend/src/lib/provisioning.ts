@@ -14,8 +14,11 @@ export type ProvApp = {
   description: string | null;
   kind: "scim" | "rest";
   base_url: string;
-  auth_type: "bearer" | "basic" | "header";
+  auth_type: "bearer" | "basic" | "header" | "oauth2";
   header_name: string | null;
+  token_url: string | null;
+  client_id: string | null;
+  scope: string | null;
   enabled: boolean;
   options: ProvOptions;
   mapping: { target: string; source: string }[];
@@ -33,7 +36,7 @@ export type ProvPreset = {
   key: string;
   name: string;
   kind: "scim" | "rest";
-  auth_type: "bearer" | "basic" | "header";
+  auth_type: "bearer" | "basic" | "header" | "oauth2";
   description: string;
   options: Partial<ProvOptions>;
   rest_config?: Record<string, unknown>;
@@ -52,6 +55,6 @@ export const DEFAULT_OPTIONS: ProvOptions = {
 export function toBody(a: ProvApp, over: Record<string, unknown> = {}) {
   return {
     name: a.name, description: a.description, kind: a.kind, base_url: a.base_url, auth_type: a.auth_type,
-    header_name: a.header_name, options: a.options, mapping: a.mapping, rest_config: a.rest_config, ...over,
+    header_name: a.header_name, token_url: a.token_url, client_id: a.client_id, scope: a.scope, options: a.options, mapping: a.mapping, rest_config: a.rest_config, ...over,
   };
 }
