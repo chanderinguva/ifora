@@ -12,6 +12,7 @@ import { Badge, PageHeader, fieldClass } from "@/components/bits";
 import { AppIcon } from "@/components/app-icon";
 import { SamlCard } from "@/components/saml-card";
 import { SwaCard } from "@/components/swa-card";
+import { AuthPolicyCard } from "@/components/auth-policy-card";
 import { http, qs, type Page } from "@/lib/http";
 import { appBody, SIGN_ON_LABEL, type AppSummary } from "@/lib/applications";
 import type { Group, User } from "@/lib/types";
@@ -167,6 +168,7 @@ export default function ApplicationDetail() {
 
       {app.sign_on_mode === "saml" && <SamlCard appId={app.id} onChange={refresh} />}
       {app.sign_on_mode === "swa" && <SwaCard appId={app.id} onChange={refresh} />}
+      {(app.sign_on_mode === "oidc" || app.sign_on_mode === "saml" || app.sign_on_mode === "swa") && <AuthPolicyCard appId={app.id} />}
       {(app.sign_on_mode === "bookmark" || app.sign_on_mode === "none") && <p className="mb-6 text-sm text-muted-foreground" data-testid="no-signon">{app.sign_on_mode === "bookmark" ? "A bookmark app has no single sign-on settings; users open the launch URL set under General." : "This application has no sign-on method; it only provisions users."}</p>}
 
       </>)}

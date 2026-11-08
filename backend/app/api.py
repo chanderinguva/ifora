@@ -157,6 +157,10 @@ def create_app() -> FastAPI:
     app.include_router(saml_public)
     from backend.app.swa.routes import admin_router as swa_admin, api_router as swa_api
 
+    from backend.app.policies.routes import policy_router, zones_router
+
+    app.include_router(zones_router, prefix="/api/v1")
+    app.include_router(policy_router, prefix="/api/v1")  # before applications_router: /{app_id}/policy
     app.include_router(swa_admin, prefix="/api/v1")
     app.include_router(swa_api, prefix="/api/v1")
     app.include_router(applications_router, prefix="/api/v1")

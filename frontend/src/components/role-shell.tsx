@@ -1,6 +1,6 @@
 "use client";
 
-import { LayoutDashboard, Users, Shield, ScrollText, Home, Settings, Workflow, AppWindow, SlidersHorizontal, RefreshCw, Send, Zap, LayoutGrid } from "lucide-react";
+import { LayoutDashboard, Users, Shield, ScrollText, Home, Settings, Workflow, AppWindow, SlidersHorizontal, RefreshCw, Send, Zap, LayoutGrid, Globe } from "lucide-react";
 import { AppShell, type NavGroup } from "./app-shell";
 import { useCurrentUser } from "./auth-guard";
 import { inAdminView } from "@/lib/roles";
@@ -27,7 +27,7 @@ export const ADMIN_NAV: NavGroup[] = [
       { href: "/admin/provisioning", label: "Inbound SCIM", icon: RefreshCw },
     ],
   },
-  { label: "Security", items: [{ href: "/admin/audit", label: "System log", icon: ScrollText }] },
+  { label: "Security", items: [{ href: "/admin/network-zones", label: "Network zones", icon: Globe }, { href: "/admin/audit", label: "System log", icon: ScrollText }] },
   { label: "Account", items: [{ href: "/settings", label: "Account settings", icon: Settings }] },
 ];
 

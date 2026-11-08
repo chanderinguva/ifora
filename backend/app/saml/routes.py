@@ -211,6 +211,12 @@ def _respond(db: Session, request: Request, p: SamlProvider, user: User, session
         record(db, AuditAction.APPLICATION_SAML_SSO, request, user, a.id, "application", {"name": a.name, "result": "denied"})
         db.commit()
         raise HTTPException(status_code=403, detail="You are not assigned to this application")
+    from backend.app.policies import engine as policy
+
+    pd = policy.check(db, request, a.id, user, session)
+    if pd.kind != policy.ALLOW:
+        db.commit()  # keeps the policy-denied audit row
+        raise HTTPException(status_code=403, detail="reauthentication_required" if pd.kind == policy.REAUTH else pd.reason)
     try:
         xml = issue(db, p, user, session, in_response_to)
     except MissingAttributes as e:
@@ -306,8 +312,14 @@ def _peek(db: Session, raw: str) -> Optional[SamlPendingRequest]:
     return None if r is None or r.decided_at is not None or r.expires_at <= _now() else r
 
 
+def _policy_reauth(db: Session, request: Request, a, user, session) -> bool:
+    from backend.app.policies import engine as policy
+
+    return a is not None and policy.wants_reauth(db, request, a.id, user, session)
+
+
 @api_router.get("/requests/{request_id}")
-def get_request(request_id: str, ctx=Depends(get_session_and_user), db: Session = Depends(get_db)):
+def get_request(request_id: str, request: Request, ctx=Depends(get_session_and_user), db: Session = Depends(get_db)):
     pending = _peek(db, request_id)
     if pending is None:
         raise HTTPException(status_code=404, detail="This sign-in request has expired. Return to the application and try again.")
@@ -315,7 +327,7 @@ def get_request(request_id: str, ctx=Depends(get_session_and_user), db: Session 
     p = db.get(SamlProvider, pending.provider_id)
     a = db.get(Application, p.application_id)
     return {"application": a.name if a else "", "user": {"email": user.email},
-            "reauth_required": bool(pending.auth_after and session.auth_time < pending.auth_after)}
+            "reauth_required": bool(pending.auth_after and session.auth_time < pending.auth_after) or _policy_reauth(db, request, a, user, session)}
 
 
 @api_router.post("/requests/{request_id}/respond")
@@ -324,6 +336,10 @@ def respond(request_id: str, request: Request, ctx=Depends(get_session_and_user)
     peeked = _peek(db, request_id)
     if peeked is not None and peeked.auth_after and session.auth_time < peeked.auth_after:
         raise HTTPException(status_code=403, detail="reauthentication_required")
+    if peeked is not None:
+        pp = db.get(SamlProvider, peeked.provider_id)
+        if pp is not None and _policy_reauth(db, request, db.get(Application, pp.application_id), user, session):
+            raise HTTPException(status_code=403, detail="reauthentication_required")  # nothing consumed; retry after sign-in
     n = db.execute(update(SamlPendingRequest).where(SamlPendingRequest.request_hash == _h(request_id), SamlPendingRequest.decided_at.is_(None),
                                                      SamlPendingRequest.expires_at > _now()).values(decided_at=_now())).rowcount
     if peeked is None or n != 1:  # single use: a replay or an expired request gets nothing
