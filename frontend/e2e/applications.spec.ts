@@ -9,10 +9,12 @@ test("create a bookmark application, assign a user, see it under My apps and lau
   await page.getByRole("link", { name: "Applications", exact: true }).click();
   await expect(page).toHaveURL(/\/admin\/applications$/);
 
-  await page.getByRole("button", { name: /Add application/ }).click();
+  await page.getByRole("button", { name: /Create App Integration/ }).click();
+  await page.getByTestId("method-bookmark").click();
+  await page.getByTestId("wizard-next").click();
   await page.locator("#a-name").fill(name);
   await page.locator("#a-url").fill("https://example.com/e2e");
-  await page.getByRole("button", { name: "Create", exact: true }).click();
+  await page.getByTestId("wizard-create").click();
   await expect(page).toHaveURL(/\/admin\/applications\/\d+$/);
   await expect(page.getByRole("heading", { name })).toBeVisible();
 
@@ -54,11 +56,14 @@ test("create an OIDC web application from a template, see the secret once, set a
   const n = `E2E web ${Date.now()}`;
   await loginAsAdmin(page);
   await page.goto("/admin/applications");
-  await page.getByRole("button", { name: /Add application/ }).click();
-  await page.locator("#a-kind").selectOption({ label: "OIDC · Web application" });
+  await page.getByRole("button", { name: /Create App Integration/ }).click();
+  await page.getByTestId("method-oidc").click();
+  await page.getByTestId("wizard-next").click();
+  await page.getByTestId("type-web").click();
+  await page.getByTestId("wizard-next").click();
   await page.locator("#a-name").fill(n);
   await page.locator("#a-redirects").fill("https://e2e.example.com/callback");
-  await page.getByRole("button", { name: "Create", exact: true }).click();
+  await page.getByTestId("wizard-create").click();
   await expect(page.getByTestId("new-secret")).toContainText("idf_cs_");
   await page.getByRole("button", { name: "Continue to the application" }).click();
   await expect(page.getByRole("heading", { name: n })).toBeVisible();

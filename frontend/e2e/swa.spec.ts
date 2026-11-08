@@ -15,10 +15,14 @@ test("SWA application: configure, store a password once, then the tile posts it 
   await loginAsAdmin(page);
   const name = `E2E SWA ${Date.now()}`;
   await page.goto("/admin/applications");
-  await page.getByRole("button", { name: /Add application/ }).click();
-  await page.locator("#a-kind").selectOption({ label: "Secure Web Authentication (stored password)" });
+  await page.getByRole("button", { name: /Create App Integration/ }).click();
+  await page.getByTestId("method-swa").click();
+  await page.getByTestId("wizard-next").click();
   await page.locator("#a-name").fill(name);
-  await page.getByRole("button", { name: "Create", exact: true }).click();
+  await page.locator("#a-login").fill(TARGET);
+  await page.locator("#a-uf").fill("login_user");
+  await page.locator("#a-pf").fill("login_pass");
+  await page.getByTestId("wizard-create").click();
   await expect(page).toHaveURL(/\/admin\/applications\/(\d+)$/);
   const appId = page.url().split("/").pop()!;
 
