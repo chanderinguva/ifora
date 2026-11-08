@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     # OIDC provider (ADR 005). The signing-key encryption key must be a *different* Fernet key from MFA_ENCRYPTION_KEY.
     OIDC_ISSUER: str = Field(default="http://localhost:8000")
     OIDC_KEY_ENCRYPTION_KEY: str = Field(default="")
+    # Stored sign-in credentials for SWA applications (ADR 012). 32 random bytes, url-safe base64; unset = SWA credentials disabled.
+    # Generate: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    SWA_ENCRYPTION_KEY: str = Field(default="")
+    SWA_ENCRYPTION_KEY_PREVIOUS: str = Field(default="")  # keep the retired key here while rows are re-encrypted on use
+    SWA_FRESH_AUTH_SECONDS: int = Field(default=900)  # a stored credential is only released if the user signed in this recently
     SAML_ENTITY_ID: str = Field(default="")  # IdP entity id; default <OIDC_ISSUER>/saml/idp
     SAML_PENDING_TTL_SECONDS: int = Field(default=600)  # how long a parked AuthnRequest waits for the user to sign in
     # Where /oauth/authorize sends the browser for login / consent (a page of the web UI).

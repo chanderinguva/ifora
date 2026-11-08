@@ -38,5 +38,8 @@ def purge(db: Session, now: Optional[datetime] = None) -> dict:
         out["codes"] = db.execute(
             delete(AuthorizationCode).where(AuthorizationCode.expires_at < now - CODE_GRACE, ~still_needed)
         ).rowcount
+        from backend.app.swa.purge import purge_unentitled
+
+        out["swa_credentials"] = purge_unentitled(db)
         db.commit()
     return out

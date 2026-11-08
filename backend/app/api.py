@@ -154,6 +154,10 @@ def create_app() -> FastAPI:
     app.include_router(saml_admin, prefix="/api/v1")  # before applications_router: /admin/applications/saml/* must win over /{app_id}
     app.include_router(saml_api, prefix="/api/v1")
     app.include_router(saml_public)
+    from backend.app.swa.routes import admin_router as swa_admin, api_router as swa_api
+
+    app.include_router(swa_admin, prefix="/api/v1")
+    app.include_router(swa_api, prefix="/api/v1")
     app.include_router(applications_router, prefix="/api/v1")
     app.include_router(my_apps_router, prefix="/api/v1")
 
