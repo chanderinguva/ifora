@@ -4,12 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import { ExternalLink, Pin, PinOff, Search } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
+import { AppIcon } from "@/components/app-icon";
 import { http } from "@/lib/http";
 import type { MyApp } from "@/lib/applications";
 
 const PIN_KEY = "if.pinned-apps";
-const HUES = [212, 262, 330, 24, 152, 190, 48, 0];
-const hue = (name: string) => HUES[[...name].reduce((a, c) => a + c.charCodeAt(0), 0) % HUES.length];
 
 function readPins(): number[] {
   try { const v = JSON.parse(localStorage.getItem(PIN_KEY) ?? "[]"); return Array.isArray(v) ? v.filter((x) => typeof x === "number") : []; } catch { return []; }
@@ -70,7 +69,7 @@ export function AppTiles() {
             <li key={a.id} className="group relative">
               <button type="button" disabled={!a.launchable} onClick={() => launch(a)} aria-label={a.launchable ? `Open ${a.name}` : `${a.name} (no launch link)`}
                 className="flex h-full w-full flex-col items-center gap-2 rounded-xl border bg-card p-4 text-center shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60">
-                <span aria-hidden className="flex h-12 w-12 items-center justify-center rounded-xl text-lg font-semibold text-white" style={{ background: `hsl(${hue(a.name)} 60% 42%)` }}>{a.name.trim().charAt(0).toUpperCase()}</span>
+                <AppIcon path={`/me/apps/${a.id}/icon`} name={a.name} hasIcon={a.has_icon} />
                 <span className="line-clamp-2 text-sm font-medium">{a.name}</span>
                 {a.description && <span className="line-clamp-2 text-xs text-muted-foreground">{a.description}</span>}
                 {a.launchable && <ExternalLink aria-hidden className="h-3.5 w-3.5 text-muted-foreground opacity-0 transition group-hover:opacity-100" />}

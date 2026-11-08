@@ -167,3 +167,40 @@ def test_attach_and_detach_oidc_client(db, super_admin):
     r = super_admin.post(f"/admin/applications/{other['id']}/oidc-client", {"client_pk": c["id"]})
     assert r.status_code == 200 and r.json()["oidc_client"]["client_id"] == c["client_id"]
     assert len(actions(db, "APPLICATION_OIDC_ATTACHED")) == 1 and len(actions(db, "APPLICATION_OIDC_DETACHED")) == 1
+
+
+# ---- icons ---------------------------------------------------------------------------------------------------
+
+import base64
+
+PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
+JPEG = b"\xff\xd8\xff\xe0" + b"\x00" * 64
+WEBP = b"RIFF\x00\x00\x00\x00WEBP" + b"\x00" * 32
+b64 = lambda raw: base64.b64encode(raw).decode()  # noqa: E731
+
+
+def test_icon_upload_validation(super_admin):
+    a = mkapp(super_admin)
+    for raw in (PNG, JPEG, WEBP):
+        assert super_admin.put(f"/admin/applications/{a['id']}/icon", {"data": b64(raw)}).status_code == 200
+    assert super_admin.put(f"/admin/applications/{a['id']}/icon", {"data": b64(b"<svg onload=alert(1)/>")}).status_code == 422   # no SVG
+    assert super_admin.put(f"/admin/applications/{a['id']}/icon", {"data": b64(b"GIF89a" + b"0" * 20)}).status_code == 422
+    assert super_admin.put(f"/admin/applications/{a['id']}/icon", {"data": "not base64!!"}).status_code == 422
+    assert super_admin.put(f"/admin/applications/{a['id']}/icon", {"data": b64(PNG + b"0" * 103_000)}).status_code == 422          # too big
+    r = super_admin.get(f"/admin/applications/{a['id']}/icon")
+    assert r.status_code == 200 and r.headers["content-type"] == "image/webp" and r.headers["x-content-type-options"] == "nosniff"
+    assert super_admin.get(f"/admin/applications/{a['id']}").json()["has_icon"] is True
+    assert super_admin.delete(f"/admin/applications/{a['id']}/icon").status_code == 200
+    assert super_admin.get(f"/admin/applications/{a['id']}/icon").status_code == 404
+
+
+def test_icon_is_served_only_to_entitled_users(db, super_admin, member):
+    a = mkapp(super_admin)
+    super_admin.put(f"/admin/applications/{a['id']}/icon", {"data": b64(PNG)})
+    assert member.get(f"/me/apps/{a['id']}/icon").status_code == 404
+    assign(super_admin, a, user_id=member.user.id)
+    r = member.get(f"/me/apps/{a['id']}/icon")
+    assert r.status_code == 200 and r.content == PNG and r.headers["content-security-policy"] == "default-src 'none'"
+    assert member.get("/me/apps").json()["items"][0]["has_icon"] is True
+    assert member.put(f"/admin/applications/{a['id']}/icon", {"data": b64(PNG)}).status_code == 403
+    assert Api().get(f"/me/apps/{a['id']}/icon").status_code == 401

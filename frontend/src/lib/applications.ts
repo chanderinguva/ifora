@@ -12,13 +12,14 @@ export type AppSummary = {
   require_assignment: boolean;
   oidc_client: { id: number; client_id: string; name: string; client_type: string } | null;
   provisioning: { id: number; kind: string; enabled: boolean } | null;
+  has_icon: boolean;
   assigned_users: number;
   assigned_groups: number;
   created_at: string;
   updated_at: string;
 };
 
-export type MyApp = { id: number; name: string; description: string | null; sign_on_mode: string; launchable: boolean };
+export type MyApp = { id: number; name: string; description: string | null; sign_on_mode: string; launchable: boolean; has_icon: boolean };
 
 export const SIGN_ON_LABEL: Record<string, string> = { none: "None (provisioning only)", bookmark: "Bookmark", oidc: "OpenID Connect" };
 

@@ -15,6 +15,10 @@
 - **My apps**: `GET /me/apps` lists entitled, active, visible applications that have a sign-on method. `POST /me/apps/{id}/launch` re-checks entitlement, audits `APPLICATION_LAUNCHED` and returns the launch URL; an unassigned or missing app answers the same 404. Launch URLs must be http(s) without embedded credentials. The UI (user dashboard and `/apps`) shows tiles with search and per-browser pinned favourites.
 - All changes are audited (`APPLICATION_*`).
 
+## Logos (step 2)
+- `application_icons` (migration 0036), kept out of the application row. Admins upload PNG/JPEG/WebP (≤100 KB, checked by file signature; **SVG is refused** because it can carry script) as base64 JSON. Served by our API only (`/admin/applications/{id}/icon`, `/me/apps/{id}/icon` for entitled users) with `nosniff`, `default-src 'none'` CSP and private caching, so no user's browser contacts a third-party image host. The tile falls back to a coloured initial.
+- Image dimensions are not checked or resized server-side.
+
 ## Known limits
 - Revoking an assignment does not revoke OIDC tokens already issued.
 - No database trigger enforces that an assignment's user/group belong to the same tenant (single tenant today).
