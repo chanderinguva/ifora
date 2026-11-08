@@ -120,3 +120,34 @@ def test_export_roundtrip_and_import_validation(admin):
 def test_only_admins_can_use_template_and_import(member):
     assert member.get("/admin/group-rules/template").status_code == 403
     assert member.post("/admin/group-rules/import", {"document": {}}).status_code == 403
+
+
+# ---- editor help and live validation (auto-suggest) ---------------------------------------------------------------
+
+def test_every_function_is_documented_for_the_editor():
+    cat = okta_el.help_catalog()
+    assert {f["name"] for f in cat["functions"]} == set(okta_el.FUNCTIONS)
+    for f in cat["functions"]:
+        assert f["signature"].startswith(f["name"] + "(") and f["description"] and f["returns"]
+        okta_el.parse(f["example"])                       # every documented example is itself valid syntax
+
+
+def test_expression_help_lists_usable_and_blocked_attributes(admin):
+    r = admin.get("/admin/group-rules/expression-help")
+    assert r.status_code == 200
+    d = r.json()
+    names = {a["name"] for a in d["attributes"]}
+    assert {"email", "login", "status", "department"} <= names
+    blocked = {a["name"] for a in d["blocked_attributes"]}
+    assert {"firstName", "lastName"} <= blocked and not (names & blocked)
+    assert any(o["token"] == "&&" for o in d["operators"])
+
+
+def test_validate_expression_endpoint(admin, member):
+    ok = admin.post("/admin/group-rules/validate-expression", {"expression": 'user.department == "Sales" && String.len(user.email) > 3'}).json()
+    assert ok == {"ok": True, "error": None, "attributes": ["department", "email"]}
+    for text, needle in (('user.department ==', "Expression error"), ('String.len(user.email)', "true or false"),
+                         ('user.firstName == "x"', "edited by users"), ('user.nope == "x"', "unknown attribute")):
+        r = admin.post("/admin/group-rules/validate-expression", {"expression": text}).json()
+        assert r["ok"] is False and needle in r["error"], (text, r)
+    assert member.post("/admin/group-rules/validate-expression", {"expression": "true"}).status_code == 403
