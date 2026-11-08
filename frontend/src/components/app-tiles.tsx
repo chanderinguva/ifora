@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ExternalLink, Pin, PinOff, Search } from "lucide-react";
+import { ExternalLink, KeyRound, Pin, PinOff, Search } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { AppIcon } from "@/components/app-icon";
@@ -74,6 +74,12 @@ export function AppTiles() {
                 {a.description && <span className="line-clamp-2 text-xs text-muted-foreground">{a.description}</span>}
                 {a.launchable && <ExternalLink aria-hidden className="h-3.5 w-3.5 text-muted-foreground opacity-0 transition group-hover:opacity-100" />}
               </button>
+              {a.sign_on_mode === "swa" && (
+                <a href={`/swa/continue?app=${a.id}&manage=1`} aria-label={`Change saved sign-in for ${a.name}`} title="Change saved sign-in"
+                  className="absolute left-2 top-2 rounded-md p-1 text-muted-foreground opacity-60 hover:bg-muted hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100">
+                  <KeyRound className="h-3.5 w-3.5" />
+                </a>
+              )}
               <button type="button" onClick={() => togglePin(a.id)} aria-pressed={pinned} aria-label={pinned ? `Unpin ${a.name}` : `Pin ${a.name}`}
                 className="absolute right-2 top-2 rounded-md p-1 text-muted-foreground opacity-60 hover:bg-muted hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100">
                 {pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}

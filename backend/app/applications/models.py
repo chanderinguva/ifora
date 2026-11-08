@@ -7,7 +7,7 @@ from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, I
 from backend.app.db import Base
 from backend.app.tenancy import TenantOwned
 
-SIGN_ON_MODES = ("none", "bookmark", "oidc", "saml")  # swa arrives with its own milestone
+SIGN_ON_MODES = ("none", "bookmark", "oidc", "saml", "swa")
 
 
 def _now():
@@ -18,7 +18,7 @@ class Application(TenantOwned, Base):
     __tablename__ = "applications"
     __table_args__ = (
         UniqueConstraint("tenant_id", "name", name="uq_applications_tenant_name"),
-        CheckConstraint("sign_on_mode IN ('none','bookmark','oidc','saml')", name="ck_applications_sign_on_mode"),
+        CheckConstraint("sign_on_mode IN ('none','bookmark','oidc','saml','swa')", name="ck_applications_sign_on_mode"),
         CheckConstraint("status IN ('active','inactive')", name="ck_applications_status"),
     )
 

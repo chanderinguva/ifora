@@ -32,3 +32,6 @@
 
 ## Roadmap (agreed order)
 2. Bookmark polish, 3. OIDC templates (web/SPA/native/service) and IdP-initiated launch, 4. SAML 2.0 IdP (mature library), 5. SSO attribute mapping/JIT, 6. SWA (optional, security review first).
+
+
+Update: step 6 of the roadmap, **Secure Web Authentication**, is ADR 012 (migration 0040).

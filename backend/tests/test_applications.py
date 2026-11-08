@@ -35,7 +35,7 @@ def test_crud_and_validation(super_admin):
     assert super_admin.post("/admin/applications", {"name": "B", "sign_on_mode": "bookmark"}).status_code == 422          # needs URL
     for bad in ("javascript:alert(1)", "ftp://x.example.com", "https://u:p@x.example.com/", "//x.example.com"):
         assert super_admin.post("/admin/applications", {"name": "B", "sign_on_mode": "bookmark", "launch_url": bad}).status_code == 422, bad
-    assert super_admin.post("/admin/applications", {"name": "B", "sign_on_mode": "swa"}).status_code == 422
+    assert super_admin.post("/admin/applications", {"name": "B", "sign_on_mode": "ldap"}).status_code == 422
     r = super_admin.put(f"/admin/applications/{a['id']}", {"name": "Wiki 2", "sign_on_mode": "bookmark", "launch_url": "https://wiki2.example.com/"})
     assert r.status_code == 200 and r.json()["name"] == "Wiki 2"
     assert [x["name"] for x in super_admin.get("/admin/applications?q=wiki").json()["items"]] == ["Wiki 2"]
