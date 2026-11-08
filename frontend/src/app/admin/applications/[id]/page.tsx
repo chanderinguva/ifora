@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge, PageHeader, fieldClass } from "@/components/bits";
 import { AppIcon } from "@/components/app-icon";
+import { SamlCard } from "@/components/saml-card";
 import { http, qs, type Page } from "@/lib/http";
 import { appBody, SIGN_ON_LABEL, type AppSummary } from "@/lib/applications";
 import type { Group, User } from "@/lib/types";
@@ -79,7 +80,7 @@ export default function ApplicationDetail() {
               {Object.entries(SIGN_ON_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select></div>
           <div className="space-y-1 sm:col-span-2"><Label htmlFor="g-desc">Description</Label><Input id="g-desc" value={form.description ?? ""} maxLength={500} onChange={(e) => set({ description: e.target.value })} /></div>
-          {form.sign_on_mode !== "none" && (
+          {form.sign_on_mode !== "none" && form.sign_on_mode !== "saml" && (
             <div className="space-y-1 sm:col-span-2"><Label htmlFor="g-url">Launch URL</Label><Input id="g-url" placeholder="https://app.example.com/" value={form.launch_url ?? ""} onChange={(e) => set({ launch_url: e.target.value })} /></div>
           )}
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.status === "active"} onChange={(e) => set({ status: e.target.checked ? "active" : "inactive" })} /> Active (an inactive application cannot be used to sign in or launched)</label>
@@ -145,6 +146,8 @@ export default function ApplicationDetail() {
           </CardContent>
         </Card>
       )}
+
+      {app.sign_on_mode === "saml" && <SamlCard appId={app.id} onChange={refresh} />}
 
       <Card className="mb-6" data-testid="provisioning-facet">
         <CardHeader><CardTitle>Provisioning</CardTitle></CardHeader>

@@ -27,7 +27,7 @@
 ## Known limits
 - Revoking an assignment does not revoke OIDC tokens already issued.
 - No database trigger enforces that an assignment's user/group belong to the same tenant (single tenant today).
-- Bookmark tiles are plain links; no credential injection (SWA) exists.
+- Bookmark tiles are plain links; no credential injection (SWA) exists. SAML sign-on is described in ADR 011.
 - Pins are stored in the browser only.
 
 ## Roadmap (agreed order)

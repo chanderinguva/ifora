@@ -257,6 +257,43 @@ FUNCTIONS: Dict[str, Tuple[int, int, Callable]] = {
 }
 
 
+# Help shown by the rule editor's auto-suggest: (signature, what it does, returns, example). One entry per function;
+# a test fails if a function is added without documentation.
+HELP: Dict[str, Tuple[str, str, str, str]] = {
+    "String.stringContains": ("String.stringContains(text, part)", "True when text contains part (case-sensitive).", "boolean", 'String.stringContains(user.email, "@example.com")'),
+    "String.len": ("String.len(text)", "Number of characters.", "number", "String.len(user.employeeId) == 6"),
+    "String.toUpperCase": ("String.toUpperCase(text)", "Upper-cases text.", "string", 'String.toUpperCase(user.department) == "SALES"'),
+    "String.toLowerCase": ("String.toLowerCase(text)", "Lower-cases text, handy for case-insensitive comparison.", "string", 'String.toLowerCase(user.department) == "sales"'),
+    "String.substring": ("String.substring(text, start, end)", "Characters from start up to (not including) end, counting from 0.", "string", 'String.substring(user.employeeId, 0, 2) == "EU"'),
+    "String.substringBefore": ("String.substringBefore(text, separator)", "Everything before the first separator (all of text if absent).", "string", 'String.substringBefore(user.email, "@")'),
+    "String.substringAfter": ("String.substringAfter(text, separator)", "Everything after the first separator (empty if absent).", "string", 'String.substringAfter(user.email, "@") == "example.com"'),
+    "String.replace": ("String.replace(text, find, replacement)", "Replaces every occurrence of find.", "string", 'String.replace(user.costCenter, "-", "")'),
+    "String.replaceFirst": ("String.replaceFirst(text, find, replacement)", "Replaces the first occurrence of find.", "string", 'String.replaceFirst(user.costCenter, "C", "")'),
+    "String.append": ("String.append(text, suffix)", "Joins two strings.", "string", 'String.append(user.department, "-team")'),
+    "String.join": ("String.join(separator, a, b, …)", "Joins up to 11 values with a separator.", "string", 'String.join(" ", user.firstName, user.lastName)'),
+    "String.stringSwitch": ("String.stringSwitch(text, default, key1, value1, …)", "Returns the value of the first key that text contains, otherwise default.", "string", 'String.stringSwitch(user.email, "other", "@eu.", "EU", "@us.", "US")'),
+    "Convert.toInt": ("Convert.toInt(value)", "Converts text to a whole number (empty if it is not one).", "number", "Convert.toInt(user.level) >= 5"),
+    "Arrays.isEmpty": ("Arrays.isEmpty(list)", "True when the list or value is empty.", "boolean", "Arrays.isEmpty(user.managers)"),
+    "Arrays.size": ("Arrays.size(list)", "Number of items.", "number", "Arrays.size(user.managers) > 1"),
+    "Arrays.contains": ("Arrays.contains(list, value)", "True when the list contains the value.", "boolean", 'Arrays.contains(user.roles, "admin")'),
+}
+
+OPERATORS_HELP = [
+    ("==", "equals (case-sensitive)"), ("!=", "does not equal"), ("<", "less than"), ("<=", "less than or equal"), (">", "greater than"),
+    (">=", "greater than or equal"), ("&&", "and"), ("||", "or"), ("!", "not"), ("?:", "condition ? valueIfTrue : valueIfFalse"),
+    ("eq", "same as =="), ("ne", "same as !="), ("lt", "same as <"), ("le", "same as <="), ("gt", "same as >"), ("ge", "same as >="),
+    ("and", "same as &&"), ("or", "same as ||"), ("not", "same as !"),
+]
+
+
+def help_catalog() -> Dict[str, Any]:
+    return {
+        "functions": [{"name": n, "signature": HELP[n][0], "description": HELP[n][1], "returns": HELP[n][2], "example": HELP[n][3],
+                       "min_args": FUNCTIONS[n][0], "max_args": FUNCTIONS[n][1]} for n in FUNCTIONS],
+        "operators": [{"token": t, "description": d} for t, d in OPERATORS_HELP],
+    }
+
+
 # ---- evaluation --------------------------------------------------------------------------
 
 def _compare(op: str, a: Any, b: Any) -> bool:

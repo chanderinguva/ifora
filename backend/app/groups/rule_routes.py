@@ -88,6 +88,45 @@ def list_rules(db: Session = Depends(get_db), _: User = Depends(require_admin)):
     return {"items": [r.to_dict(db) for r in rows]}
 
 
+def _camel(key: str) -> str:
+    head, *rest = key.split("_")
+    return head + "".join(w.capitalize() for w in rest)
+
+
+@router.get("/expression-help")
+def expression_help(db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    """Everything the expression editor suggests: functions, operators, and the attributes a rule may read (never the ones users edit themselves)."""
+    from backend.app.groups import okta_el
+    from backend.app.profiles import catalog as profile_catalog
+
+    usable = [{"name": "email", "label": "Email", "type": "string"}, {"name": "login", "label": "Username", "type": "string"},
+              {"name": "status", "label": "Account status", "type": "enum"}]
+    blocked = [{"name": "firstName", "reason": "users can edit this themselves"}, {"name": "lastName", "reason": "users can edit this themselves"}]
+    for a in profile_catalog.catalog(db):
+        item = {"name": _camel(a.key), "label": a.display_name, "type": a.data_type}
+        if a.user_editable:
+            blocked.append({"name": item["name"], "reason": "users can edit this themselves"})
+        else:
+            usable.append(item)
+    return {**okta_el.help_catalog(), "attributes": usable, "blocked_attributes": blocked}
+
+
+class ExpressionBody(BaseModel):
+    expression: str = Field("", max_length=2000)
+
+
+@router.post("/validate-expression")
+def validate_expression(body: ExpressionBody, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    """Live check for the editor: does it parse, is it true/false, does it only read attributes a rule may read?"""
+    from backend.app.groups import okta_el
+
+    try:
+        text = svc.validate_expression(db, body.expression)
+    except ValueError as e:
+        return {"ok": False, "error": str(e), "attributes": []}
+    return {"ok": True, "error": None, "attributes": sorted(okta_el.attributes(okta_el.parse(text)))}
+
+
 @router.post("/preview")
 def preview(body: PreviewBody, db: Session = Depends(get_db), _: User = Depends(require_admin)):
     conditions, expression = _clean(db, body)

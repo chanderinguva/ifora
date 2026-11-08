@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ExpressionEditor } from "@/components/expression-editor";
 import { Badge, PageHeader, fieldClass, td, th } from "@/components/bits";
 import { http, qs, type Page } from "@/lib/http";
 import { API_URL } from "@/lib/api";
@@ -141,9 +142,8 @@ export default function GroupRulesPage() {
             {draft.kind === "expression" && (
               <div className="space-y-2">
                 <Label htmlFor="r-expr">Expression</Label>
-                <textarea id="r-expr" rows={3} maxLength={1000} spellCheck={false} className={fieldClass + " font-mono text-xs"}
-                  placeholder={'user.department == "Sales" && user.userType != "Contractor"'}
-                  value={draft.expression} onChange={(e) => setDraft({ ...draft, expression: e.target.value })} />
+                <ExpressionEditor id="r-expr" placeholder={'user.department == "Sales" && user.userType != "Contractor"'}
+                  value={draft.expression} onChange={(v) => setDraft({ ...draft, expression: v })} />
                 <p className="text-xs text-muted-foreground">
                   Must be true or false. Use <code>user.&lt;attribute&gt;</code> (camelCase like <code>user.employeeNumber</code> or snake_case; <code>user.login</code> is the username),
                   <code> == != &lt; &lt;= &gt; &gt;= &amp;&amp; || ! ?:</code>, and <code>String.stringContains</code>, <code>String.len</code>, <code>String.toLowerCase</code>, <code>String.substring</code>,

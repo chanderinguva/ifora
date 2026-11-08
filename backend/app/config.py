@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     # OIDC provider (ADR 005). The signing-key encryption key must be a *different* Fernet key from MFA_ENCRYPTION_KEY.
     OIDC_ISSUER: str = Field(default="http://localhost:8000")
     OIDC_KEY_ENCRYPTION_KEY: str = Field(default="")
+    SAML_ENTITY_ID: str = Field(default="")  # IdP entity id; default <OIDC_ISSUER>/saml/idp
+    SAML_PENDING_TTL_SECONDS: int = Field(default=600)  # how long a parked AuthnRequest waits for the user to sign in
     # Where /oauth/authorize sends the browser for login / consent (a page of the web UI).
     OIDC_LOGIN_UI_URL: str = Field(default="http://localhost:3000/oauth/authorize")
     OIDC_LOGOUT_UI_URL: str = Field(default="http://localhost:3000/oauth/logout")

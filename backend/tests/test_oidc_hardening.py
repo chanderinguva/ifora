@@ -46,7 +46,7 @@ def test_purge_removes_only_what_can_no_longer_matter(db, super_admin, user_api)
     db.commit()
 
     out = purge.purge(db)
-    assert out == {"pending_requests": 1, "refresh_tokens": 0, "codes": 1, "access_tokens": 0}
+    assert out == {"pending_requests": 1, "refresh_tokens": 0, "codes": 1, "access_tokens": 0, "saml_pending_requests": 0}
     assert db.query(PendingAuthRequest).count() == 1
     assert db.query(RefreshToken).count() == 1                  # live family untouched
     # the code that issued a live refresh token is kept even when it is old, so a replay can still revoke the family
