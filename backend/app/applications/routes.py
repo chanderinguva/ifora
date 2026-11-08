@@ -1,0 +1,268 @@
+"""Applications API (ADR 010): admin management, shared assignments, and the end user's "My apps"."""
+
+import uuid
+from datetime import datetime, timezone
+from typing import List, Optional
+from urllib.parse import urlsplit
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel, Field
+from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from backend.app.applications import entitlement as ent
+from backend.app.applications.models import Application, ApplicationAssignment, SIGN_ON_MODES
+from backend.app.audit.model import AuditAction
+from backend.app.audit.service import record
+from backend.app.auth.deps import get_current_user, require_admin
+from backend.app.db import get_db
+from backend.app.groups.model import Group
+from backend.app.oidc.models import OIDCClient
+from backend.app.provisioning.models import ProvisioningApp
+from backend.app.users.model import User
+
+router = APIRouter(prefix="/admin/applications", tags=["applications"])
+me_router = APIRouter(prefix="/me/apps", tags=["applications"])
+MAX_APPLICATIONS = 500
+
+
+def _launch_url(v: Optional[str]) -> Optional[str]:
+    if v is None or not v.strip():
+        return None
+    v = v.strip()
+    parts = urlsplit(v)
+    if parts.scheme not in ("http", "https") or not parts.hostname or parts.username or parts.password:
+        raise HTTPException(status_code=422, detail="launch_url must be an http(s) URL without credentials")
+    return v
+
+
+class AppBody(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    description: Optional[str] = Field(None, max_length=500)
+    sign_on_mode: str = Field("none", pattern="^(" + "|".join(SIGN_ON_MODES) + ")$")
+    launch_url: Optional[str] = Field(None, max_length=2000)
+    status: str = Field("active", pattern="^(active|inactive)$")
+    visible: bool = True
+    require_assignment: bool = True
+
+
+def _checked(body: AppBody) -> Optional[str]:
+    url = _launch_url(body.launch_url)
+    if body.sign_on_mode == "bookmark" and url is None:
+        raise HTTPException(status_code=422, detail="A bookmark application needs a launch URL")
+    if body.sign_on_mode == "none":
+        url = None
+    return url
+
+
+def _dict(db: Session, a: Application) -> dict:
+    client = db.query(OIDCClient).filter(OIDCClient.application_id == a.id).first()
+    prov = db.query(ProvisioningApp).filter(ProvisioningApp.application_id == a.id).first()
+    n = lambda q: q.scalar() or 0  # noqa: E731
+    return {
+        "id": a.id, "public_id": a.public_id, "name": a.name, "description": a.description, "sign_on_mode": a.sign_on_mode,
+        "launch_url": a.launch_url, "status": a.status, "visible": a.visible, "require_assignment": a.require_assignment,
+        "oidc_client": {"id": client.id, "client_id": client.client_id, "name": client.name, "client_type": client.client_type} if client else None,
+        "provisioning": {"id": prov.id, "kind": prov.kind, "enabled": prov.enabled} if prov else None,
+        "assigned_users": n(db.query(func.count(ApplicationAssignment.id)).filter(ApplicationAssignment.application_id == a.id, ApplicationAssignment.user_id.is_not(None))),
+        "assigned_groups": n(db.query(func.count(ApplicationAssignment.id)).filter(ApplicationAssignment.application_id == a.id, ApplicationAssignment.group_id.is_not(None))),
+        "created_at": a.created_at.isoformat(), "updated_at": a.updated_at.isoformat(),
+    }
+
+
+def _get(db: Session, app_id: int) -> Application:
+    a = db.get(Application, app_id)
+    if a is None:
+        raise HTTPException(status_code=404, detail="Application not found")
+    return a
+
+
+@router.get("")
+def list_applications(q: str = Query("", max_length=100), db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    query = db.query(Application)
+    if q.strip():
+        like = "%" + q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        query = query.filter(Application.name.ilike(like, escape="\\"))
+    return {"items": [_dict(db, a) for a in query.order_by(Application.name).limit(MAX_APPLICATIONS).all()]}
+
+
+@router.post("", status_code=201)
+def create_application(body: AppBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    url = _checked(body)
+    if db.query(func.count(Application.id)).scalar() >= MAX_APPLICATIONS:
+        raise HTTPException(status_code=409, detail=f"At most {MAX_APPLICATIONS} applications")
+    a = Application(public_id=str(uuid.uuid4()), name=body.name.strip(), description=body.description, sign_on_mode=body.sign_on_mode,
+                    launch_url=url, status=body.status, visible=body.visible, require_assignment=body.require_assignment, created_by=actor.id)
+    db.add(a)
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Application name already in use")
+    record(db, AuditAction.APPLICATION_CREATED, request, actor, a.id, "application", {"name": a.name, "sign_on_mode": a.sign_on_mode})
+    db.commit()
+    return _dict(db, a)
+
+
+@router.get("/{app_id}")
+def get_application(app_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    return _dict(db, _get(db, app_id))
+
+
+@router.put("/{app_id}")
+def update_application(app_id: int, body: AppBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    a = _get(db, app_id)
+    url = _checked(body)
+    if body.sign_on_mode == "oidc" and not db.query(OIDCClient.id).filter(OIDCClient.application_id == a.id).first() and a.sign_on_mode != "oidc":
+        pass  # allowed: the client is attached next
+    if body.sign_on_mode != "oidc" and db.query(OIDCClient.id).filter(OIDCClient.application_id == a.id).first():
+        raise HTTPException(status_code=409, detail="Detach the OIDC client before changing the sign-on mode")
+    a.name, a.description, a.sign_on_mode, a.launch_url = body.name.strip(), body.description, body.sign_on_mode, url
+    a.status, a.visible, a.require_assignment, a.updated_at = body.status, body.visible, body.require_assignment, datetime.now(timezone.utc)
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Application name already in use")
+    record(db, AuditAction.APPLICATION_UPDATED, request, actor, a.id, "application",
+           {"name": a.name, "sign_on_mode": a.sign_on_mode, "status": a.status, "require_assignment": a.require_assignment})
+    db.commit()
+    return _dict(db, a)
+
+
+@router.delete("/{app_id}")
+def delete_application(app_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    a = _get(db, app_id)
+    if db.query(ProvisioningApp.id).filter(ProvisioningApp.application_id == a.id).first():
+        raise HTTPException(status_code=409, detail="Remove its provisioning first (Provisioning apps)")
+    name = a.name
+    db.delete(a)  # assignments go with it; an attached OIDC client stays, unlinked
+    record(db, AuditAction.APPLICATION_DELETED, request, actor, app_id, "application", {"name": name})
+    db.commit()
+    return {"success": True}
+
+
+# ---- OIDC facet ---------------------------------------------------------------------------------------------------
+
+class AttachBody(BaseModel):
+    client_pk: int
+
+
+@router.post("/{app_id}/oidc-client")
+def attach_oidc_client(app_id: int, body: AttachBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    a = _get(db, app_id)
+    if a.sign_on_mode != "oidc":
+        raise HTTPException(status_code=409, detail="Set the sign-on mode to OIDC first")
+    if db.query(OIDCClient.id).filter(OIDCClient.application_id == a.id).first():
+        raise HTTPException(status_code=409, detail="An OIDC client is already attached")
+    c = db.get(OIDCClient, body.client_pk)
+    if c is None:
+        raise HTTPException(status_code=404, detail="OIDC client not found")
+    if c.application_id is not None:
+        raise HTTPException(status_code=409, detail="That client belongs to another application")
+    c.application_id = a.id
+    record(db, AuditAction.APPLICATION_OIDC_ATTACHED, request, actor, a.id, "application", {"client_id": c.client_id})
+    db.commit()
+    return _dict(db, a)
+
+
+@router.delete("/{app_id}/oidc-client")
+def detach_oidc_client(app_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    a = _get(db, app_id)
+    c = db.query(OIDCClient).filter(OIDCClient.application_id == a.id).first()
+    if c is None:
+        raise HTTPException(status_code=404, detail="No OIDC client attached")
+    c.application_id = None
+    record(db, AuditAction.APPLICATION_OIDC_DETACHED, request, actor, a.id, "application", {"client_id": c.client_id})
+    db.commit()
+    return _dict(db, a)
+
+
+# ---- assignments -------------------------------------------------------------------------------------------------
+
+class AssignBody(BaseModel):
+    user_id: Optional[int] = None
+    group_id: Optional[int] = None
+
+
+def _assignment_dict(db: Session, x: ApplicationAssignment) -> dict:
+    if x.user_id:
+        u = db.get(User, x.user_id)
+        return {"id": x.id, "type": "user", "subject_id": x.user_id, "name": f"{u.first_name} {u.last_name}".strip() if u else "", "detail": u.email if u else ""}
+    g = db.get(Group, x.group_id)
+    return {"id": x.id, "type": "group", "subject_id": x.group_id, "name": g.name if g else "", "detail": "all members"}
+
+
+@router.get("/{app_id}/assignments")
+def list_assignments(app_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    _get(db, app_id)
+    rows = db.query(ApplicationAssignment).filter(ApplicationAssignment.application_id == app_id).order_by(ApplicationAssignment.id).limit(500).all()
+    return {"items": [_assignment_dict(db, x) for x in rows]}
+
+
+@router.post("/{app_id}/assignments", status_code=201)
+def add_assignment(app_id: int, body: AssignBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    from backend.app.provisioning import service as prov
+
+    a = _get(db, app_id)
+    if (body.user_id is None) == (body.group_id is None):
+        raise HTTPException(status_code=422, detail="Give either user_id or group_id")
+    if body.user_id is not None and db.get(User, body.user_id) is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if body.group_id is not None and db.get(Group, body.group_id) is None:
+        raise HTTPException(status_code=404, detail="Group not found")
+    x = ApplicationAssignment(application_id=a.id, user_id=body.user_id, group_id=body.group_id, created_by=actor.id)
+    db.add(x)
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Already assigned")
+    affected: List[int] = [body.user_id] if body.user_id is not None else prov.group_members(db, body.group_id)
+    prov.on_assignment_change(db, a.id, affected, body.group_id)
+    record(db, AuditAction.APPLICATION_ASSIGNMENT_ADDED, request, actor, a.id, "application", {"user_id": body.user_id, "group_id": body.group_id})
+    db.commit()
+    return _assignment_dict(db, x)
+
+
+@router.delete("/{app_id}/assignments/{assignment_id}")
+def remove_assignment(app_id: int, assignment_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    from backend.app.provisioning import service as prov
+
+    a = _get(db, app_id)
+    x = db.get(ApplicationAssignment, assignment_id)
+    if x is None or x.application_id != a.id:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    uid, gid = x.user_id, x.group_id
+    affected = [uid] if uid is not None else prov.group_members(db, gid)
+    db.delete(x)
+    db.flush()
+    prov.on_assignment_change(db, a.id, affected, gid)
+    record(db, AuditAction.APPLICATION_ASSIGNMENT_REMOVED, request, actor, a.id, "application", {"user_id": uid, "group_id": gid})
+    db.commit()
+    return {"success": True}
+
+
+# ---- My apps (any signed-in user) --------------------------------------------------------------------------------
+
+def _launchable(a: Application) -> bool:
+    return a.status == "active" and a.visible and a.sign_on_mode in ("bookmark", "oidc") and bool(a.launch_url)
+
+
+@me_router.get("")
+def my_apps(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    ids = ent.entitled_application_ids(db, user.id)
+    rows = db.query(Application).filter(Application.id.in_(ids or {0}), Application.status == "active", Application.visible.is_(True),
+                                        Application.sign_on_mode != "none").order_by(Application.name).all()
+    return {"items": [{"id": a.id, "name": a.name, "description": a.description, "sign_on_mode": a.sign_on_mode, "launchable": _launchable(a)} for a in rows]}
+
+
+@me_router.post("/{app_id}/launch")
+def launch(app_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    a = db.get(Application, app_id)
+    if a is None or not _launchable(a) or not ent.is_entitled(db, a.id, user.id):
+        raise HTTPException(status_code=404, detail="Application not found")  # same answer whether it exists or not
+    record(db, AuditAction.APPLICATION_LAUNCHED, request, user, a.id, "application", {"name": a.name})
+    db.commit()
+    return {"url": a.launch_url}

@@ -19,12 +19,14 @@ class ProvisioningApp(TenantOwned, Base):
     """An application IdentityForge pushes users (and optionally groups) to."""
 
     __tablename__ = "provisioning_apps"
-    __table_args__ = (UniqueConstraint("tenant_id", "name", name="uq_provisioning_apps_tenant_name"),)
+    __table_args__ = (UniqueConstraint("tenant_id", "name", name="uq_provisioning_apps_tenant_name"),
+                      Index("uq_provisioning_apps_application", "application_id", unique=True))
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     public_id = Column(String(36), nullable=False, unique=True)
     name = Column(String(100), nullable=False)
     description = Column(String(500), nullable=True)
+    application_id = Column(Integer, ForeignKey("applications.id", ondelete="RESTRICT"), nullable=False)  # assignments live there
     kind = Column(String(8), nullable=False)  # scim | rest (gateway)
     base_url = Column(String(2000), nullable=False)
     auth_type = Column(String(16), nullable=False)  # bearer | basic | header | oauth2
@@ -43,24 +45,6 @@ class ProvisioningApp(TenantOwned, Base):
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=_now)
-
-
-class ProvisioningAssignment(TenantOwned, Base):
-    """A user, or every member of a group, is entitled to the app."""
-
-    __tablename__ = "provisioning_assignments"
-    __table_args__ = (
-        CheckConstraint("(user_id IS NULL) <> (group_id IS NULL)", name="ck_prov_assignment_one_subject"),
-        Index("uq_prov_assign_user", "app_id", "user_id", unique=True, postgresql_where=text("user_id IS NOT NULL")),
-        Index("uq_prov_assign_group", "app_id", "group_id", unique=True, postgresql_where=text("group_id IS NOT NULL")),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    app_id = Column(Integer, ForeignKey("provisioning_apps.id", ondelete="CASCADE"), nullable=False, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
-    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=True, index=True)
-    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
 
 
 class ProvisioningLink(TenantOwned, Base):

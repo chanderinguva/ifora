@@ -30,6 +30,7 @@ class ClientCreate(BaseModel):
     token_endpoint_auth_method: Optional[str] = None  # confidential/service: client_secret_basic (default) | private_key_jwt
     jwks: Optional[dict] = None  # public keys, required for private_key_jwt
     first_party: bool = False
+    application_id: Optional[int] = None  # attach to an existing OIDC application without a client (default: create one)
     access_token_format: str = Field("jwt", pattern="^(jwt|opaque)$")  # opaque: revocable via /oauth/revoke, checked by introspection
 
 
@@ -135,6 +136,17 @@ def create_client(body: ClientCreate, request: Request, db: Session = Depends(ge
     )
     db.add(client)
     db.flush()
+    from backend.app.applications.entitlement import ensure_for_client
+
+    if body.application_id is None:
+        ensure_for_client(db, client, actor.id)
+    else:
+        from backend.app.applications.models import Application
+
+        target = db.get(Application, body.application_id)
+        if target is None or target.sign_on_mode != "oidc" or db.query(OIDCClient.id).filter(OIDCClient.application_id == target.id).first():
+            raise HTTPException(status_code=422, detail="application_id must be an OIDC application without a client")
+        client.application_id = target.id
     raw = svc.add_secret(db, client) if method == "client_secret_basic" else None
     record(db, AuditAction.OIDC_CLIENT_CREATED, request, actor, client.id, "oidc_client",
            {"client_id": client.client_id, "name": client.name, "type": client.client_type, "first_party": client.first_party})
@@ -202,6 +214,10 @@ def update_client(pk: int, body: ClientUpdate, request: Request, db: Session = D
 def delete_client(pk: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
     c = _get(db, pk)
     name, cid = c.name, c.client_id
+    from backend.app.applications.entitlement import drop_for_client
+
+    drop_for_client(db, c)
+    db.flush()
     db.delete(c)
     record(db, AuditAction.OIDC_CLIENT_DELETED, request, actor, pk, "oidc_client", {"client_id": cid, "name": name})
     db.commit()

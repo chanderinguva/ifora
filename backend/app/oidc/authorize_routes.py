@@ -57,6 +57,10 @@ def authorize(request: Request, db: Session = Depends(get_db)):
     reauth = az.needs_reauth(p, ctx[0] if ctx else None)
     if ctx is not None:
         session, user, _ = ctx
+        from backend.app.applications.entitlement import sign_on_denied
+
+        if sign_on_denied(db, p.client, user.id):
+            return _err_redirect(p.redirect_uri, az.AuthzError("access_denied", "the user is not assigned to this application"), p.state)
         if reauth and prompt_none:
             return _err_redirect(p.redirect_uri, az.AuthzError("login_required", "re-authentication is required"), p.state)
         if not reauth and not az.consent_required(db, user.id, p.client, p.scopes, p.prompt):
@@ -118,6 +122,13 @@ def decide(request_id: str, body: Decision, request: Request, ctx=Depends(get_se
     if client is None or client.status != "active" or pending.redirect_uri not in client.redirect_uris:
         db.commit()  # the request stays consumed
         raise HTTPException(status_code=400, detail="This application is no longer available")
+
+    from backend.app.applications.entitlement import sign_on_denied
+
+    if sign_on_denied(db, client, user.id):
+        db.commit()  # the request stays consumed
+        url = az.redirect_with(pending.redirect_uri, {"error": "access_denied", "error_description": "the user is not assigned to this application", "state": pending.state})
+        return JSONResponse({"redirect_to": url}, headers=NO_STORE)
 
     meta = {"client_id": client.client_id, "scopes": pending.scopes}
     if not body.approve:

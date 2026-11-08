@@ -6,6 +6,7 @@ import { CheckCircle2, Circle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge, PageHeader } from "@/components/bits";
 import { useCurrentUser } from "@/components/auth-guard";
+import { AppTiles } from "@/components/app-tiles";
 import { inAdminView } from "@/lib/roles";
 import { http } from "@/lib/http";
 import type { User } from "@/lib/types";
@@ -25,10 +26,15 @@ export default function UserHome() {
   ];
 
   return (
-    <div className="max-w-3xl">
+    <div className="max-w-5xl">
       <PageHeader title={`Hello, ${me.first_name}`}>
         {inAdminView(cu) && <Link href="/admin/dashboard" className="text-sm underline-offset-4 hover:underline">Go to administration →</Link>}
       </PageHeader>
+
+      <section className="mb-8" aria-labelledby="my-apps-h">
+        <h2 id="my-apps-h" className="mb-3 text-lg font-semibold">My apps</h2>
+        <AppTiles />
+      </section>
 
       <Card className="mb-6" data-testid="security-checklist">
         <CardHeader><CardTitle>Protect your account</CardTitle></CardHeader>

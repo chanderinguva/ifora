@@ -21,7 +21,8 @@ from backend.app.db import get_db
 from backend.app.groups.model import Group
 from backend.app.profiles import catalog as profile_catalog
 from backend.app.provisioning import adapters, mapping, service
-from backend.app.provisioning.models import ProvisioningApp, ProvisioningAssignment, ProvisioningLink, ProvisioningTask
+from backend.app.applications.models import Application, ApplicationAssignment
+from backend.app.provisioning.models import ProvisioningApp, ProvisioningLink, ProvisioningTask
 from backend.app.provisioning.presets import PRESETS
 from backend.app.recipes import crypto
 from backend.app.recipes import http_client as hc
@@ -67,6 +68,7 @@ class AppBody(BaseModel):
     options: Options = Options()
     mapping: List[Dict[str, str]] = Field(default_factory=list)
     rest_config: Optional[Dict[str, Any]] = None
+    application_id: Optional[int] = None  # attach to an existing application instead of creating one
 
 
 def _need_key() -> None:
@@ -129,8 +131,9 @@ def _dict(db: Session, a: ProvisioningApp) -> dict:
         "base_url": a.base_url, "auth_type": a.auth_type, "header_name": a.header_name, "token_url": a.token_url, "client_id": a.client_id, "scope": a.scope, "has_secret": True,
         "enabled": a.enabled, "options": service.options_of(a), "mapping": a.mapping or [], "rest_config": a.rest_config,
         "last_test": {"at": a.last_test_at.isoformat() if a.last_test_at else None, "ok": a.last_test_ok, "message": a.last_test_message},
-        "assigned_users": cnt(db.query(func.count(ProvisioningAssignment.id)).filter(ProvisioningAssignment.app_id == a.id, ProvisioningAssignment.user_id.is_not(None))),
-        "assigned_groups": cnt(db.query(func.count(ProvisioningAssignment.id)).filter(ProvisioningAssignment.app_id == a.id, ProvisioningAssignment.group_id.is_not(None))),
+        "application_id": a.application_id,
+        "assigned_users": cnt(db.query(func.count(ApplicationAssignment.id)).filter(ApplicationAssignment.application_id == a.application_id, ApplicationAssignment.user_id.is_not(None))),
+        "assigned_groups": cnt(db.query(func.count(ApplicationAssignment.id)).filter(ApplicationAssignment.application_id == a.application_id, ApplicationAssignment.group_id.is_not(None))),
         "provisioned": cnt(db.query(func.count(ProvisioningLink.id)).filter(ProvisioningLink.app_id == a.id, ProvisioningLink.resource_type == "user", ProvisioningLink.state == "synced")),
         "errors": cnt(db.query(func.count(ProvisioningLink.id)).filter(ProvisioningLink.app_id == a.id, ProvisioningLink.state == "error")),
         "queued": cnt(db.query(func.count(ProvisioningTask.id)).filter(ProvisioningTask.app_id == a.id, ProvisioningTask.status.in_(("queued", "running")))),
@@ -175,8 +178,24 @@ def create_app(body: AppBody, request: Request, db: Session = Depends(get_db), a
     if db.query(func.count(ProvisioningApp.id)).scalar() >= MAX_APPS:
         raise HTTPException(status_code=409, detail=f"At most {MAX_APPS} applications")
     ck = _checked(db, body)
+    application = None
+    if body.application_id is not None:
+        application = db.get(Application, body.application_id)
+        if application is None:
+            raise HTTPException(status_code=404, detail="Application not found")
+        if db.query(ProvisioningApp.id).filter(ProvisioningApp.application_id == application.id).first():
+            raise HTTPException(status_code=409, detail="That application already has provisioning")
+    else:
+        application = Application(public_id=str(uuid.uuid4()), name=body.name.strip(), description=body.description, sign_on_mode="none",
+                                  visible=False, require_assignment=False, created_by=actor.id)
+        db.add(application)
+        try:
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="An application with this name already exists; open it and add provisioning there")
     a = ProvisioningApp(
-        public_id=str(uuid.uuid4()), name=body.name.strip(), description=body.description, kind=body.kind, base_url=ck["url"],
+        application_id=application.id, public_id=str(uuid.uuid4()), name=body.name.strip(), description=body.description, kind=body.kind, base_url=ck["url"],
         auth_type=body.auth_type, header_name=body.header_name if body.auth_type == "header" else None,
         secret_enc=crypto.encrypt(body.secret), enabled=False, token_url=body.token_url if body.auth_type == "oauth2" else None,
         client_id=body.client_id if body.auth_type == "oauth2" else None, scope=(body.scope or None) if body.auth_type == "oauth2" else None, options=body.options.model_dump(), mapping=ck["rules"],
@@ -242,7 +261,13 @@ def update_app(app_id: int, body: AppBody, request: Request, db: Session = Depen
 def delete_app(app_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(_super)):
     a = _get(db, app_id)
     name = a.name
+    application = db.get(Application, a.application_id)
     db.delete(a)
+    db.flush()
+    from backend.app.oidc.models import OIDCClient
+
+    if application is not None and application.sign_on_mode == "none" and not db.query(OIDCClient.id).filter(OIDCClient.application_id == application.id).first():
+        db.delete(application)  # it existed only for provisioning
     record(db, AuditAction.PROVISIONING_APP_DELETED, request, actor, app_id, "provisioning_app",
            {"name": name, "note": "accounts already created in the application are left as they are"})
     db.commit()
@@ -283,7 +308,7 @@ def deprovision_all(app_id: int, request: Request, db: Session = Depends(get_db)
     a = _get(db, app_id)
     if not a.enabled:
         raise HTTPException(status_code=409, detail="Turn the application on first so the changes can be sent")
-    removed = db.query(ProvisioningAssignment).filter(ProvisioningAssignment.app_id == a.id).delete(synchronize_session=False)
+    removed = db.query(ApplicationAssignment).filter(ApplicationAssignment.application_id == a.application_id).delete(synchronize_session=False)
     db.flush()
     queued = service.queue_full_sync(db, a)
     record(db, AuditAction.PROVISIONING_SYNC_REQUESTED, request, actor, a.id, "provisioning_app", {**queued, "deprovision_all": True, "assignments_removed": removed})
@@ -308,7 +333,7 @@ class AssignBody(BaseModel):
     group_id: Optional[int] = None
 
 
-def _assignment_dict(db: Session, x: ProvisioningAssignment) -> dict:
+def _assignment_dict(db: Session, x: ApplicationAssignment) -> dict:
     if x.user_id:
         u = db.get(User, x.user_id)
         return {"id": x.id, "type": "user", "subject_id": x.user_id, "name": f"{u.first_name} {u.last_name}".strip() if u else "", "detail": u.email if u else ""}
@@ -319,7 +344,7 @@ def _assignment_dict(db: Session, x: ProvisioningAssignment) -> dict:
 @router.get("/{app_id}/assignments")
 def list_assignments(app_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):
     _get(db, app_id)
-    rows = db.query(ProvisioningAssignment).filter(ProvisioningAssignment.app_id == app_id).order_by(ProvisioningAssignment.id).limit(500).all()
+    rows = db.query(ApplicationAssignment).filter(ApplicationAssignment.application_id == _get(db, app_id).application_id).order_by(ApplicationAssignment.id).limit(500).all()
     return {"items": [_assignment_dict(db, x) for x in rows]}
 
 
@@ -332,7 +357,7 @@ def add_assignment(app_id: int, body: AssignBody, request: Request, db: Session 
         raise HTTPException(status_code=404, detail="User not found")
     if body.group_id is not None and db.get(Group, body.group_id) is None:
         raise HTTPException(status_code=404, detail="Group not found")
-    x = ProvisioningAssignment(app_id=a.id, user_id=body.user_id, group_id=body.group_id, created_by=actor.id)
+    x = ApplicationAssignment(application_id=a.application_id, user_id=body.user_id, group_id=body.group_id, created_by=actor.id)
     db.add(x)
     try:
         db.flush()
@@ -356,8 +381,8 @@ def add_assignment(app_id: int, body: AssignBody, request: Request, db: Session 
 @router.delete("/{app_id}/assignments/{assignment_id}")
 def remove_assignment(app_id: int, assignment_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
     a = _get(db, app_id)
-    x = db.get(ProvisioningAssignment, assignment_id)
-    if x is None or x.app_id != a.id:
+    x = db.get(ApplicationAssignment, assignment_id)
+    if x is None or x.application_id != a.application_id:
         raise HTTPException(status_code=404, detail="Assignment not found")
     affected = [x.user_id] if x.user_id is not None else service.group_members(db, x.group_id)
     gid, uid = x.group_id, x.user_id

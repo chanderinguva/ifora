@@ -56,7 +56,8 @@ class OIDCClient(TenantOwned, Base):
     """A registered relying party / application (ADR 005 §7)."""
 
     __tablename__ = "oidc_clients"
-    __table_args__ = (UniqueConstraint("tenant_id", "client_id", name="uq_oidc_clients_tenant_client_id"),)
+    __table_args__ = (UniqueConstraint("tenant_id", "client_id", name="uq_oidc_clients_tenant_client_id"),
+                      Index("uq_oidc_clients_application", "application_id", unique=True, postgresql_where=text("application_id IS NOT NULL")))
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     client_id = Column(String(64), nullable=False, index=True)
@@ -71,6 +72,7 @@ class OIDCClient(TenantOwned, Base):
     allowed_scopes = Column(JSONB, nullable=False)
     jwks = Column(JSONB, nullable=True)  # public keys of a private_key_jwt client (inline: no remote fetching, so no SSRF)
     allowed_audiences = Column(JSONB, nullable=False, default=list, server_default="[]")  # service clients: resources they may request
+    application_id = Column(Integer, ForeignKey("applications.id", ondelete="SET NULL"), nullable=True)  # the application this client signs users in to (ADR 010)
     access_token_format = Column(String(8), nullable=False, default="jwt", server_default="jwt")  # jwt | opaque (opaque = revocable, introspect only)
     grant_types = Column(JSONB, nullable=False)
     created_by = Column(Integer, nullable=True)
