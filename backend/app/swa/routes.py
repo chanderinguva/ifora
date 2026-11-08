@@ -240,6 +240,12 @@ def launch(app_id: int, request: Request, response: Response, ctx=Depends(get_se
     if (_now() - session.auth_time).total_seconds() > settings.SWA_FRESH_AUTH_SECONDS:
         # The password is about to reach the browser: a stolen, older session must not be enough to obtain it.
         raise HTTPException(status_code=403, detail="reauthentication_required")
+    from backend.app.policies import engine as policy
+
+    pd = policy.check(db, request, a.id, user, session)
+    if pd.kind != policy.ALLOW:
+        db.commit()  # keeps the policy-denied audit row
+        raise HTTPException(status_code=403, detail="reauthentication_required" if pd.kind == policy.REAUTH else pd.reason)
     cred = _credential(db, a.id, user.id)
     if cred is None:
         raise HTTPException(status_code=409, detail="credential_required")

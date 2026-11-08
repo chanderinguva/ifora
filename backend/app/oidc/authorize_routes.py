@@ -61,6 +61,13 @@ def authorize(request: Request, db: Session = Depends(get_db)):
 
         if sign_on_denied(db, p.client, user.id):
             return _err_redirect(p.redirect_uri, az.AuthzError("access_denied", "the user is not assigned to this application"), p.state)
+        from backend.app.policies import engine as policy
+
+        pd = policy.check(db, request, getattr(p.client, "application_id", None), user, session)
+        if pd.kind == policy.DENY:
+            db.commit()  # keeps the audit row
+            return _err_redirect(p.redirect_uri, az.AuthzError("access_denied", pd.reason), p.state)
+        reauth = reauth or pd.kind == policy.REAUTH
         if reauth and prompt_none:
             return _err_redirect(p.redirect_uri, az.AuthzError("login_required", "re-authentication is required"), p.state)
         if not reauth and not az.consent_required(db, user.id, p.client, p.scopes, p.prompt):
@@ -83,24 +90,26 @@ def authorize(request: Request, db: Session = Depends(get_db)):
 
 # ---- JSON API used by the consent page (cookie session + CSRF, like every other UI call) ----------------
 
-def _view(db: Session, pending, user, session) -> dict:
+def _view(db: Session, request: Request, pending, user, session) -> dict:
+    from backend.app.policies import engine as policy
+
     client = db.get(OIDCClient, pending.client_pk)
     return {
         "client": {"name": client.name, "description": client.description, "first_party": client.first_party},
         "scopes": [{"name": s, "description": az.SCOPE_DESCRIPTIONS[s]} for s in pending.scopes],
         "user": {"email": user.email},
-        "reauth_required": bool(pending.auth_after and session.auth_time < pending.auth_after),
+        "reauth_required": bool(pending.auth_after and session.auth_time < pending.auth_after) or policy.wants_reauth(db, request, getattr(client, "application_id", None), user, session),
         "consent_required": az.consent_required(db, user.id, client, pending.scopes, pending.prompt),
         "redirect_host": urlsplit(pending.redirect_uri).netloc,
     }
 
 
 @api_router.get("/authorization-requests/{request_id}")
-def get_request(request_id: str, ctx=Depends(get_session_and_user), db: Session = Depends(get_db)):
+def get_request(request_id: str, request: Request, ctx=Depends(get_session_and_user), db: Session = Depends(get_db)):
     pending = az.peek_pending(db, request_id)
     if pending is None:
         raise HTTPException(status_code=404, detail="This sign-in request has expired. Return to the application and try again.")
-    return JSONResponse(_view(db, pending, ctx[1], ctx[0]), headers=NO_STORE)
+    return JSONResponse(_view(db, request, pending, ctx[1], ctx[0]), headers=NO_STORE)
 
 
 class Decision(BaseModel):
@@ -114,6 +123,12 @@ def decide(request_id: str, body: Decision, request: Request, ctx=Depends(get_se
     if peeked is not None and peeked.auth_after and session.auth_time < peeked.auth_after:
         # the sign-in that existed when the request was made is not fresh enough; the request stays usable after re-login
         raise HTTPException(status_code=403, detail="reauthentication_required")
+    if peeked is not None:
+        from backend.app.policies import engine as policy
+
+        pc = db.get(OIDCClient, peeked.client_pk)
+        if pc is not None and policy.wants_reauth(db, request, getattr(pc, "application_id", None), user, session):
+            raise HTTPException(status_code=403, detail="reauthentication_required")  # nothing consumed; retry after sign-in
     pending = az.claim_pending(db, request_id)  # single use; a replay or an expired request gets nothing
     if pending is None:
         db.rollback()
@@ -128,6 +143,14 @@ def decide(request_id: str, body: Decision, request: Request, ctx=Depends(get_se
     if sign_on_denied(db, client, user.id):
         db.commit()  # the request stays consumed
         url = az.redirect_with(pending.redirect_uri, {"error": "access_denied", "error_description": "the user is not assigned to this application", "state": pending.state})
+        return JSONResponse({"redirect_to": url}, headers=NO_STORE)
+
+    from backend.app.policies import engine as policy
+
+    pd = policy.check(db, request, getattr(client, "application_id", None), user, session)
+    if pd.kind != policy.ALLOW:
+        db.commit()  # the request stays consumed; a REAUTH that appeared since the check above is refused like a denial
+        url = az.redirect_with(pending.redirect_uri, {"error": "access_denied", "error_description": pd.reason if pd.kind == policy.DENY else "re-authentication is required", "state": pending.state})
         return JSONResponse({"redirect_to": url}, headers=NO_STORE)
 
     meta = {"client_id": client.client_id, "scopes": pending.scopes}
