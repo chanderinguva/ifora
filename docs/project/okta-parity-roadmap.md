@@ -6,7 +6,7 @@ Status: **Done** / **Partial** / **Todo**. Work in order; each phase is one PR.
 ## Admin console (Okta navigation)
 | Okta area | Okta features | IdentityForge |
 |---|---|---|
-| Dashboard | Tasks, usage/health widgets, system log trend, org status | Partial: counts and recent activity; needs widgets and a tasks list |
+| Dashboard | Tasks, usage/health widgets, system log trend, org status | Done (phase 5): Tasks (7 live checks), 7-day sign-in chart, users by status, apps by sign-on method. Todo: org health/status, customisable widgets |
 | Directory > People | Search/filter, bulk actions, statuses, activate/suspend/unlock, reset password/factors, detail tabs | Partial: statuses, status filter, **bulk activate/suspend/unsuspend/unlock/deactivate, Applications and Activity tabs (phase 3)**; Todo: bulk add-to-group, Devices tab |
 | Directory > Groups | Rules, push groups, role assignment | Partial: groups, rules; Todo: group detail tabs (People, Applications, Admin roles) |
 | Directory > Profile Editor | User/app profile, mappings | Partial: user profile; Todo: per-app profile + attribute mapping UI |
