@@ -25,6 +25,7 @@ test("create a bookmark application, assign a user, see it under My apps and lau
   await expect(page.getByTestId("icon-card").locator("img")).toBeVisible();
 
   // assign the signed-in admin (first user option that is not already assigned is not guaranteed to be them, so assign by searching the list)
+  await page.getByTestId("tab-assignments").click();
   const select = page.getByLabel("Assign a user");
   await select.selectOption({ index: 1 });
   await page.getByRole("button", { name: "Assign" }).first().click();
@@ -67,9 +68,29 @@ test("create an OIDC web application from a template, see the secret once, set a
   await expect(page.getByTestId("new-secret")).toContainText("idf_cs_");
   await page.getByRole("button", { name: "Continue to the application" }).click();
   await expect(page.getByRole("heading", { name: n })).toBeVisible();
+  await page.getByTestId("tab-signon").click();
   await page.locator("#g-init").fill("https://e2e.example.com/login");
   await page.getByTestId("oidc-facet").getByRole("button", { name: "Save" }).click();
   await expect(page.getByText("Saved").first()).toBeVisible();
+  await page.getByTestId("tab-general").click();
+  await page.getByRole("button", { name: "Delete" }).click();
+  await expect(page).toHaveURL(/\/admin\/applications$/);
+});
+
+test("browse the app catalog, pick an entry and create a bookmark from it", async ({ page }) => {
+  await loginAsAdmin(page);
+  await page.goto("/admin/applications/new");
+  await page.getByTestId("wizard-view-catalog").click();
+  await page.getByLabel("Search the catalog").fill("gitlab");
+  await page.getByTestId("catalog-gitlab").click();
+  await expect(page.locator("#a-name")).toHaveValue("GitLab");
+  await expect(page.locator("#a-url")).toHaveValue(/gitlab\.com/);
+  await page.getByTestId("wizard-create").click();
+  await expect(page).toHaveURL(/\/admin\/applications\/\d+$/);
+  await page.getByTestId("tab-signon").click();
+  await expect(page.getByTestId("no-signon")).toBeVisible();
+  await page.getByTestId("tab-general").click();
+  page.once("dialog", (d) => d.accept());
   await page.getByRole("button", { name: "Delete" }).click();
   await expect(page).toHaveURL(/\/admin\/applications$/);
 });

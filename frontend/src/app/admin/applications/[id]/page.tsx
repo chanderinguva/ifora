@@ -19,6 +19,9 @@ import type { Group, User } from "@/lib/types";
 type Assignment = { id: number; type: "user" | "group"; subject_id: number; name: string; detail: string };
 type ClientRow = { id: number; client_id: string; name: string; application_id: number | null; initiate_login_uri: string | null; client_type: string };
 
+const TABS = [["general", "General"], ["signon", "Sign On"], ["provisioning", "Provisioning"], ["assignments", "Assignments"]] as const;
+type Tab = (typeof TABS)[number][0];
+
 export default function ApplicationDetail() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -34,6 +37,9 @@ export default function ApplicationDetail() {
   const [iconRev, setIconRev] = useState(0);
   const [initiate, setInitiate] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [tab, setTab] = useState<Tab>("general");
+  useEffect(() => { const h = window.location.hash.slice(1) as Tab; if (TABS.some(([k]) => k === h)) setTab(h); }, []);
+  const pickTab = (k: Tab) => { setTab(k); window.history.replaceState(null, "", `#${k}`); };
 
   const refresh = useCallback(() => {
     http<AppSummary>(`/admin/applications/${id}`).then((a) => { setApp(a); setForm(a); }).catch((e) => setMsg({ ok: false, text: e.message }));
@@ -68,10 +74,18 @@ export default function ApplicationDetail() {
   return (
     <div className="max-w-4xl">
       <PageHeader title={app.name}>
+        <Badge tone={app.status === "active" ? "good" : "neutral"}>{app.status}</Badge>
         <Link href="/admin/applications" className="text-sm underline-offset-4 hover:underline">← All applications</Link>
       </PageHeader>
+      <div role="tablist" aria-label="Application sections" className="mb-6 flex gap-1 border-b">
+        {TABS.map(([k, l]) => (
+          <button key={k} role="tab" type="button" aria-selected={tab === k} data-testid={`tab-${k}`} onClick={() => pickTab(k)}
+            className={`-mb-px border-b-2 px-4 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${tab === k ? "border-primary font-medium" : "border-transparent text-muted-foreground hover:text-foreground"}`}>{l}</button>
+        ))}
+      </div>
       {msg && <Alert variant={msg.ok ? "default" : "destructive"} className="mb-4" role="status"><AlertDescription>{msg.text}</AlertDescription></Alert>}
 
+      {tab === "general" && (<>
       <Card className="mb-6">
         <CardHeader><CardTitle>General</CardTitle></CardHeader>
         <CardContent className="grid gap-3 sm:grid-cols-2">
@@ -108,6 +122,9 @@ export default function ApplicationDetail() {
         </CardContent>
       </Card>
 
+      </>)}
+
+      {tab === "signon" && (<>
       {app.sign_on_mode === "oidc" && (
         <Card className="mb-6" data-testid="oidc-facet">
           <CardHeader><CardTitle>OpenID Connect client</CardTitle></CardHeader>
@@ -150,7 +167,11 @@ export default function ApplicationDetail() {
 
       {app.sign_on_mode === "saml" && <SamlCard appId={app.id} onChange={refresh} />}
       {app.sign_on_mode === "swa" && <SwaCard appId={app.id} onChange={refresh} />}
+      {(app.sign_on_mode === "bookmark" || app.sign_on_mode === "none") && <p className="mb-6 text-sm text-muted-foreground" data-testid="no-signon">{app.sign_on_mode === "bookmark" ? "A bookmark app has no single sign-on settings; users open the launch URL set under General." : "This application has no sign-on method; it only provisions users."}</p>}
 
+      </>)}
+
+      {tab === "provisioning" && (<>
       <Card className="mb-6" data-testid="provisioning-facet">
         <CardHeader><CardTitle>Provisioning</CardTitle></CardHeader>
         <CardContent className="text-sm">
@@ -160,6 +181,9 @@ export default function ApplicationDetail() {
         </CardContent>
       </Card>
 
+      </>)}
+
+      {tab === "assignments" && (<>
       <Card className="mb-6">
         <CardHeader><CardTitle>Assignments</CardTitle></CardHeader>
         <CardContent className="space-y-4">
@@ -188,6 +212,7 @@ export default function ApplicationDetail() {
           )}
         </CardContent>
       </Card>
+      </>)}
     </div>
   );
 }

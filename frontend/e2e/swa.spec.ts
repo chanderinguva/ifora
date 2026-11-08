@@ -26,6 +26,7 @@ test("SWA application: configure, store a password once, then the tile posts it 
   await expect(page).toHaveURL(/\/admin\/applications\/(\d+)$/);
   const appId = page.url().split("/").pop()!;
 
+  await page.getByTestId("tab-signon").click();
   await page.locator("#swa-url").fill(TARGET);
   await page.locator("#swa-uf").fill("login_user");
   await page.locator("#swa-pf").fill("login_pass");
@@ -36,6 +37,7 @@ test("SWA application: configure, store a password once, then the tile posts it 
   await expect(page.getByText("SWA settings saved")).toBeVisible();
 
   // assign the signed-in throwaway admin (SWA always requires an assignment)
+  await page.getByTestId("tab-assignments").click();
   const select = page.getByLabel("Assign a user");
   const value = await select.locator("option", { hasText: process.env.ADMIN_EMAIL ?? "e2e.throwaway@example.com" }).first().getAttribute("value");
   await select.selectOption(value!);
@@ -65,6 +67,7 @@ test("SWA application: configure, store a password once, then the tile posts it 
 
   // the admin sees that a sign-in is stored (never the password) and can reset it
   await page.goto(`/admin/applications/${appId}`);
+  await page.getByTestId("tab-signon").click();
   await expect(page.getByTestId("swa-credentials")).toContainText("legacy.jdoe");
   await expect(page.getByTestId("swa-credentials")).not.toContainText("Legacy-Secret-42");
   await page.getByRole("button", { name: "Reset" }).click();

@@ -13,6 +13,7 @@ import { PageHeader, fieldClass } from "@/components/bits";
 import { http } from "@/lib/http";
 import { cn } from "@/lib/utils";
 import type { AppSummary, Template } from "@/lib/applications";
+import { CATALOG, type CatalogEntry } from "@/lib/app-catalog";
 
 type Method = "oidc" | "saml" | "swa" | "api" | "bookmark" | "none";
 const METHODS: { id: Method; title: string; icon: typeof Globe; text: string }[] = [
@@ -48,6 +49,10 @@ export default function NewApplication() {
   const [created, setCreated] = useState<{ id: number; client_id: string; secret?: string } | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [view, setView] = useState<"methods" | "catalog">("methods");
+  const [cq, setCq] = useState("");
+  const pickCatalog = (c: CatalogEntry) => { setMethod("bookmark"); setF((p) => ({ ...p, name: c.name, launch_url: c.url })); setStep(3); };
+  const hits = CATALOG.filter((c) => (c.name + " " + c.category).toLowerCase().includes(cq.toLowerCase()));
   const set = (k: keyof typeof f, v: string) => setF((p) => ({ ...p, [k]: v }));
 
   useEffect(() => { http<{ items: Template[] }>("/admin/applications/templates").then((r) => setTemplates(r.items)).catch(() => {}); }, []);
@@ -117,6 +122,31 @@ export default function NewApplication() {
       {msg && <Alert variant="destructive" className="mb-4" role="status"><AlertDescription>{msg}</AlertDescription></Alert>}
 
       {step === 1 && (
+        <div role="tablist" aria-label="Start from" className="mb-4 flex gap-1 border-b">
+          {([["methods", "Create new app integration"], ["catalog", "Browse App Catalog"]] as const).map(([k, l]) => (
+            <button key={k} role="tab" type="button" aria-selected={view === k} data-testid={`wizard-view-${k}`} onClick={() => setView(k)}
+              className={cn("-mb-px border-b-2 px-4 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", view === k ? "border-primary font-medium" : "border-transparent text-muted-foreground hover:text-foreground")}>{l}</button>
+          ))}
+        </div>
+      )}
+
+      {step === 1 && view === "catalog" && (
+        <div data-testid="catalog">
+          <Input aria-label="Search the catalog" placeholder="Search apps…" className="mb-3 max-w-xs" value={cq} onChange={(e) => setCq(e.target.value)} />
+          <p className="mb-3 text-sm text-muted-foreground">Starter entries add a bookmark to the vendor&apos;s sign-in page. Single sign-on needs tenant-specific values, so choose SAML or OIDC under &quot;Create new&quot; for that.</p>
+          <ul className="grid gap-3 sm:grid-cols-2">
+            {hits.map((c) => (
+              <li key={c.id}><button type="button" data-testid={`catalog-${c.id}`} onClick={() => pickCatalog(c)} className="flex w-full items-center gap-3 rounded-lg border p-3 text-left hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                <span aria-hidden className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary font-semibold">{c.name[0]}</span>
+                <span><span className="block font-medium">{c.name}</span><span className="block text-xs text-muted-foreground">{c.category}</span></span>
+              </button></li>
+            ))}
+            {hits.length === 0 && <li className="text-sm text-muted-foreground">No matches.</li>}
+          </ul>
+        </div>
+      )}
+
+      {step === 1 && view === "methods" && (
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">Choose how people will sign in to the application.</p>
           {METHODS.map((m) => <Pick key={m.id} testid={`method-${m.id}`} selected={method === m.id} onClick={() => setMethod(m.id)} icon={m.icon} title={m.title} text={m.text} />)}
@@ -170,7 +200,7 @@ export default function NewApplication() {
 
       <div className="mt-6 flex gap-2">
         {step > 1 && <Button variant="outline" onClick={back}>Previous</Button>}
-        {step === 1 || (step === 2 && needsType)
+        {step === 1 && view === "catalog" ? null : step === 1 || (step === 2 && needsType)
           ? <Button disabled={!method} onClick={next} data-testid="wizard-next">Next</Button>
           : <Button disabled={!valid || busy} onClick={create} data-testid="wizard-create">Done</Button>}
         <Button variant="ghost" onClick={() => router.push("/admin/applications")}>Cancel</Button>
