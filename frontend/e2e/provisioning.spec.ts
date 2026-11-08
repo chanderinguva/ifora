@@ -25,8 +25,8 @@ test("create a SCIM token, see it once, use the base URL, revoke it", async ({ p
   await expect(row).toContainText("revoked");
 });
 
-test("Provisioning is reachable from the navigation", async ({ page }) => {
+test("Inbound SCIM is reachable from the navigation", async ({ page }) => {
   await loginAsAdmin(page);
-  await page.getByRole("link", { name: "Provisioning" }).first().click();
+  await page.getByRole("link", { name: "Inbound SCIM" }).click();
   await expect(page).toHaveURL(/\/admin\/provisioning/);
 });
