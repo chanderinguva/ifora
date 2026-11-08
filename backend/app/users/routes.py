@@ -239,6 +239,49 @@ def create_user(
     return out
 
 
+class BulkBody(BaseModel):
+    user_ids: List[int] = Field(..., min_length=1, max_length=100)
+    action: str = Field(..., pattern="^(activate|suspend|unsuspend|deactivate|unlock)$")
+
+
+# action -> (new status, statuses it may start from)
+_BULK = {
+    "activate": ("active", {"staged", "provisioned", "deprovisioned"}),
+    "suspend": ("suspended", {"active"}),
+    "unsuspend": ("active", {"suspended"}),
+    "unlock": ("active", {"locked_out"}),
+    "deactivate": ("deprovisioned", {"staged", "provisioned", "active", "recovery", "password_expired", "locked_out", "suspended"}),
+}
+
+
+@router.post("/bulk")
+def bulk_action(body: BulkBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    """Apply one lifecycle action to many users. Each user is checked on its own; refusals are reported, not raised."""
+    new, allowed = _BULK[body.action]
+    results = []
+    for uid in dict.fromkeys(body.user_ids):
+        u = db.query(User).filter(User.id == uid).first()
+        reason = None
+        if u is None:
+            reason = "not found"
+        elif u.id == actor.id:
+            reason = "you cannot change your own account"
+        elif u.is_super_admin:
+            reason = "super administrators are protected"
+        elif u.is_admin and not actor.is_super_admin:
+            reason = "only a super administrator can modify administrators"
+        elif u.status not in allowed:
+            reason = f"not allowed from status '{u.status}'"
+        if reason:
+            results.append({"user_id": uid, "ok": False, "reason": reason})
+            continue
+        lifecycle.set_status(db, u, new, request, actor)
+        results.append({"user_id": uid, "ok": True, "status": u.status})
+    db.commit()
+    return {"action": body.action, "done": sum(1 for r in results if r["ok"]), "results": results}
+
+
+
 @router.get("/{user_id}")
 def get_user(user_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):
     return _detail(_get_or_404(db, user_id))
@@ -398,3 +441,35 @@ def delete_user(
     record(db, AuditAction.USER_DELETED, request, actor, user_id, "user", {"email": email})
     db.commit()
     return {"success": True}
+
+
+@router.get("/{user_id}/applications")
+def user_applications(user_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    """Applications this user may use, and whether that comes from a direct assignment or a group."""
+    from backend.app.applications.models import Application, ApplicationAssignment
+
+    _get_or_404(db, user_id)
+    direct = {a for (a,) in db.query(ApplicationAssignment.application_id).filter(ApplicationAssignment.user_id == user_id)}
+    gids = [g for (g,) in db.execute(user_group_association.select().with_only_columns(user_group_association.c.group_id).where(user_group_association.c.user_id == user_id)).all()]
+    via_group: Dict[int, List[str]] = {}
+    if gids:
+        rows = (db.query(ApplicationAssignment.application_id, Group.name)
+                .join(Group, Group.id == ApplicationAssignment.group_id).filter(ApplicationAssignment.group_id.in_(gids)).all())
+        for app_id, gname in rows:
+            via_group.setdefault(app_id, []).append(gname)
+    ids = direct | set(via_group)
+    apps = db.query(Application).filter(Application.id.in_(ids)).order_by(Application.name).all() if ids else []
+    return {"items": [{"id": a.id, "name": a.name, "sign_on_mode": a.sign_on_mode, "status": a.status,
+                       "direct": a.id in direct, "groups": sorted(via_group.get(a.id, []))} for a in apps]}
+
+
+@router.get("/{user_id}/events")
+def user_events(user_id: int, page_size: int = Query(25, ge=1, le=100), db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    """Audit events about this user (as the target) or performed by them (as the actor)."""
+    from backend.app.audit.model import AuditEvent
+
+    _get_or_404(db, user_id)
+    rows = (db.query(AuditEvent)
+            .filter(or_((AuditEvent.target_type == "user") & (AuditEvent.target_id == str(user_id)), AuditEvent.actor_id == str(user_id)))
+            .order_by(AuditEvent.timestamp.desc(), AuditEvent.id.desc()).limit(page_size).all())
+    return {"items": [e.to_dict() for e in rows]}
