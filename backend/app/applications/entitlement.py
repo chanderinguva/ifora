@@ -55,7 +55,7 @@ def sign_on_denied(db: Session, client, user_id: int) -> bool:
     return bool(app.require_assignment) and not is_entitled(db, app.id, user_id)
 
 
-def ensure_for_client(db: Session, client, actor_id=None) -> "Application":
+def ensure_for_client(db: Session, client, actor_id=None, launch_url=None, require_assignment=False) -> "Application":
     """Every OIDC client is an application. A client created through the OIDC client API gets one that keeps today's
     behaviour (assignment not required); create the application first to require assignment."""
     import uuid
@@ -66,7 +66,8 @@ def ensure_for_client(db: Session, client, actor_id=None) -> "Application":
         n += 1
         name = f"{base} ({n})"
     app = Application(public_id=str(uuid.uuid4()), name=name, description=client.description, sign_on_mode="oidc",
-                      visible=client.client_type != "service", require_assignment=False, created_by=actor_id)
+                      visible=client.client_type != "service", require_assignment=require_assignment, created_by=actor_id,
+                      launch_url=None if client.client_type == "service" else launch_url)
     db.add(app)
     db.flush()
     client.application_id = app.id

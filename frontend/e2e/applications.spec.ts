@@ -48,3 +48,23 @@ test("create a bookmark application, assign a user, see it under My apps and lau
   await expect(page).toHaveURL(/\/admin\/applications$/);
   await expect(page.getByText(name)).toHaveCount(0);
 });
+
+test("create an OIDC web application from a template, see the secret once, set an initiate-login URI, delete it", async ({ page }) => {
+  page.on("dialog", (d) => d.accept());
+  const n = `E2E web ${Date.now()}`;
+  await loginAsAdmin(page);
+  await page.goto("/admin/applications");
+  await page.getByRole("button", { name: /Add application/ }).click();
+  await page.locator("#a-kind").selectOption({ label: "OIDC · Web application" });
+  await page.locator("#a-name").fill(n);
+  await page.locator("#a-redirects").fill("https://e2e.example.com/callback");
+  await page.getByRole("button", { name: "Create", exact: true }).click();
+  await expect(page.getByTestId("new-secret")).toContainText("idf_cs_");
+  await page.getByRole("button", { name: "Continue to the application" }).click();
+  await expect(page.getByRole("heading", { name: n })).toBeVisible();
+  await page.locator("#g-init").fill("https://e2e.example.com/login");
+  await page.getByTestId("oidc-facet").getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Saved").first()).toBeVisible();
+  await page.getByRole("button", { name: "Delete" }).click();
+  await expect(page).toHaveURL(/\/admin\/applications$/);
+});

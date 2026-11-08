@@ -204,3 +204,81 @@ def test_icon_is_served_only_to_entitled_users(db, super_admin, member):
     assert member.get("/me/apps").json()["items"][0]["has_icon"] is True
     assert member.put(f"/admin/applications/{a['id']}/icon", {"data": b64(PNG)}).status_code == 403
     assert Api().get(f"/me/apps/{a['id']}/icon").status_code == 401
+
+
+# ---- OIDC templates and IdP-initiated launch -----------------------------------------------------------------
+
+def test_templates_listed_and_unknown_rejected(super_admin):
+    ids = [t["id"] for t in super_admin.get("/admin/applications/templates").json()["items"]]
+    assert ids == ["web", "spa", "native", "service"]
+    assert super_admin.post("/admin/applications/from-template", {"template": "nope", "name": "X"}).status_code == 422
+
+
+def test_web_template_creates_app_and_client_with_secret_and_requires_assignment(super_admin, member):
+    r = super_admin.post("/admin/applications/from-template", {"template": "web", "name": "Portal", "redirect_uris": ["https://portal.example.com/cb"],
+                                                              "launch_url": "https://portal.example.com/"})
+    assert r.status_code == 201, r.text
+    c = r.json()
+    assert c["client_type"] == "confidential" and c["client_secret"].startswith("idf_cs_")
+    a = super_admin.get(f"/admin/applications/{c['application_id']}").json()
+    assert a["sign_on_mode"] == "oidc" and a["require_assignment"] is True and a["launch_url"] == "https://portal.example.com/" and a["visible"] is True
+    # secure default: unassigned user is refused until assigned
+    p = {"client_id": c["client_id"], "redirect_uri": "https://portal.example.com/cb", "response_type": "code", "scope": "openid",
+         "code_challenge": "x" * 43, "code_challenge_method": "S256", "state": "s"}
+    assert loc(member.c.get("/oauth/authorize", params=p, follow_redirects=False))[1].get("error") == "access_denied"
+    assign(super_admin, a, user_id=member.user.id)
+    assert "request_id" in loc(member.c.get("/oauth/authorize", params=p, follow_redirects=False))[1]
+
+
+def test_spa_and_native_templates_are_public_without_secret(super_admin):
+    for tpl, uri in (("spa", "https://spa.example.com/cb"), ("native", "http://127.0.0.1:8123/cb")):
+        r = super_admin.post("/admin/applications/from-template", {"template": tpl, "name": tpl, "redirect_uris": [uri]})
+        assert r.status_code == 201, r.text
+        assert r.json()["client_type"] == "public" and "client_secret" not in r.json()
+    bad = super_admin.post("/admin/applications/from-template", {"template": "native", "name": "n2", "redirect_uris": ["myapp://cb"]})
+    assert bad.status_code == 422                                    # custom schemes are not supported (documented)
+    assert super_admin.post("/admin/applications/from-template", {"template": "spa", "name": "spa"}).status_code == 409   # name taken
+    assert super_admin.post("/admin/applications/from-template", {"template": "spa", "name": "s3"}).status_code == 422     # redirect required
+
+
+def test_service_template_needs_super_admin_and_is_not_a_tile(super_admin, admin):
+    body = {"template": "service", "name": "Sync job", "allowed_audiences": ["https://api.example.com"]}
+    assert admin.post("/admin/applications/from-template", body).status_code == 403
+    r = super_admin.post("/admin/applications/from-template", body)
+    assert r.status_code == 201, r.text
+    a = super_admin.get(f"/admin/applications/{r.json()['application_id']}").json()
+    assert a["visible"] is False and a["launch_url"] is None
+
+
+def test_failed_template_creates_nothing(super_admin):
+    assert super_admin.post("/admin/applications/from-template", {"template": "web", "name": "Half", "redirect_uris": ["http://evil.example.com/cb"]}).status_code == 422
+    assert super_admin.get("/admin/applications").json()["items"] == []
+
+
+def test_idp_initiated_launch_sends_iss_and_target_link_uri(db, super_admin, member):
+    from urllib.parse import parse_qs, urlsplit
+    from backend.app.config import settings
+
+    r = super_admin.post("/admin/applications/from-template", {"template": "web", "name": "Portal", "redirect_uris": ["https://portal.example.com/cb"],
+                                                              "launch_url": "https://portal.example.com/home", "initiate_login_uri": "https://portal.example.com/login"})
+    assert r.status_code == 201, r.text
+    app_id = r.json()["application_id"]
+    assign(super_admin, {"id": app_id}, user_id=member.user.id)
+    url = member.post(f"/me/apps/{app_id}/launch").json()["url"]
+    u = urlsplit(url)
+    assert f"{u.scheme}://{u.netloc}{u.path}" == "https://portal.example.com/login"
+    q = {k: v[0] for k, v in parse_qs(u.query).items()}
+    assert q == {"iss": settings.OIDC_ISSUER, "target_link_uri": "https://portal.example.com/home"}
+    # only initiate URI, no home page: still launchable
+    super_admin.put(f"/admin/applications/{app_id}", {"name": "Portal", "sign_on_mode": "oidc", "launch_url": ""})
+    assert member.get("/me/apps").json()["items"][0]["launchable"] is True
+    assert "target_link_uri" not in member.post(f"/me/apps/{app_id}/launch").json()["url"]
+
+
+def test_initiate_login_uri_validation_and_update(super_admin):
+    c = mk(super_admin)
+    for bad in ("http://evil.example.com/login", "javascript:alert(1)", "https://x.example.com/a#f", "https://u:p@x.example.com/"):
+        assert super_admin.patch(f"/admin/oidc/clients/{c['id']}", {"initiate_login_uri": bad}).status_code == 422, bad
+    r = super_admin.patch(f"/admin/oidc/clients/{c['id']}", {"initiate_login_uri": "https://x.example.com/login"})
+    assert r.status_code == 200 and r.json()["initiate_login_uri"] == "https://x.example.com/login"
+    assert super_admin.patch(f"/admin/oidc/clients/{c['id']}", {"initiate_login_uri": ""}).json()["initiate_login_uri"] is None

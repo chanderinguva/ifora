@@ -19,6 +19,11 @@
 - `application_icons` (migration 0036), kept out of the application row. Admins upload PNG/JPEG/WebP (≤100 KB, checked by file signature; **SVG is refused** because it can carry script) as base64 JSON. Served by our API only (`/admin/applications/{id}/icon`, `/me/apps/{id}/icon` for entitled users) with `nosniff`, `default-src 'none'` CSP and private caching, so no user's browser contacts a third-party image host. The tile falls back to a coloured initial.
 - Image dimensions are not checked or resized server-side.
 
+## OIDC templates and IdP-initiated launch (step 3, migration 0037)
+- `GET /admin/applications/templates`, `POST /admin/applications/from-template`: **web** (confidential, secret), **SPA** and **native** (public, PKCE, no secret), **service** (client credentials, super admin only, no tile). One transaction creates the application and its client; the secret is returned once. Templates default to `require_assignment = true` (the plain client API keeps `false` for compatibility). Validation is the existing client validation, so a failed template creates nothing.
+- Native apps: https app-links or loopback `http://127.0.0.1` redirects only. **Custom URL schemes (RFC 8252 private-use) are not supported yet.**
+- `oidc_clients.initiate_login_uri` (https, or loopback http): launching the tile sends the user to it with `iss` and, if a launch URL is set, `target_link_uri` (OIDC third-party initiated login). The application then starts its own authorization-code flow with state and PKCE. IdentityForge never sends an unsolicited code or token, and no user data is in the URL. An OIDC app is launchable if it has a launch URL or an initiate URI.
+
 ## Known limits
 - Revoking an assignment does not revoke OIDC tokens already issued.
 - No database trigger enforces that an assignment's user/group belong to the same tenant (single tenant today).

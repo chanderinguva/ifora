@@ -172,6 +172,7 @@ def client_to_dict(c: OIDCClient, secrets_: Optional[List[OIDCClientSecret]] = N
     d = {
         "id": c.id,
         "application_id": c.application_id,
+        "initiate_login_uri": c.initiate_login_uri,
         "client_id": c.client_id,
         "name": c.name,
         "description": c.description,

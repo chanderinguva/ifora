@@ -15,7 +15,7 @@ import { appBody, SIGN_ON_LABEL, type AppSummary } from "@/lib/applications";
 import type { Group, User } from "@/lib/types";
 
 type Assignment = { id: number; type: "user" | "group"; subject_id: number; name: string; detail: string };
-type ClientRow = { id: number; client_id: string; name: string; application_id: number | null };
+type ClientRow = { id: number; client_id: string; name: string; application_id: number | null; initiate_login_uri: string | null; client_type: string };
 
 export default function ApplicationDetail() {
   const { id } = useParams<{ id: string }>();
@@ -30,6 +30,7 @@ export default function ApplicationDetail() {
   const [pickGroup, setPickGroup] = useState("");
   const [pickClient, setPickClient] = useState("");
   const [iconRev, setIconRev] = useState(0);
+  const [initiate, setInitiate] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const refresh = useCallback(() => {
@@ -109,7 +110,7 @@ export default function ApplicationDetail() {
         <Card className="mb-6" data-testid="oidc-facet">
           <CardHeader><CardTitle>OpenID Connect client</CardTitle></CardHeader>
           <CardContent className="space-y-3 text-sm">
-            {app.oidc_client ? (
+            {app.oidc_client ? (<>
               <div className="flex items-center justify-between gap-2">
                 <span><span className="font-medium">{app.oidc_client.name}</span> <code className="text-xs">{app.oidc_client.client_id}</code></span>
                 <span className="space-x-2">
@@ -117,7 +118,21 @@ export default function ApplicationDetail() {
                   <Button size="sm" variant="outline" onClick={() => run(() => http(`/admin/applications/${id}/oidc-client`, { method: "DELETE" }), "Client detached")}>Detach</Button>
                 </span>
               </div>
-            ) : (
+              {app.oidc_client.client_type !== "service" && (() => {
+                const cur = clients.find((c) => c.id === app.oidc_client!.id)?.initiate_login_uri ?? "";
+                const val = initiate ?? cur;
+                return (
+                  <div className="space-y-1">
+                    <Label htmlFor="g-init">Initiate login URI (IdP-initiated launch)</Label>
+                    <div className="flex gap-2">
+                      <Input id="g-init" placeholder="https://app.example.com/login" value={val} onChange={(e) => setInitiate(e.target.value)} />
+                      <Button size="sm" variant="outline" disabled={val === cur} onClick={() => run(async () => { await http(`/admin/oidc/clients/${app.oidc_client!.id}`, { method: "PATCH", body: { initiate_login_uri: val } }); setInitiate(null); }, "Saved")}>Save</Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">The tile opens this URL with <code>iss</code> (and <code>target_link_uri</code> = the launch URL). The app must then start a standard authorization-code flow with PKCE.</p>
+                  </div>
+                );
+              })()}
+            </>) : (
               <div className="flex flex-wrap gap-2">
                 <select aria-label="Attach a client" className={`${fieldClass} w-72`} value={pickClient} onChange={(e) => setPickClient(e.target.value)}>
                   <option value="">Attach an existing client…</option>
