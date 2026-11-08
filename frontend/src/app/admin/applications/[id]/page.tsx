@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge, PageHeader, fieldClass } from "@/components/bits";
+import { AppIcon } from "@/components/app-icon";
 import { http, qs, type Page } from "@/lib/http";
 import { appBody, SIGN_ON_LABEL, type AppSummary } from "@/lib/applications";
 import type { Group, User } from "@/lib/types";
@@ -28,6 +29,7 @@ export default function ApplicationDetail() {
   const [pickUser, setPickUser] = useState("");
   const [pickGroup, setPickGroup] = useState("");
   const [pickClient, setPickClient] = useState("");
+  const [iconRev, setIconRev] = useState(0);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const refresh = useCallback(() => {
@@ -44,6 +46,14 @@ export default function ApplicationDetail() {
   async function run(fn: () => Promise<unknown>, ok?: string) {
     setMsg(null);
     try { await fn(); if (ok) setMsg({ ok: true, text: ok }); refresh(); } catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : "Failed" }); }
+  }
+
+  async function uploadIcon(f: File) {
+    if (f.size > 100 * 1024) { setMsg({ ok: false, text: "The logo must be at most 100 KB" }); return; }
+    const bytes = new Uint8Array(await f.arrayBuffer());
+    let bin = "";
+    bytes.forEach((b) => { bin += String.fromCharCode(b); });
+    await run(async () => { await http(`/admin/applications/${id}/icon`, { method: "PUT", body: { data: btoa(bin) } }); setIconRev((n) => n + 1); }, "Logo saved");
   }
 
   if (!app || !form) return <div className="text-sm text-muted-foreground">{msg ? msg.text : "Loading…"}</div>;
@@ -77,6 +87,20 @@ export default function ApplicationDetail() {
           <div className="flex gap-2 sm:col-span-2">
             <Button onClick={() => run(() => http(`/admin/applications/${id}`, { method: "PUT", body: appBody(form) }), "Saved")}>Save</Button>
             <Button variant="destructive" onClick={() => { if (confirm(`Delete ${app.name}?`)) run(async () => { await http(`/admin/applications/${id}`, { method: "DELETE" }); router.push("/admin/applications"); }); }}>Delete</Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="mb-6" data-testid="icon-card">
+        <CardHeader><CardTitle>Logo</CardTitle></CardHeader>
+        <CardContent className="flex flex-wrap items-center gap-4 text-sm">
+          <AppIcon key={`${app.has_icon}-${iconRev}`} path={`/admin/applications/${id}/icon?v=${iconRev}`} name={app.name} hasIcon={app.has_icon} size={64} />
+          <div className="space-y-2">
+            <p className="text-muted-foreground">PNG, JPEG or WebP, at most 100 KB; square works best. Shown on users&apos; My apps tiles.</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <input type="file" aria-label="Upload logo" accept="image/png,image/jpeg,image/webp" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) uploadIcon(f); }} />
+              {app.has_icon && <Button size="sm" variant="outline" onClick={() => run(async () => { await http(`/admin/applications/${id}/icon`, { method: "DELETE" }); setIconRev((n) => n + 1); }, "Logo removed")}>Remove logo</Button>}
+            </div>
           </div>
         </CardContent>
       </Card>

@@ -16,6 +16,12 @@ test("create a bookmark application, assign a user, see it under My apps and lau
   await expect(page).toHaveURL(/\/admin\/applications\/\d+$/);
   await expect(page.getByRole("heading", { name })).toBeVisible();
 
+  // logo: a 1x1 PNG; the dashboard tile then shows an image instead of the initial
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
+  await page.getByLabel("Upload logo").setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: png });
+  await expect(page.getByText("Logo saved")).toBeVisible();
+  await expect(page.getByTestId("icon-card").locator("img")).toBeVisible();
+
   // assign the signed-in admin (first user option that is not already assigned is not guaranteed to be them, so assign by searching the list)
   const select = page.getByLabel("Assign a user");
   await select.selectOption({ index: 1 });
@@ -28,6 +34,7 @@ test("create a bookmark application, assign a user, see it under My apps and lau
   await expect(page.getByRole("heading", { name: "My apps" })).toBeVisible();
   const mine = page.getByTestId("my-apps").getByText(name);
   if (await mine.count()) {
+    await expect(page.getByRole("button", { name: `Open ${name}` }).locator("img")).toBeVisible();
     const [popup] = await Promise.all([context.waitForEvent("page"), page.getByRole("button", { name: `Open ${name}` }).click()]);
     await expect(popup).toHaveURL(/example\.com/);
     await popup.close();

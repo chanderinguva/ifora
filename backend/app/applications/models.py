@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint, text
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Index, Integer, LargeBinary, String, UniqueConstraint, text
 
 from backend.app.db import Base
 from backend.app.tenancy import TenantOwned
@@ -52,3 +52,16 @@ class ApplicationAssignment(TenantOwned, Base):
     group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=True, index=True)
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
+
+
+class ApplicationIcon(TenantOwned, Base):
+    """Tile logo, kept apart from the application row so list queries never load image bytes. Raster only (PNG/JPEG/WebP,
+    checked by signature): no SVG, which can carry script."""
+
+    __tablename__ = "application_icons"
+
+    application_id = Column(Integer, ForeignKey("applications.id", ondelete="CASCADE"), primary_key=True)
+    content_type = Column(String(20), nullable=False)
+    data = Column(LargeBinary, nullable=False)
+    sha256 = Column(String(64), nullable=False)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=_now)

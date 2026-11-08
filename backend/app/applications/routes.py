@@ -1,18 +1,21 @@
 """Applications API (ADR 010): admin management, shared assignments, and the end user's "My apps"."""
 
+import base64
+import binascii
+import hashlib
 import uuid
 from datetime import datetime, timezone
 from typing import List, Optional
 from urllib.parse import urlsplit
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.app.applications import entitlement as ent
-from backend.app.applications.models import Application, ApplicationAssignment, SIGN_ON_MODES
+from backend.app.applications.models import Application, ApplicationAssignment, ApplicationIcon, SIGN_ON_MODES
 from backend.app.audit.model import AuditAction
 from backend.app.audit.service import record
 from backend.app.auth.deps import get_current_user, require_admin
@@ -65,6 +68,7 @@ def _dict(db: Session, a: Application) -> dict:
         "launch_url": a.launch_url, "status": a.status, "visible": a.visible, "require_assignment": a.require_assignment,
         "oidc_client": {"id": client.id, "client_id": client.client_id, "name": client.name, "client_type": client.client_type} if client else None,
         "provisioning": {"id": prov.id, "kind": prov.kind, "enabled": prov.enabled} if prov else None,
+        "has_icon": db.get(ApplicationIcon, a.id) is not None,
         "assigned_users": n(db.query(func.count(ApplicationAssignment.id)).filter(ApplicationAssignment.application_id == a.id, ApplicationAssignment.user_id.is_not(None))),
         "assigned_groups": n(db.query(func.count(ApplicationAssignment.id)).filter(ApplicationAssignment.application_id == a.id, ApplicationAssignment.group_id.is_not(None))),
         "created_at": a.created_at.isoformat(), "updated_at": a.updated_at.isoformat(),
@@ -179,6 +183,74 @@ def detach_oidc_client(app_id: int, request: Request, db: Session = Depends(get_
     return _dict(db, a)
 
 
+# ---- icon -----------------------------------------------------------------------------------------------------
+
+MAX_ICON_BYTES = 100 * 1024
+
+
+class IconBody(BaseModel):
+    data: str = Field(..., max_length=140_000)  # base64 of a PNG, JPEG or WebP
+
+
+def _sniff(raw: bytes) -> Optional[str]:
+    if raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if raw.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+def _icon_response(icon: ApplicationIcon) -> Response:
+    return Response(content=icon.data, media_type=icon.content_type, headers={
+        "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'",
+        "Cache-Control": "private, max-age=300", "ETag": f'"{icon.sha256[:32]}"'})
+
+
+@router.put("/{app_id}/icon")
+def set_icon(app_id: int, body: IconBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    a = _get(db, app_id)
+    try:
+        raw = base64.b64decode(body.data, validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(status_code=422, detail="Icon is not valid base64")
+    if not raw or len(raw) > MAX_ICON_BYTES:
+        raise HTTPException(status_code=422, detail=f"Icon must be at most {MAX_ICON_BYTES // 1024} KB")
+    ctype = _sniff(raw)
+    if ctype is None:
+        raise HTTPException(status_code=422, detail="Icon must be a PNG, JPEG or WebP image")
+    icon = db.get(ApplicationIcon, a.id)
+    digest = hashlib.sha256(raw).hexdigest()
+    if icon is None:
+        db.add(ApplicationIcon(application_id=a.id, content_type=ctype, data=raw, sha256=digest, updated_at=datetime.now(timezone.utc)))
+    else:
+        icon.content_type, icon.data, icon.sha256, icon.updated_at = ctype, raw, digest, datetime.now(timezone.utc)
+    record(db, AuditAction.APPLICATION_ICON_SET, request, actor, a.id, "application", {"bytes": len(raw), "type": ctype})
+    db.commit()
+    return _dict(db, a)
+
+
+@router.delete("/{app_id}/icon")
+def remove_icon(app_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    a = _get(db, app_id)
+    icon = db.get(ApplicationIcon, a.id)
+    if icon is None:
+        raise HTTPException(status_code=404, detail="No icon")
+    db.delete(icon)
+    record(db, AuditAction.APPLICATION_ICON_REMOVED, request, actor, a.id, "application", {})
+    db.commit()
+    return _dict(db, a)
+
+
+@router.get("/{app_id}/icon")
+def get_icon(app_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    icon = db.get(ApplicationIcon, _get(db, app_id).id)
+    if icon is None:
+        raise HTTPException(status_code=404, detail="No icon")
+    return _icon_response(icon)
+
+
 # ---- assignments -------------------------------------------------------------------------------------------------
 
 class AssignBody(BaseModel):
@@ -255,7 +327,9 @@ def my_apps(db: Session = Depends(get_db), user: User = Depends(get_current_user
     ids = ent.entitled_application_ids(db, user.id)
     rows = db.query(Application).filter(Application.id.in_(ids or {0}), Application.status == "active", Application.visible.is_(True),
                                         Application.sign_on_mode != "none").order_by(Application.name).all()
-    return {"items": [{"id": a.id, "name": a.name, "description": a.description, "sign_on_mode": a.sign_on_mode, "launchable": _launchable(a)} for a in rows]}
+    icons = {i for (i,) in db.query(ApplicationIcon.application_id).filter(ApplicationIcon.application_id.in_([a.id for a in rows] or [0])).all()}
+    return {"items": [{"id": a.id, "name": a.name, "description": a.description, "sign_on_mode": a.sign_on_mode, "launchable": _launchable(a),
+                       "has_icon": a.id in icons} for a in rows]}
 
 
 @me_router.post("/{app_id}/launch")
@@ -266,3 +340,12 @@ def launch(app_id: int, request: Request, db: Session = Depends(get_db), user: U
     record(db, AuditAction.APPLICATION_LAUNCHED, request, user, a.id, "application", {"name": a.name})
     db.commit()
     return {"url": a.launch_url}
+
+
+@me_router.get("/{app_id}/icon")
+def my_app_icon(app_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    a = db.get(Application, app_id)
+    icon = db.get(ApplicationIcon, app_id) if a is not None else None
+    if a is None or icon is None or a.status != "active" or not a.visible or not ent.is_entitled(db, a.id, user.id):
+        raise HTTPException(status_code=404, detail="Not found")
+    return _icon_response(icon)
