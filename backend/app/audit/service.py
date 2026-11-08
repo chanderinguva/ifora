@@ -37,3 +37,6 @@ def record(
     from backend.app.recipes.events import emit_from_audit
 
     emit_from_audit(db, action, actor, target_id, target_type, safe)
+    from backend.app.provisioning.service import on_audit
+
+    on_audit(db, action, target_id, safe)  # outbound provisioning (ADR 009): queue tasks in the same transaction

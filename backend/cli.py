@@ -117,6 +117,12 @@ def recipes_worker(interval: float = 2.0, once: bool = False, out=print) -> int:
             group_rules.sync_pending_all()  # finishes large group-rule activations in batches
         except Exception:  # noqa: BLE001 - never stop the worker for housekeeping
             pass
+        try:
+            from backend.app.provisioning import worker as provisioning_worker
+
+            provisioning_worker.process_once()  # outbound provisioning to apps (ADR 009)
+        except Exception:  # noqa: BLE001
+            pass
         if not once and time.monotonic() - last_purge > 3600:  # housekeeping rides on the worker: SCIM retention, hourly
             last_purge = time.monotonic()
             try:

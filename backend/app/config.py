@@ -58,6 +58,11 @@ class Settings(BaseSettings):
     RECIPES_WORKER_BATCH: int = Field(default=20)
     RECIPES_HTTP_TIMEOUT_SECONDS: int = Field(default=10)
     RECIPES_HTTP_MAX_RESPONSE_BYTES: int = Field(default=1_000_000)
+    PROVISIONING_ENABLED: bool = Field(default=True)
+    PROVISIONING_BATCH: int = Field(default=25)  # tasks claimed per tenant per worker pass
+    PROVISIONING_PER_APP_BATCH: int = Field(default=10)  # ...and at most this many per app (do not hammer one app)
+    PROVISIONING_MAX_ATTEMPTS: int = Field(default=6)
+    PROVISIONING_LEASE_SECONDS: int = Field(default=120)
     RECIPES_HTTP_ALLOWED_HOSTS: str = Field(default="")  # comma separated; empty = any public host
     RECIPES_WEBHOOK_MAX_BODY_BYTES: int = Field(default=65536)
     RECIPES_WEBHOOK_REPLAY_SECONDS: int = Field(default=300)

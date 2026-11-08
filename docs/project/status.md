@@ -18,7 +18,7 @@ _Last updated: 2026-11-05_
 | System audit events | Done | Recorded in the same transaction; viewer with filter |
 | Admin dashboard | Done | Real counts from the database, recent activity |
 | User dashboard | Done | Profile, groups, change password, active sessions |
-| Browser & API tests | Done | 553 API integration tests (real Postgres test DB) + 27 Playwright browser tests (2 opt-in: demo app, admin MFA policy) (the policy spec needs a throwaway admin, see below) (incl. a Chrome virtual authenticator) |
+| Browser & API tests | Done | 879 API integration tests (real Postgres test DB) + 28 Playwright browser tests (2 opt-in: demo app, admin MFA policy) (the policy spec needs a throwaway admin, see below) (incl. a Chrome virtual authenticator) |
 | Security review | **Partial** | Self-review recorded in ADR 003; no independent review yet |
 
 ## Hardening done after Phase 1
@@ -65,5 +65,6 @@ cd frontend && set -a && . ../.env && set +a && npx playwright test
 
 ## Account lifecycle and recovery (added later)
 - Okta-style statuses; deactivation removes every group membership (ADR 006 addendum).
+- Outbound provisioning (ADR 009): push users and groups to SCIM 2.0 apps, or to REST-only apps through a configurable gateway; assignments (user or group), entitlement-driven deactivate/delete, retries with backoff, orphan sweep, activity view. Verified against an in-memory SCIM server and a fake REST app, not against real vendor apps.
 - Invitations and email password reset (`/auth/forgot-password`, `/auth/reset-password`, admin `send-invite` / `send-reset`); needs `SMTP_*` and `PUBLIC_APP_URL`. Tokens are single use, hashed, 30 min (reset) / 72 h (invite), carried in the URL fragment. Unverified against a real mail server: tests use an in-process mailer.
 - Forced password change: an admin reset with `require_change` sets `password_expired`; sign-in then returns `password_change_required` and the user proves the old password (`/auth/change-expired-password`).

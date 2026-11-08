@@ -48,11 +48,11 @@ export default function ProvisioningPage() {
 
   return (
     <div>
-      <PageHeader title="Provisioning">
+      <PageHeader title="Inbound SCIM">
         {me.is_super_admin && <Button onClick={() => setName("")}><Plus className="mr-1 h-4 w-4" /> Create token</Button>}
       </PageHeader>
       <p className="mb-4 max-w-2xl text-sm text-muted-foreground">
-        Let Okta, Microsoft Entra ID or another identity provider create, update and deactivate users and groups here with SCIM 2.0.
+        Inbound: let Okta, Microsoft Entra ID or another identity provider create, update and deactivate users and groups here with SCIM 2.0.
         Give the provider the base URL below and a bearer token. Removing a user in the provider deactivates the account; it is never
         deleted. Administrator accounts cannot be changed through SCIM, and users created this way have no password until an administrator
         sets one.
