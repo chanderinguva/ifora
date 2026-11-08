@@ -27,6 +27,7 @@ test("SAML application: configure in the UI, then IdP- and SP-initiated sign-in 
   await page.getByTestId("wizard-create").click();
   await expect(page).toHaveURL(/\/admin\/applications\/(\d+)$/);
   const appId = page.url().split("/").pop()!;
+  await page.getByTestId("tab-signon").click();
   await expect(page.getByTestId("saml-idp-info")).toContainText("/saml/metadata");
 
   await page.locator("#s-ent").fill(SP);
@@ -50,6 +51,7 @@ test("SAML application: configure in the UI, then IdP- and SP-initiated sign-in 
   await expect(page.getByTestId("saml-preview-result")).toContainText("shout");
 
   // let any signed-in user in (the throwaway admin is not assigned)
+  await page.getByTestId("tab-general").click();
   await page.getByLabel(/Only assigned users may sign in/).uncheck();
   await page.getByRole("button", { name: "Save", exact: true }).first().click();
   await expect(page.getByText("Saved", { exact: true })).toBeVisible();
