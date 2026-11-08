@@ -179,7 +179,7 @@ def safe_request(
                         chunks.append(chunk)
                         if time.monotonic() > deadline:
                             raise HttpFailure("request timed out")
-                    keep = {k.lower(): v for k, v in resp.headers.items() if k.lower() in ("content-type", "location")}
+                    keep = {k.lower(): v for k, v in resp.headers.items() if k.lower() in ("content-type", "location", "retry-after")}
                     return HttpResult(resp.status_code, resp.headers.get("content-type", ""), b"".join(chunks), keep)
         except (ResponseTooLarge, HttpFailure):
             raise

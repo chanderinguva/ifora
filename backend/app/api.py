@@ -141,6 +141,9 @@ def create_app() -> FastAPI:
 
     for r in (recipes_router, recipe_conn_router, recipe_hooks_router):
         app.include_router(r, prefix="/api/v1")
+    from backend.app.provisioning.routes import router as provisioning_router
+
+    app.include_router(provisioning_router, prefix="/api/v1")
     from backend.app.scim.admin_routes import router as scim_admin_router
     from backend.app.scim.app import create_scim_app
 
