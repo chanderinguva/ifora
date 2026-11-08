@@ -16,7 +16,9 @@ from sqlalchemy.orm import Session
 
 from backend.app.groups.model import Group, user_group_association as membership
 from backend.app.provisioning import adapters, mapping
-from backend.app.provisioning.models import ProvisioningApp, ProvisioningAssignment, ProvisioningLink, ProvisioningTask
+from backend.app.applications import entitlement as ent
+from backend.app.applications.models import ApplicationAssignment
+from backend.app.provisioning.models import ProvisioningApp, ProvisioningLink, ProvisioningTask
 from backend.app.users.model import User
 
 logger = structlog.get_logger(__name__)
@@ -40,30 +42,18 @@ def options_of(app: ProvisioningApp) -> dict:
     return {**DEFAULT_OPTIONS, **(app.options or {})}
 
 
-# ---- entitlement ---------------------------------------------------------------------------------------------
+# ---- entitlement (shared with the application: assignments live on `applications`) --------------------------------
 
 def assigned_group_ids(db: Session, app_id: int) -> List[int]:
-    return [g for (g,) in db.query(ProvisioningAssignment.group_id).filter(
-        ProvisioningAssignment.app_id == app_id, ProvisioningAssignment.group_id.is_not(None)).all()]
+    return ent.assigned_group_ids(db, db.get(ProvisioningApp, app_id).application_id)
 
 
 def is_entitled(db: Session, app: ProvisioningApp, user_id: int) -> bool:
-    if db.query(ProvisioningAssignment.id).filter(
-            ProvisioningAssignment.app_id == app.id, ProvisioningAssignment.user_id == user_id).first():
-        return True
-    gids = assigned_group_ids(db, app.id)
-    if not gids:
-        return False
-    return db.execute(select(membership.c.user_id).where(membership.c.user_id == user_id, membership.c.group_id.in_(gids)).limit(1)).first() is not None
+    return ent.is_entitled(db, app.application_id, user_id)
 
 
 def entitled_user_ids(db: Session, app: ProvisioningApp) -> Set[int]:
-    ids = {u for (u,) in db.query(ProvisioningAssignment.user_id).filter(
-        ProvisioningAssignment.app_id == app.id, ProvisioningAssignment.user_id.is_not(None)).all()}
-    gids = assigned_group_ids(db, app.id)
-    if gids:
-        ids |= {u for (u,) in db.execute(select(membership.c.user_id).where(membership.c.group_id.in_(gids))).all()}
-    return ids
+    return ent.entitled_user_ids(db, app.application_id)
 
 
 def group_members(db: Session, group_id: int) -> List[int]:
@@ -111,7 +101,7 @@ def queue_groups_for_user(db: Session, app: ProvisioningApp, user_id: int) -> No
 def queue_group(db: Session, group_id: int) -> None:
     """A group's name or membership changed: refresh it in every app it is assigned to."""
     for app in _enabled_apps(db):
-        if db.query(ProvisioningAssignment.id).filter(ProvisioningAssignment.app_id == app.id, ProvisioningAssignment.group_id == group_id).first():
+        if db.query(ApplicationAssignment.id).filter(ApplicationAssignment.application_id == app.application_id, ApplicationAssignment.group_id == group_id).first():
             if options_of(app)["push_groups"]:
                 queue(db, app.id, "group", group_id=group_id)
 
@@ -291,3 +281,14 @@ def delete_remote(db: Session, app: ProvisioningApp, ad: adapters.Adapter, link_
             ad.set_active(link.remote_id, {"userName": link.label, "active": False}, False)
     db.delete(link)
     return "deleted"
+
+
+def on_assignment_change(db: Session, application_id: int, user_ids: Iterable[int] = (), group_id: Optional[int] = None) -> None:
+    """Assignments of an application changed: bring its provisioning app (if any, and on) in line."""
+    app = db.query(ProvisioningApp).filter(ProvisioningApp.application_id == application_id, ProvisioningApp.enabled.is_(True)).first()
+    if app is None:
+        return
+    for uid in user_ids:
+        queue(db, app.id, "user", user_id=uid)
+    if group_id is not None and options_of(app)["push_groups"]:
+        queue(db, app.id, "group", group_id=group_id)

@@ -1,6 +1,6 @@
 "use client";
 
-import { LayoutDashboard, Users, Shield, ScrollText, Home, Settings, Workflow, AppWindow, SlidersHorizontal, RefreshCw, Send, Zap } from "lucide-react";
+import { LayoutDashboard, Users, Shield, ScrollText, Home, Settings, Workflow, AppWindow, SlidersHorizontal, RefreshCw, Send, Zap, LayoutGrid } from "lucide-react";
 import { AppShell, type NavGroup } from "./app-shell";
 import { useCurrentUser } from "./auth-guard";
 import { inAdminView } from "@/lib/roles";
@@ -21,6 +21,7 @@ export const ADMIN_NAV: NavGroup[] = [
   {
     label: "Applications",
     items: [
+      { href: "/admin/applications", label: "Applications", icon: LayoutGrid },
       { href: "/admin/oidc-clients", label: "OIDC clients", icon: AppWindow },
       { href: "/admin/app-provisioning", label: "Provisioning apps", icon: Send },
       { href: "/admin/provisioning", label: "Inbound SCIM", icon: RefreshCw },
@@ -31,7 +32,7 @@ export const ADMIN_NAV: NavGroup[] = [
 ];
 
 export const USER_NAV: NavGroup[] = [
-  { items: [{ href: "/dashboard", label: "Home", icon: Home }] },
+  { items: [{ href: "/dashboard", label: "Home", icon: Home }, { href: "/apps", label: "My apps", icon: LayoutGrid }] },
   { label: "Account", items: [{ href: "/settings", label: "Account settings", icon: Settings }] },
 ];
 

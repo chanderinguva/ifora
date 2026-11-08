@@ -171,6 +171,7 @@ def grant_types_for(scopes: List[str]) -> List[str]:
 def client_to_dict(c: OIDCClient, secrets_: Optional[List[OIDCClientSecret]] = None) -> Dict[str, Any]:
     d = {
         "id": c.id,
+        "application_id": c.application_id,
         "client_id": c.client_id,
         "name": c.name,
         "description": c.description,

@@ -22,6 +22,7 @@ _Last updated: 2026-11-05_
 | Security review | **Partial** | Self-review recorded in ADR 003; no independent review yet |
 
 ## Hardening done after Phase 1
+- Applications core (ADR 010): unified application object with shared assignments, bookmark/OIDC sign-on, user dashboard app tiles.
 - TOTP multi-factor authentication with recovery codes (ADR 003).
 - Passkeys (WebAuthn): usernameless sign-in, optional "require a passkey" policy, admin reset (ADR 003).
 - Admin MFA policy (`ADMIN_MFA_REQUIRED`, on by default) with one-time enrolment codes for first enrolment (ADR 003).
