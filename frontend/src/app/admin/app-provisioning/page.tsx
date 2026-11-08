@@ -21,7 +21,7 @@ export default function ProvisioningApps() {
   const [presets, setPresets] = useState<ProvPreset[]>([]);
   const [available, setAvailable] = useState(true);
   const [preset, setPreset] = useState<ProvPreset | null>(null);
-  const [form, setForm] = useState({ name: "", base_url: "", auth_type: "bearer", header_name: "", secret: "", rest: "" });
+  const [form, setForm] = useState({ name: "", base_url: "", auth_type: "bearer", header_name: "", secret: "", client_id: "", token_url: "", scope: "", rest: "" });
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const load = useCallback(() => {
@@ -32,7 +32,7 @@ export default function ProvisioningApps() {
 
   function choose(p: ProvPreset) {
     setPreset(p);
-    setForm({ name: "", base_url: "", auth_type: p.auth_type, header_name: "", secret: "", rest: p.rest_config ? JSON.stringify(p.rest_config, null, 2) : "" });
+    setForm({ name: "", base_url: "", auth_type: p.auth_type, header_name: "", secret: "", client_id: "", token_url: "", scope: "", rest: p.rest_config ? JSON.stringify(p.rest_config, null, 2) : "" });
   }
 
   async function create() {
@@ -46,6 +46,7 @@ export default function ProvisioningApps() {
       const created = await http<ProvApp>("/admin/provisioning-apps", { method: "POST", body: {
         name: form.name, kind: preset.kind, base_url: form.base_url, auth_type: form.auth_type,
         header_name: form.auth_type === "header" ? form.header_name : null, secret: form.secret,
+        ...(form.auth_type === "oauth2" ? { client_id: form.client_id, token_url: form.token_url, scope: form.scope || null } : {}),
         options: { ...DEFAULT_OPTIONS, ...preset.options }, mapping: [], rest_config,
       } });
       window.location.href = `/admin/app-provisioning/${created.id}`;
@@ -86,10 +87,14 @@ export default function ProvisioningApps() {
                 <Input id="a-url" placeholder={preset.kind === "scim" ? "https://app.example.com/scim/v2" : "https://api.example.com"} value={form.base_url} onChange={(e) => setForm({ ...form, base_url: e.target.value })} /></div>
               <div className="space-y-2"><Label htmlFor="a-auth">Authentication</Label>
                 <select id="a-auth" className={fieldClass} value={form.auth_type} onChange={(e) => setForm({ ...form, auth_type: e.target.value })}>
-                  <option value="bearer">Bearer token</option><option value="basic">Basic (user:password)</option><option value="header">Custom header</option>
+                  <option value="bearer">Bearer token</option><option value="basic">Basic (user:password)</option><option value="header">Custom header</option><option value="oauth2">OAuth2 client credentials</option>
                 </select></div>
+              {form.auth_type === "oauth2" && <>
+                <div className="space-y-2"><Label htmlFor="a-cid">Client ID</Label><Input id="a-cid" value={form.client_id} onChange={(e) => setForm({ ...form, client_id: e.target.value })} /></div>
+                <div className="space-y-2"><Label htmlFor="a-tok">Token URL (https)</Label><Input id="a-tok" placeholder="https://auth.example.com/oauth/token" value={form.token_url} onChange={(e) => setForm({ ...form, token_url: e.target.value })} /></div>
+                <div className="space-y-2"><Label htmlFor="a-scope">Scope (optional)</Label><Input id="a-scope" value={form.scope} onChange={(e) => setForm({ ...form, scope: e.target.value })} /></div></>}
               {form.auth_type === "header" && <div className="space-y-2"><Label htmlFor="a-hdr">Header name</Label><Input id="a-hdr" placeholder="X-API-Key" value={form.header_name} onChange={(e) => setForm({ ...form, header_name: e.target.value })} /></div>}
-              <div className="space-y-2"><Label htmlFor="a-secret">{form.auth_type === "basic" ? "user:password" : form.auth_type === "header" ? "Header value" : "Token"}</Label>
+              <div className="space-y-2"><Label htmlFor="a-secret">{form.auth_type === "basic" ? "user:password" : form.auth_type === "header" ? "Header value" : form.auth_type === "oauth2" ? "Client secret" : "Token"}</Label>
                 <Input id="a-secret" type="password" autoComplete="off" value={form.secret} onChange={(e) => setForm({ ...form, secret: e.target.value })} /></div>
             </div>
             {preset.kind === "rest" && (

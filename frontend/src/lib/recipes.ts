@@ -110,6 +110,10 @@ export type Connection = {
   token_url?: string | null;
   scope?: string | null;
   has_secret: boolean;
+  restricted?: boolean;
+  can_use?: boolean;
+  can_manage?: boolean;
+  allowed_users?: number[] | null;
 };
 
 export const OPERATOR_LABELS: Record<string, string> = {

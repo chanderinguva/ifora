@@ -26,7 +26,7 @@ export default function AppDetail() {
   const me = useCurrentUser();
   const canEdit = me.is_super_admin;
   const [app, setApp] = useState<ProvApp | null>(null);
-  const [form, setForm] = useState({ name: "", description: "", base_url: "", auth_type: "bearer", header_name: "", secret: "", rest: "" });
+  const [form, setForm] = useState({ name: "", description: "", base_url: "", auth_type: "bearer", header_name: "", secret: "", client_id: "", token_url: "", scope: "", rest: "" });
   const [opts, setOpts] = useState<ProvOptions | null>(null);
   const [rules, setRules] = useState<{ target: string; source: string }[]>([]);
   const [defaults, setDefaults] = useState<{ target: string; source: string }[]>([]);
@@ -44,7 +44,7 @@ export default function AppDetail() {
 
   const apply = useCallback((a: ProvApp) => {
     setApp(a);
-    setForm({ name: a.name, description: a.description ?? "", base_url: a.base_url, auth_type: a.auth_type, header_name: a.header_name ?? "", secret: "", rest: a.rest_config ? JSON.stringify(a.rest_config, null, 2) : "" });
+    setForm({ name: a.name, description: a.description ?? "", base_url: a.base_url, auth_type: a.auth_type, header_name: a.header_name ?? "", secret: "", client_id: a.client_id ?? "", token_url: a.token_url ?? "", scope: a.scope ?? "", rest: a.rest_config ? JSON.stringify(a.rest_config, null, 2) : "" });
     setOpts(a.options);
     setRules(a.mapping);
   }, []);
@@ -85,7 +85,8 @@ export default function AppDetail() {
     }
     return http<ProvApp>(`/admin/provisioning-apps/${id}`, { method: "PUT", body: {
       ...toBody(app), name: form.name, description: form.description || null, base_url: form.base_url, auth_type: form.auth_type,
-      header_name: form.auth_type === "header" ? form.header_name : null, options: opts, mapping: rules.filter((r) => r.target && r.source),
+      header_name: form.auth_type === "header" ? form.header_name : null,
+      ...(form.auth_type === "oauth2" ? { client_id: form.client_id, token_url: form.token_url, scope: form.scope || null } : { client_id: null, token_url: null, scope: null }), options: opts, mapping: rules.filter((r) => r.target && r.source),
       rest_config, ...(form.secret ? { secret: form.secret } : {}), ...over,
     } });
   };
@@ -115,6 +116,7 @@ export default function AppDetail() {
                 ? <Button variant="outline" size="sm" onClick={() => run(async () => { apply(await save({ enabled: false })); }, "Provisioning turned off")}>Turn off</Button>
                 : <Button size="sm" data-testid="enable-app" disabled={app.last_test.ok !== true} title={app.last_test.ok !== true ? "Test the connection first" : ""} onClick={() => run(async () => { apply(await save({ enabled: true })); }, "Provisioning turned on")}>Turn on</Button>}
               {app.enabled && <Button variant="outline" size="sm" onClick={() => run(async () => { const r = await http<{ queued: { users: number; groups: number } }>(`/admin/provisioning-apps/${id}/sync`, { method: "POST" }); setMsg({ ok: true, text: `Queued ${r.queued.users} users and ${r.queued.groups} groups` }); })}>Sync now</Button>}
+              {app.enabled && app.provisioned > 0 && <Button variant="outline" size="sm" data-testid="deprovision-all" onClick={() => { if (confirm(`Remove every assignment and ${opts.deactivate === "delete" ? "delete" : "deactivate"} all ${app.provisioned} accounts in ${app.name}?`)) run(async () => { const r = await http<{ assignments_removed: number }>(`/admin/provisioning-apps/${id}/deprovision-all`, { method: "POST" }); setMsg({ ok: true, text: `Removed ${r.assignments_removed} assignments; accounts are being deprovisioned` }); }); }}>Deprovision everyone</Button>}
               <Button variant="destructive" size="sm" onClick={() => { if (confirm(`Delete ${app.name}? Accounts already created in the application stay as they are.`)) run(async () => { await http(`/admin/provisioning-apps/${id}`, { method: "DELETE" }); router.push("/admin/app-provisioning"); }); }}>Delete</Button>
             </div>
           )}
@@ -223,9 +225,13 @@ export default function AppDetail() {
             <div className="space-y-2"><Label htmlFor="d-url">Base URL</Label><Input id="d-url" disabled={!canEdit} value={form.base_url} onChange={(e) => setForm({ ...form, base_url: e.target.value })} /></div>
             <div className="space-y-2"><Label htmlFor="d-auth">Authentication</Label>
               <select id="d-auth" disabled={!canEdit} className={fieldClass} value={form.auth_type} onChange={(e) => setForm({ ...form, auth_type: e.target.value })}>
-                <option value="bearer">Bearer token</option><option value="basic">Basic (user:password)</option><option value="header">Custom header</option></select></div>
+                <option value="bearer">Bearer token</option><option value="basic">Basic (user:password)</option><option value="header">Custom header</option><option value="oauth2">OAuth2 client credentials</option></select></div>
+            {form.auth_type === "oauth2" && <>
+              <div className="space-y-2"><Label htmlFor="d-cid">Client ID</Label><Input id="d-cid" disabled={!canEdit} value={form.client_id} onChange={(e) => setForm({ ...form, client_id: e.target.value })} /></div>
+              <div className="space-y-2"><Label htmlFor="d-tok">Token URL</Label><Input id="d-tok" disabled={!canEdit} value={form.token_url} onChange={(e) => setForm({ ...form, token_url: e.target.value })} /></div>
+              <div className="space-y-2"><Label htmlFor="d-scope">Scope</Label><Input id="d-scope" disabled={!canEdit} value={form.scope} onChange={(e) => setForm({ ...form, scope: e.target.value })} /></div></>}
             {form.auth_type === "header" && <div className="space-y-2"><Label htmlFor="d-hdr">Header name</Label><Input id="d-hdr" disabled={!canEdit} value={form.header_name} onChange={(e) => setForm({ ...form, header_name: e.target.value })} /></div>}
-            <div className="space-y-2"><Label htmlFor="d-secret">New credential (leave blank to keep the current one)</Label><Input id="d-secret" type="password" autoComplete="off" disabled={!canEdit} value={form.secret} onChange={(e) => setForm({ ...form, secret: e.target.value })} /></div>
+            <div className="space-y-2"><Label htmlFor="d-secret">{form.auth_type === "oauth2" ? "New client secret" : "New credential"} (leave blank to keep the current one)</Label><Input id="d-secret" type="password" autoComplete="off" disabled={!canEdit} value={form.secret} onChange={(e) => setForm({ ...form, secret: e.target.value })} /></div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={!canEdit} checked={opts.push_new_users} onChange={(e) => set("push_new_users", e.target.checked)} /> Create users in the application</label>

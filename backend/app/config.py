@@ -58,6 +58,8 @@ class Settings(BaseSettings):
     RECIPES_WORKER_BATCH: int = Field(default=20)
     RECIPES_HTTP_TIMEOUT_SECONDS: int = Field(default=10)
     RECIPES_HTTP_MAX_RESPONSE_BYTES: int = Field(default=1_000_000)
+    # Prometheus scrape token (bearer). Unset = the /metrics endpoint does not exist. Use 32+ random characters.
+    METRICS_TOKEN: str = Field(default="")
     PROVISIONING_ENABLED: bool = Field(default=True)
     PROVISIONING_BATCH: int = Field(default=25)  # tasks claimed per tenant per worker pass
     PROVISIONING_PER_APP_BATCH: int = Field(default=10)  # ...and at most this many per app (do not hammer one app)

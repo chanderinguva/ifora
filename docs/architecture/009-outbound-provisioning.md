@@ -33,7 +33,13 @@ Canonical SCIM User: `userName` (email or username, per app), `externalId` = Ide
 ### D7. Groups
 SCIM apps may also receive the groups assigned to them (`push_groups`): `displayName`, `externalId`, and `members` as the remote ids of provisioned users. Group tasks are re-queued after a member is created or deactivated. The gateway supports groups only if `create_group` is configured.
 
+## Addendum
+- **OAuth2 client credentials** is an auth type for apps (migration 0034: `token_url`, `client_id`, `scope`; the client secret is the encrypted credential). The token request goes through the same egress guard (https, public host, no redirects), the token is cached per process until 30 s before expiry, and one 401 triggers a single refresh and retry. Authorization-code OAuth2, JWT-assertion auth, mTLS and request signing are not supported.
+- **Deprovision everyone** (`POST /{id}/deprovision-all`, super admin): removes every assignment and queues a full sync, so each provisioned account is deactivated/deleted per the app policy. Keep the app on until the queue drains, then delete it.
+- **Metrics:** `GET /metrics` (Prometheus text) exists only when `METRICS_TOKEN` (16+ chars) is set, bearer-token protected, aggregate counts only (recipe jobs and queue age, worker heartbeat, provisioning tasks/links per app id, users by status, active sessions).
+- **Secrets:** one Fernet key (`RECIPE_ENCRYPTION_KEY`) in the environment; no key rotation (changing it makes stored credentials unreadable) and no KMS/HSM.
+
 ## Not done
-- Importing users from an app, password push, attribute-level "update only on create" flags, per-attribute master priority, OAuth2 client-credentials auth for apps, per-app rate limits beyond the batch cap, and bulk (`/Bulk`) pushes.
+- Importing users from an app, password push, attribute-level "update only on create" flags, per-attribute master priority, per-app rate limits beyond the batch cap, and bulk (`/Bulk`) pushes.
 - Deleting an app leaves its accounts in the application untouched (they are also forgotten by IdentityForge). Unassign everyone first if they should be deactivated.
 - Real-application conformance: tested against an in-memory SCIM server and a fake REST app, not against Okta-certified or vendor sandboxes.

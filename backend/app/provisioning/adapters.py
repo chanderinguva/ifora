@@ -5,10 +5,12 @@ are either `Retryable` (network, 429, 5xx: backoff and try again) or `Permanent`
 """
 
 import base64
+import hashlib
 import json
 import re
+import time
 from typing import Any, Dict, List, Optional
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from backend.app.recipes import http_client as hc
 from backend.app.recipes.redact import redact_text
@@ -55,12 +57,49 @@ def _detail(res: hc.HttpResult) -> str:
     return _clip(redact_text(res.body.decode("utf-8", "replace")[:200]))
 
 
+_token_cache: Dict[str, tuple] = {}  # per process: key -> (access_token, expires_at_monotonic)
+
+
+def _oauth_token(oauth: dict, *, force: bool = False) -> str:
+    """Client-credentials grant (RFC 6749 4.4) through the same egress guard. Cached until shortly before expiry."""
+    key = hashlib.sha256("|".join((oauth["token_url"], oauth["client_id"], oauth["secret"], oauth.get("scope") or "")).encode()).hexdigest()
+    hit = _token_cache.get(key)
+    if hit and not force and hit[1] > time.monotonic():
+        return hit[0]
+    form = {"grant_type": "client_credentials", "client_id": oauth["client_id"], "client_secret": oauth["secret"]}
+    if oauth.get("scope"):
+        form["scope"] = oauth["scope"]
+    try:
+        res = hc.safe_request(
+            "POST", oauth["token_url"], {"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"},
+            urlencode(form).encode(), policy=http_overrides.get("policy"), resolver=http_overrides.get("resolver"),
+            transport=http_overrides.get("transport"))
+    except hc.EgressBlocked as e:
+        raise Permanent(f"token endpoint not allowed: {_clip(str(e), 120)}") from e
+    except hc.ResponseTooLarge as e:
+        raise Permanent("the token endpoint's response was too large") from e
+    except hc.HttpFailure as e:
+        raise Retryable(f"token endpoint: {e}") from e
+    if res.status >= 500 or res.status == 429:
+        raise Retryable(f"token endpoint answered HTTP {res.status}")
+    body = _json(res)
+    token = body.get("access_token") if isinstance(body, dict) else None
+    if res.status != 200 or not isinstance(token, str) or not token or len(token) > 4000:
+        raise Permanent(f"token endpoint refused the credentials (HTTP {res.status})")
+    ttl = body.get("expires_in")
+    ttl = int(ttl) if isinstance(ttl, (int, float)) and ttl > 0 else 300
+    _token_cache[key] = (token, time.monotonic() + max(min(ttl, 3600) - 30, 5))
+    return token
+
+
 class Http:
     """Authenticated JSON calls against `base_url`."""
 
-    def __init__(self, base_url: str, auth_type: str, secret: str, header_name: Optional[str], content_type: str):
+    def __init__(self, base_url: str, auth_type: str, secret: str, header_name: Optional[str], content_type: str,
+                 oauth: Optional[dict] = None):
         self.base = base_url.rstrip("/")
         self.content_type = content_type
+        self.oauth = oauth
         self.headers = {"Accept": "application/json, application/scim+json"}
         if auth_type == "bearer":
             self.headers["Authorization"] = f"Bearer {secret}"
@@ -69,10 +108,12 @@ class Http:
         elif auth_type == "header" and header_name:
             self.headers[header_name] = secret
 
-    def call(self, method: str, path: str, body: Any = None, ok=(200, 201, 202, 204), allow=()) -> hc.HttpResult:
+    def call(self, method: str, path: str, body: Any = None, ok=(200, 201, 202, 204), allow=(), _retried: bool = False) -> hc.HttpResult:
         if not path.startswith("/") or path.startswith("//") or "\r" in path or "\n" in path:
             raise Permanent("invalid request path")
         headers = dict(self.headers)
+        if self.oauth:
+            headers["Authorization"] = "Bearer " + _oauth_token(self.oauth, force=_retried)
         data = None
         if body is not None:
             data = json.dumps(body, separators=(",", ":")).encode()
@@ -91,6 +132,8 @@ class Http:
         if res.status in ok or res.status in allow:
             return res
         msg = f"HTTP {res.status}: {_detail(res)}".rstrip(": ")
+        if res.status == 401 and self.oauth and not _retried:
+            return self.call(method, path, body, ok, allow, _retried=True)  # the cached token may have been revoked
         if res.status == 429:
             ra = res.headers.get("retry-after", "")
             raise Retryable(msg, int(ra) if ra.isdigit() else None)
@@ -343,6 +386,7 @@ class RestGateway(Adapter):
 
 
 def build(app, secret: str) -> Adapter:
-    if app.kind == "scim":
-        return ScimAdapter(Http(app.base_url, app.auth_type, secret, app.header_name, "application/scim+json"), app.options or {})
-    return RestGateway(Http(app.base_url, app.auth_type, secret, app.header_name, "application/json"), app.rest_config or {})
+    oauth = {"token_url": app.token_url, "client_id": app.client_id, "secret": secret, "scope": app.scope} if app.auth_type == "oauth2" else None
+    ct = "application/scim+json" if app.kind == "scim" else "application/json"
+    http = Http(app.base_url, app.auth_type, secret, app.header_name, ct, oauth)
+    return ScimAdapter(http, app.options or {}) if app.kind == "scim" else RestGateway(http, app.rest_config or {})
