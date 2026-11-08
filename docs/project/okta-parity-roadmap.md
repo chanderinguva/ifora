@@ -21,7 +21,7 @@ Status: **Done** / **Partial** / **Todo**. Work in order; each phase is one PR.
 | Security > Administrators | Roles, custom roles, resource sets | Partial: admin / super admin; Todo: scoped roles |
 | Security > API tokens, Trusted origins | | Todo |
 | Workflow | Workflows, tasks | Partial: Recipes |
-| Reports > System log | Filter, search, export, detail drawer | Partial: audit list with filter; Todo: export, detail drawer, saved search |
+| Reports > System log | Filter, search, export, detail drawer, saved search | Done (phase 4): search, time range, action list from API, target filter, detail drawer, CSV export (audited, formula-safe), saved filters (per browser). Todo: server-side saved filters, scheduled exports, streaming to SIEM |
 | Settings > Customization | Branding (logo, colours), custom domain, sign-in page, email templates | Todo |
 | Settings > Account / Features / Downloads | | Todo |
 
