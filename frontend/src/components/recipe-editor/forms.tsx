@@ -68,10 +68,9 @@ export function Comparisons({ items, onChange, pills, payload }: { items: Compar
   );
 }
 
-export function StepForm({ step, ctx, onChange }: { step: StepNode; ctx: Ctx; onChange: (s: StepNode) => void }) {
-  const cfg = step.config;
-  const set = (patch: Record<string, any>) => onChange({ ...step, config: { ...cfg, ...patch } });
-  const before = stepsBefore(ctx.root, step.id);
+/** The datapills a step may use: the trigger, earlier steps, the current repeat item, and (in the error steps) the error. */
+export function pillsFor(ctx: Ctx, stepId: string): Pill[] {
+  const before = stepsBefore(ctx.root, stepId);
   const errorPills: Pill[] = ctx.handler ? [{ path: "error.message", label: "Error message" }, { path: "error.step_id", label: "Failed step" }] : [];
   const loopPills: Pill[] = ctx.inLoop ? [
     { path: "loop.user.id", label: "Current member: id" }, { path: "loop.user.email", label: "Current member: email" },
@@ -79,6 +78,14 @@ export function StepForm({ step, ctx, onChange }: { step: StepNode; ctx: Ctx; on
     { path: "loop.index", label: "Loop: position (1-based)" }, { path: "loop.total", label: "Loop: member count" },
   ] : [];
   const pills = [...(ctx.meta.triggers.find((t) => t.type === ctx.trigger)?.fields ?? []), ...stepPills(ctx.meta, before), ...errorPills, ...loopPills];
+  return pills;
+}
+
+export function StepForm({ step, ctx, onChange }: { step: StepNode; ctx: Ctx; onChange: (s: StepNode) => void }) {
+  const cfg = step.config;
+  const set = (patch: Record<string, any>) => onChange({ ...step, config: { ...cfg, ...patch } });
+  const before = stepsBefore(ctx.root, step.id);
+  const pills = pillsFor(ctx, step.id);
   const payload = ctx.meta.triggers.find((t) => t.type === ctx.trigger)?.payload_pills ?? false;
   const userField = (
     <div className="space-y-1"><Label>Target user</Label><PillInput label="Target user" value={cfg.user ?? ""} onChange={(v) => set({ user: v })} pills={pills} payload={payload} /></div>

@@ -2,7 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useRef } from "react";
+import { useContext, useEffect, useId, useRef, useState } from "react";
+import { useDroppable } from "@dnd-kit/core";
+import { PillFieldsContext } from "@/components/recipe-editor/pill-context";
+import { openPill, parseSegments } from "@/lib/pills";
 import { Badge, fieldClass, fmt } from "@/components/bits";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -38,37 +41,90 @@ export function PillInput({
   value: string; onChange: (v: string) => void; pills: Pill[]; label: string; multiline?: boolean; payload?: boolean; placeholder?: string;
 }) {
   const ref = useRef<HTMLInputElement & HTMLTextAreaElement>(null);
+  const reg = useContext(PillFieldsContext);
+  const fid = useId();
+  const [caret, setCaret] = useState(0);
+  const [pick, setPick] = useState(0);
+  const [dismissed, setDismissed] = useState(false);
+  const { setNodeRef, isOver } = useDroppable({ id: `field:${fid}`, disabled: !reg });
   const insert = (path: string) => {
     const el = ref.current;
     const at = el?.selectionStart ?? value.length;
     const end = el?.selectionEnd ?? at;
     onChange(value.slice(0, at) + `{{${path}}}` + value.slice(end));
   };
+  useEffect(() => {   // the tray inserts through this, so it always sees the current value
+    if (!reg) return;
+    reg.fields.set(fid, insert);
+    return () => { reg.fields.delete(fid); };
+  });
   const groups: [string, Pill[]][] = [
     ["Trigger", pills.filter((p) => p.path.startsWith("trigger."))],
     ["Earlier steps", pills.filter((p) => p.path.startsWith("steps."))],
   ];
+  const open = dismissed ? null : openPill(value, caret);
+  const matches = open ? pills.filter((p) => (p.label + " " + p.path).toLowerCase().includes(open.query.toLowerCase())).slice(0, 8) : [];
+  const choose = (path: string) => {
+    if (!open) return;
+    onChange(value.slice(0, open.start) + `{{${path}}}` + value.slice(caret));
+    setDismissed(false);
+  };
+  const known = (path: string) => pills.some((p) => p.path === path) || (payload && path.startsWith("trigger.payload."));
+  const segments = parseSegments(value);
+  const track = (e: { currentTarget: { selectionStart: number | null } }) => setCaret(e.currentTarget.selectionStart ?? 0);
+  const keys = (e: React.KeyboardEvent) => {
+    if (!open || matches.length === 0) return;
+    if (e.key === "ArrowDown") { e.preventDefault(); setPick((pick + 1) % matches.length); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setPick((pick + matches.length - 1) % matches.length); }
+    else if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); choose(matches[Math.min(pick, matches.length - 1)].path); }
+    else if (e.key === "Escape") { e.preventDefault(); setDismissed(true); }
+  };
+  const change = (v: string, c: number | null) => { onChange(v); setCaret(c ?? v.length); setPick(0); setDismissed(false); };
+  const field = {
+    "aria-label": label, placeholder, value, onKeyDown: keys, onKeyUp: track, onClick: track,
+    onFocus: () => { if (reg) reg.active.current = fid; },
+  };
   return (
-    <div className="flex gap-2">
-      {multiline ? (
-        <textarea ref={ref} aria-label={label} placeholder={placeholder} rows={3} value={value} onChange={(e) => onChange(e.target.value)} className={cn(fieldClass, "h-auto font-mono")} />
-      ) : (
-        <Input ref={ref} aria-label={label} placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} className="h-10" />
+    <div className="relative min-w-0" ref={setNodeRef}>
+      <div className={cn("flex gap-2 rounded-md", isOver && "ring-2 ring-primary")}>
+        {multiline ? (
+          <textarea ref={ref} rows={3} {...field} onChange={(e) => change(e.target.value, e.target.selectionStart)} className={cn(fieldClass, "h-auto font-mono")} />
+        ) : (
+          <Input ref={ref} {...field} onChange={(e) => change(e.target.value, e.target.selectionStart)} className="h-10" />
+        )}
+        <select aria-label={`Insert datapill into ${label}`} className={cn(fieldClass, "!w-44 shrink-0")} value=""
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v === "__payload") {
+              const name = window.prompt("Payload field name (letters, digits, _ or -; use . for nesting)");
+              if (name && /^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*$/.test(name)) insert(`trigger.payload.${name}`);
+            } else if (v) insert(v);
+          }}>
+          <option value="">+ Datapill…</option>
+          {groups.map(([g, list]) => list.length > 0 && (
+            <optgroup key={g} label={g}>{list.map((p) => <option key={p.path} value={p.path}>{p.label}</option>)}</optgroup>
+          ))}
+          {payload && <option value="__payload">Payload field…</option>}
+        </select>
+      </div>
+      {open && matches.length > 0 && (
+        <ul role="listbox" aria-label={`Datapills for ${label}`} data-testid="pill-suggest" className="absolute z-20 mt-1 max-h-56 w-80 overflow-auto rounded-md border bg-popover p-1 text-sm shadow-md">
+          {matches.map((p, i) => (
+            <li key={p.path} role="option" aria-selected={i === pick}>
+              <button type="button" tabIndex={-1} onMouseDown={(e) => { e.preventDefault(); choose(p.path); }}
+                className={cn("block w-full rounded px-2 py-1 text-left", i === pick && "bg-muted")}>{p.label}</button>
+            </li>
+          ))}
+        </ul>
       )}
-      <select aria-label={`Insert datapill into ${label}`} className={cn(fieldClass, "!w-44 shrink-0")} value=""
-        onChange={(e) => {
-          const v = e.target.value;
-          if (v === "__payload") {
-            const name = window.prompt("Payload field name (letters, digits, _ or -; use . for nesting)");
-            if (name && /^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*$/.test(name)) insert(`trigger.payload.${name}`);
-          } else if (v) insert(v);
-        }}>
-        <option value="">+ Datapill…</option>
-        {groups.map(([g, list]) => list.length > 0 && (
-          <optgroup key={g} label={g}>{list.map((p) => <option key={p.path} value={p.path}>{p.label}</option>)}</optgroup>
-        ))}
-        {payload && <option value="__payload">Payload field…</option>}
-      </select>
+      {segments.some((x) => "pill" in x) && (
+        <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground" data-testid="pill-preview" aria-hidden="true">
+          {segments.map((x, i) => "pill" in x
+            ? <span key={i} title={known(x.pill) ? x.pill : "Not available at this step"} className={cn("rounded-full px-2 py-0.5", known(x.pill) ? "bg-primary/10 text-foreground" : "bg-destructive/10 text-destructive")}>
+                {pills.find((p) => p.path === x.pill)?.label ?? x.pill}</span>
+            : <span key={i} className="whitespace-pre-wrap">{x.text}</span>)}
+        </div>
+      )}
     </div>
   );
 }

@@ -67,7 +67,7 @@ The current editor (`frontend/src/app/admin/recipes/[id]/page.tsx`, one 520-line
 ## Phases (each a PR)
 1. **Done**: canvas, cards, + menu, side panel reusing the existing forms, undo/redo (typing merges, structural edits do not), duplicate, delete. No drag yet.
 2. **Done**: drag and drop with the grip handle (`@dnd-kit`; mouse/touch), Alt+Up/Alt+Down on the handle for keyboard users, drop validation (nesting depth, repeat/approval placement, no moving into itself, datapill order, loop/error pills), refusal reason shown on the drop slot and in the status line. Still to do: collapse branches.
-3. Pill tray and pill fields (drag and `{{` search).
+3. **Done**: pill tray in the step panel (grouped by source, searchable, click to insert into the last-used field or drag onto any field), `{{` search with keyboard selection in every datapill field, and a chip rendering of the stored text under each field (a pill that is not available at that step is flagged). Chips show below the field rather than inside it: the field stays a plain text input so the stored `{{path}}` form, copy/paste and accessibility are unchanged.
 4. Test overlay on cards; Handle errors wrapper card; notes; version restore.
 
 ## Risks and open questions
