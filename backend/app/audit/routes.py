@@ -147,7 +147,7 @@ def export_audit(
 
 
 @router.get("/stats")
-def stats(db: Session = Depends(get_db), _: User = Depends(require_admin)):
+def stats(db: Session = Depends(get_db), actor: User = Depends(require_admin)):
     now = datetime.now(timezone.utc)
     users_total = db.query(func.count(User.id)).scalar()
     users_active = db.query(func.count(User.id)).filter(User.status == "active").scalar()
@@ -164,7 +164,11 @@ def stats(db: Session = Depends(get_db), _: User = Depends(require_admin)):
         .filter(AuditEvent.action == AuditAction.LOGIN_FAILURE.value, AuditEvent.timestamp > now - timedelta(hours=24))
         .scalar()
     )
-    recent = db.query(AuditEvent).order_by(AuditEvent.timestamp.desc(), AuditEvent.id.desc()).limit(8).all()
+    from backend.app.admin_roles.permissions import has_access
+
+    # the system log is the reports area's: other roles get the counts but not the events (actors, IPs, details)
+    recent = (db.query(AuditEvent).order_by(AuditEvent.timestamp.desc(), AuditEvent.id.desc()).limit(8).all()
+              if has_access(db, actor, "reports") else [])
     return {
         "users_total": users_total,
         "users_active": users_active,

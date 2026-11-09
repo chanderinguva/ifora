@@ -164,6 +164,8 @@ def add_member(
     actor: User = Depends(require_admin),
 ):
     g = _group_or_404(db, group_id)
+    if g.is_system_group:
+        raise HTTPException(status_code=403, detail="System groups cannot be modified")
     user = db.get(User, body.user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
@@ -195,6 +197,8 @@ def remove_member(
     actor: User = Depends(require_admin),
 ):
     g = _group_or_404(db, group_id)
+    if g.is_system_group:
+        raise HTTPException(status_code=403, detail="System groups cannot be modified")
     managed = db.execute(
         user_group_association.select().where(
             user_group_association.c.group_id == g.id,

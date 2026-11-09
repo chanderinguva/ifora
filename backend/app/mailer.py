@@ -5,6 +5,7 @@ degrade gracefully (the account flows say so instead of pretending a mail went o
 """
 
 import smtplib
+import ssl
 from email.message import EmailMessage
 from typing import Any, Dict
 
@@ -23,7 +24,7 @@ def send(msg: EmailMessage, timeout: float = 10) -> None:
         return overrides["send"](msg)
     with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=timeout) as smtp:
         if settings.SMTP_STARTTLS:
-            smtp.starttls()
+            smtp.starttls(context=ssl.create_default_context())  # verify the server certificate and hostname
         if settings.SMTP_USERNAME:
             smtp.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
         smtp.send_message(msg)

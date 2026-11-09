@@ -65,9 +65,10 @@ services:
       - RECIPES_EMAIL_ALLOWED_DOMAINS=${RECIPES_EMAIL_ALLOWED_DOMAINS:-}
       - GROUP_RULES_ENABLED=${GROUP_RULES_ENABLED:-true}
       - OIDC_ISSUER=${OIDC_ISSUER:-http://localhost:8000}
-      - ENVIRONMENT=development
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-127.0.0.1}
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s

@@ -8,7 +8,11 @@ const nextConfig = {
       { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
       { key: "X-Frame-Options", value: "DENY" },
     ];
-    return [{ source: "/login", headers: h }, { source: "/oauth/:path*", headers: h }];
+    const base = [
+      { key: "X-Content-Type-Options", value: "nosniff" },
+      { key: "Referrer-Policy", value: "no-referrer" },
+    ];
+    return [{ source: "/:path*", headers: base }, { source: "/login", headers: h }, { source: "/oauth/:path*", headers: h }];
   },
   // Use pages router (not app router) for compatibility
   // experimental: { appDir: false },

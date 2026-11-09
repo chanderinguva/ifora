@@ -78,6 +78,16 @@ def effective(roles: Iterable[str]) -> Dict[str, str]:
     return out
 
 
+def has_access(db, user, area: str) -> bool:
+    """Does this admin hold at least read access to `area`? (super admins always do)"""
+    if user.is_super_admin:
+        return True
+    from backend.app.admin_roles.models import AdminRoleAssignment
+
+    roles = [r for (r,) in db.query(AdminRoleAssignment.role).filter(AdminRoleAssignment.user_id == user.id)]
+    return area in effective(roles)
+
+
 def allowed(roles: Iterable[str], method: str, template: str) -> bool:
     chosen = [r for r in roles if r in ROLES] or ["org_admin"]
     area = area_for(template)
