@@ -170,6 +170,10 @@ def create_app() -> FastAPI:
     from backend.app.access_requests.routes import admin_router as access_admin, me_router as access_me, settings_router as access_settings
 
     app.include_router(access_admin, prefix="/api/v1")
+    from backend.app.security_policy.routes import public_router as sec_public, router as sec_admin
+
+    app.include_router(sec_admin, prefix="/api/v1")
+    app.include_router(sec_public, prefix="/api/v1")
     app.include_router(access_settings, prefix="/api/v1")
     app.include_router(access_me, prefix="/api/v1")
     app.include_router(admin_access_router, prefix="/api/v1")

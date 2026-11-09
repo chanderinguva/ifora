@@ -1,5 +1,6 @@
 "use client";
 
+import { PasswordRules } from "@/components/password-rules";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -178,6 +179,7 @@ export default function AccountSettings() {
           <div className="space-y-2">
             <Label htmlFor="new">New password</Label>
             <Input id="new" type="password" autoComplete="new-password" value={pw.new_password} onChange={(e) => setPw({ ...pw, new_password: e.target.value })} />
+            <PasswordRules />
             <p className="text-xs text-muted-foreground">12+ characters, mixed case, with a digit. Other devices are signed out.</p>
           </div>
           <Button type="submit" disabled={!pw.current_password || !pw.new_password}>

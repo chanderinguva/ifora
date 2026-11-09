@@ -94,7 +94,9 @@ def change_password(
     session, user, _ = ctx
     if not user.verify_password(body.current_password):
         raise HTTPException(status_code=403, detail="Current password is incorrect")
-    user.set_password(body.new_password)
+    from backend.app.security_policy import service as policy
+
+    policy.set_checked(db, user, body.new_password)
     revoked = revoke_user_sessions(db, user.id, except_id=session.id)
     record(db, AuditAction.USER_PASSWORD_CHANGED, request, user, user.id, "user", {"by": "self", "sessions_revoked": revoked})
     db.commit()

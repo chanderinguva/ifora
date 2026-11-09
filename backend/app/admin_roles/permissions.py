@@ -26,6 +26,7 @@ _AREAS = [
     ("/admin/search", "overview"),
     ("/admin/features", "overview"),
     ("/admin/network-zones", "security"),
+    ("/admin/security-policy", "security"),
     ("/admin/profile-attributes", "directory_settings"),
     ("/admin/recipes", "automation"),
     ("/admin/recipe-connections", "automation"),

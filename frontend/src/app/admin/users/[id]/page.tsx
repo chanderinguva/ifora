@@ -1,5 +1,6 @@
 "use client";
 
+import { PasswordRules } from "@/components/password-rules";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -244,6 +245,7 @@ export default function UserDetail() {
             >
             <Label htmlFor="newpw">New password</Label>
             <Input id="newpw" type="password" autoComplete="new-password" value={newPw} onChange={(e) => setNewPw(e.target.value)} />
+            <PasswordRules />
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={requireChange} onChange={(e) => setRequireChange(e.target.checked)} />
               Require the user to choose a new password at next sign-in

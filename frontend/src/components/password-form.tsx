@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordRules } from "@/components/password-rules";
 import { API_URL } from "@/lib/api";
 
 async function post(path: string, body: unknown): Promise<{ ok: boolean; data: any }> {
@@ -106,7 +107,7 @@ export function SetPasswordForm({ invite }: { invite: boolean }) {
           <div className="space-y-2">
             <Label htmlFor="np">New password</Label>
             <Input id="np" type="password" autoComplete="new-password" required value={pw} onChange={(e) => setPw(e.target.value)} />
-            <p className="text-xs text-muted-foreground">At least 12 characters, mixing upper and lower case, with a digit.</p>
+            <PasswordRules />
           </div>
           <div className="space-y-2">
             <Label htmlFor="np2">Repeat password</Label>
@@ -137,7 +138,7 @@ export function ExpiredPasswordForm({ email, current, onDone }: { email: string;
     }}>
       <Alert><AlertDescription>You must choose a new password before continuing.</AlertDescription></Alert>
       {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
-      <div className="space-y-2"><Label htmlFor="xp">New password</Label><Input id="xp" type="password" autoComplete="new-password" required value={pw} onChange={(e) => setPw(e.target.value)} /></div>
+      <div className="space-y-2"><Label htmlFor="xp">New password</Label><Input id="xp" type="password" autoComplete="new-password" required value={pw} onChange={(e) => setPw(e.target.value)} /><PasswordRules /></div>
       <div className="space-y-2"><Label htmlFor="xp2">Repeat password</Label><Input id="xp2" type="password" autoComplete="new-password" required value={pw2} onChange={(e) => setPw2(e.target.value)} /></div>
       <Button type="submit" className="w-full" disabled={busy || !pw}>Change password</Button>
     </form>
