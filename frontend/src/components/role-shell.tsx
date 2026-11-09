@@ -1,6 +1,6 @@
 "use client";
 
-import { LayoutDashboard, Users, Shield, ScrollText, Home, Settings, Workflow, AppWindow, SlidersHorizontal, RefreshCw, Send, Zap, LayoutGrid, Globe, Palette, Mail } from "lucide-react";
+import { LayoutDashboard, Users, Shield, ScrollText, Home, Settings, Workflow, AppWindow, SlidersHorizontal, RefreshCw, Send, Zap, LayoutGrid, Globe, Palette, Mail, KeyRound, Inbox } from "lucide-react";
 import { AppShell, type NavGroup } from "./app-shell";
 import { useCurrentUser } from "./auth-guard";
 import { inAdminView } from "@/lib/roles";
@@ -24,6 +24,7 @@ export const ADMIN_NAV: NavGroup[] = [
     label: "Applications",
     items: [
       { href: "/admin/applications", area: "applications", label: "Applications", icon: LayoutGrid },
+      { href: "/admin/access-requests", area: "applications", label: "Access requests", icon: Inbox },
       { href: "/admin/oidc-clients", area: "applications", label: "OIDC clients", icon: AppWindow },
       { href: "/admin/app-provisioning", area: "applications", label: "Provisioning apps", icon: Send },
       { href: "/admin/provisioning", area: "applications", label: "Inbound SCIM", icon: RefreshCw },
@@ -35,7 +36,7 @@ export const ADMIN_NAV: NavGroup[] = [
 ];
 
 export const USER_NAV: NavGroup[] = [
-  { items: [{ href: "/dashboard", label: "Home", icon: Home }, { href: "/apps", label: "My apps", icon: LayoutGrid }] },
+  { items: [{ href: "/dashboard", label: "Home", icon: Home }, { href: "/apps", label: "My apps", icon: LayoutGrid }, { href: "/apps/request", label: "Request access", icon: KeyRound }] },
   { label: "Account", items: [{ href: "/settings", label: "Account settings", icon: Settings }] },
 ];
 
