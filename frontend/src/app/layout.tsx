@@ -4,6 +4,7 @@ import type { Metadata, Viewport } from "next";
 import { Lora } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
+import { BrandingProvider } from "@/lib/branding";
 
 const lora = Lora({
   subsets: ["latin"],
@@ -37,7 +38,7 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          {children}
+          <BrandingProvider>{children}</BrandingProvider>
         </ThemeProvider>
       </body>
     </html>

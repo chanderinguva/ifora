@@ -230,7 +230,7 @@ def create_user(
     db.commit()
     db.refresh(user)
     if body.send_invite:
-        invited = recovery_routes.send_link(user, "invite", raw)
+        invited = recovery_routes.send_link(user, "invite", raw, db)
     out = _detail(user)
     if invited is not None:
         out["invitation_sent"] = invited
@@ -390,7 +390,7 @@ def send_invite(
     raw = password_tokens.issue(db, user, "invite")
     record(db, AuditAction.USER_INVITED, request, actor, user.id, "user", {"resend": True})
     db.commit()
-    if not recovery_routes.send_link(user, "invite", raw):
+    if not recovery_routes.send_link(user, "invite", raw, db):
         raise HTTPException(status_code=502, detail="The mail server did not accept the message")
     return {"success": True}
 
@@ -412,7 +412,7 @@ def send_reset(
     raw = password_tokens.issue(db, user, "reset")
     record(db, AuditAction.PASSWORD_RESET_REQUESTED, request, actor, user.id, "user", {"by": "admin"})
     db.commit()
-    if not recovery_routes.send_link(user, "reset", raw):
+    if not recovery_routes.send_link(user, "reset", raw, db):
         raise HTTPException(status_code=502, detail="The mail server did not accept the message")
     return {"success": True}
 

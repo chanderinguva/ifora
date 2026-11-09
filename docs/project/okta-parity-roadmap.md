@@ -22,7 +22,7 @@ Status: **Done** / **Partial** / **Todo**. Work in order; each phase is one PR.
 | Security > API tokens, Trusted origins | | Todo |
 | Workflow | Workflows, tasks | Partial: Recipes |
 | Reports > System log | Filter, search, export, detail drawer, saved search | Done (phase 4): search, time range, action list from API, target filter, detail drawer, CSV export (audited, formula-safe), saved filters (per browser). Todo: server-side saved filters, scheduled exports, streaming to SIEM |
-| Settings > Customization | Branding (logo, colours), custom domain, sign-in page, email templates | Todo |
+| Settings > Customization | Branding (logo, colours), custom domain, sign-in page, email templates | Partial (phase 8, ADR 015): name, logo, primary colour, sign-in message; editable invite and reset emails with preview and test send. Todo: custom domain, sign-in layout, HTML emails, more templates |
 | Settings > Account / Features / Downloads | | Todo |
 
 ## End-user dashboard
