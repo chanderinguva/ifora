@@ -1,0 +1,257 @@
+"use client";
+
+import { useState } from "react";
+import { Plus, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { fieldClass } from "@/components/bits";
+import { PillInput } from "@/components/recipe-bits";
+import { OPERATOR_LABELS, decisionPills, stepPills, stepsBefore, type Comparison, type Connection, type Definition, type Pill, type RecipeMeta, type StepNode } from "@/lib/recipes";
+import type { Group } from "@/lib/types";
+
+// Forms shared by the classic builder and the studio editor.
+
+export type Ctx = {
+  meta: RecipeMeta; groups: Group[]; connections: Connection[]; connectionsAvailable: boolean; trigger: string; root: StepNode[]; other?: StepNode[]; handler?: boolean; inLoop?: boolean;
+};
+
+const USER_PILL = "{{trigger.user.id}}";
+const USER_EMAIL_PILL = "{{trigger.user.email}}";
+
+export function defaultConfig(type: string, ctx: Ctx): Record<string, any> {
+  switch (type) {
+    case "add_to_group": case "remove_from_group": return { group_id: ctx.groups[0]?.id ?? null, user: USER_PILL };
+    case "set_attribute": return { user: USER_PILL, attribute: ctx.meta.managed_attributes[0]?.key ?? "", value: "" };
+    case "activate_user": case "deactivate_user": return { user: USER_PILL };
+    case "http_request": return { method: "POST", url: "https://", headers: {}, body: "", connection_id: null };
+    case "log": return { message: "" };
+    case "send_slack": return { connection_id: ctx.connections.find((c) => c.kind === "slack_webhook")?.id ?? null, message: "" };
+    case "send_email": return { to: USER_EMAIL_PILL, subject: "", body: "" };
+    case "condition": return { match: "all", conditions: [{ left: "trigger.event.type", operator: "is_set", value: "" }] };
+    case "stop": return { outcome: "success", message: "" };
+    case "for_each_member": return { group_id: ctx.groups[0]?.id ?? null, limit: 50 };
+    case "approval": return { message: "", timeout_hours: 24 };
+    default: return {};
+  }
+}
+
+export function Select({ label, value, onChange, children, className }: { label: string; value: string | number; onChange: (v: string) => void; children: React.ReactNode; className?: string }) {
+  return <select aria-label={label} className={fieldClass + (className ? " " + className : "")} value={value} onChange={(e) => onChange(e.target.value)}>{children}</select>;
+}
+
+export function Comparisons({ items, onChange, pills, payload }: { items: Comparison[]; onChange: (c: Comparison[]) => void; pills: Pill[]; payload: boolean }) {
+  const set = (i: number, patch: Partial<Comparison>) => onChange(items.map((c, j) => (j === i ? { ...c, ...patch } : c)));
+  const known = pills.some((p) => items.some((c) => c.left === p.path));
+  return (
+    <div className="space-y-2">
+      {items.map((c, i) => (
+        <div key={i} className="grid gap-2 rounded-md border p-2 md:grid-cols-[1.2fr_11rem_1.2fr_auto]" data-testid="comparison-row">
+          <div className="flex gap-1">
+            <Select label="Field" value={c.left} onChange={(v) => set(i, { left: v })}>
+              {!pills.some((p) => p.path === c.left) && <option value={c.left}>{c.left}</option>}
+              {pills.map((p) => <option key={p.path} value={p.path}>{p.label}</option>)}
+            </Select>
+            {payload && <Input aria-label="Payload field" className="h-10 w-32" placeholder="payload.field" onBlur={(e) => e.target.value && set(i, { left: "trigger.payload." + e.target.value.replace(/^payload\./, "") })} />}
+          </div>
+          <Select label="Operator" value={c.operator} onChange={(v) => set(i, { operator: v })}>
+            {Object.entries(OPERATOR_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </Select>
+          {c.operator === "is_set" || c.operator === "is_not_set" ? <span /> : <PillInput label="Value" value={c.value} onChange={(v) => set(i, { value: v })} pills={pills} />}
+          <Button type="button" variant="outline" size="sm" aria-label="Remove comparison" onClick={() => onChange(items.filter((_, j) => j !== i))}><Trash2 className="h-4 w-4" /></Button>
+        </div>
+      ))}
+      <Button type="button" variant="secondary" size="sm" onClick={() => onChange([...items, { left: pills[0]?.path ?? "trigger.event.type", operator: "equals", value: "" }])}>Add comparison</Button>
+      {!known && items.length === 0 && <p className="text-xs text-muted-foreground">No comparisons: it always applies.</p>}
+    </div>
+  );
+}
+
+export function StepForm({ step, ctx, onChange }: { step: StepNode; ctx: Ctx; onChange: (s: StepNode) => void }) {
+  const cfg = step.config;
+  const set = (patch: Record<string, any>) => onChange({ ...step, config: { ...cfg, ...patch } });
+  const before = stepsBefore(ctx.root, step.id);
+  const errorPills: Pill[] = ctx.handler ? [{ path: "error.message", label: "Error message" }, { path: "error.step_id", label: "Failed step" }] : [];
+  const loopPills: Pill[] = ctx.inLoop ? [
+    { path: "loop.user.id", label: "Current member: id" }, { path: "loop.user.email", label: "Current member: email" },
+    { path: "loop.user.username", label: "Current member: username" }, { path: "loop.user.status", label: "Current member: status" },
+    { path: "loop.index", label: "Loop: position (1-based)" }, { path: "loop.total", label: "Loop: member count" },
+  ] : [];
+  const pills = [...(ctx.meta.triggers.find((t) => t.type === ctx.trigger)?.fields ?? []), ...stepPills(ctx.meta, before), ...errorPills, ...loopPills];
+  const payload = ctx.meta.triggers.find((t) => t.type === ctx.trigger)?.payload_pills ?? false;
+  const userField = (
+    <div className="space-y-1"><Label>Target user</Label><PillInput label="Target user" value={cfg.user ?? ""} onChange={(v) => set({ user: v })} pills={pills} payload={payload} /></div>
+  );
+  switch (step.type) {
+    case "add_to_group": case "remove_from_group":
+      return (
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="space-y-1"><Label>Group</Label>
+            <Select label="Group" value={cfg.group_id ?? ""} onChange={(v) => set({ group_id: v ? Number(v) : null })}>
+              <option value="">Choose a group…</option>{ctx.groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </Select>
+            {ctx.groups.length === 0 && <p className="text-xs text-muted-foreground">Create a group first (system groups are not available).</p>}</div>
+          {userField}
+        </div>
+      );
+    case "set_attribute": {
+      const attr = ctx.meta.managed_attributes.find((a) => a.key === cfg.attribute);
+      return (
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="space-y-1"><Label>Attribute</Label>
+            <Select label="Attribute" value={cfg.attribute ?? ""} onChange={(v) => set({ attribute: v, value: "" })}>
+              {ctx.meta.managed_attributes.map((a) => <option key={a.key} value={a.key}>{a.display_name}</option>)}
+            </Select>
+            <p className="text-xs text-muted-foreground">Only administrator-managed attributes can be set by a recipe.</p></div>
+          <div className="space-y-1"><Label>New value</Label>
+            {attr?.data_type === "enum" ? (
+              <Select label="New value" value={cfg.value ?? ""} onChange={(v) => set({ value: v })}><option value="">(clear)</option>{attr.enum_options?.map((o) => <option key={o} value={o}>{o}</option>)}</Select>
+            ) : attr?.data_type === "boolean" ? (
+              <Select label="New value" value={cfg.value ?? ""} onChange={(v) => set({ value: v })}><option value="">(clear)</option><option value="true">Yes</option><option value="false">No</option></Select>
+            ) : (
+              <PillInput label="New value" value={cfg.value ?? ""} onChange={(v) => set({ value: v })} pills={decisionPills(ctx.meta, ctx.trigger, before)} payload={payload} placeholder="Leave empty to clear" />
+            )}</div>
+          {userField}
+        </div>
+      );
+    }
+    case "activate_user": case "deactivate_user":
+      return <>{userField}<p className="mt-1 text-xs text-muted-foreground">Administrator accounts are never changed by recipes.</p></>;
+    case "http_request": {
+      const headers: [string, string][] = Object.entries(cfg.headers ?? {}) as [string, string][];
+      const setHeaders = (h: [string, string][]) => set({ headers: Object.fromEntries(h.filter(([k]) => k.trim() !== "")) });
+      return (
+        <div className="space-y-3">
+          <div className="grid gap-3 md:grid-cols-[8rem_1fr]">
+            <div className="space-y-1"><Label>Method</Label><Select label="Method" value={cfg.method} onChange={(v) => set({ method: v })}>{["GET", "POST", "PUT", "PATCH", "DELETE"].map((m) => <option key={m}>{m}</option>)}</Select></div>
+            <div className="space-y-1"><Label>URL</Label><PillInput label="URL" value={cfg.url ?? ""} onChange={(v) => set({ url: v })} pills={pills} payload={payload} /></div>
+          </div>
+          <div className="space-y-1"><Label>Connection (credentials)</Label>
+            <Select label="Connection" value={cfg.connection_id ?? ""} onChange={(v) => set({ connection_id: v ? Number(v) : null })}>
+              <option value="">None (no credentials)</option>{ctx.connections.filter((c) => c.kind !== "slack_webhook").map((c) => <option key={c.id} value={c.id}>{c.name} → {c.allowed_host}</option>)}
+            </Select>
+            {!ctx.connectionsAvailable && <p className="text-xs text-muted-foreground">Connections are unavailable until RECIPE_ENCRYPTION_KEY is configured.</p>}
+            <p className="text-xs text-muted-foreground">The secret is attached by the server and only sent to the connection’s own host. Requests to private or internal addresses are blocked.</p></div>
+          <div className="space-y-1"><Label>Headers</Label>
+            {headers.map(([k, v], i) => (
+              <div key={i} className="flex gap-2">
+                <Input aria-label="Header name" className="h-10 w-48" value={k} onChange={(e) => setHeaders(headers.map((h, j) => (j === i ? [e.target.value, h[1]] : h)))} />
+                <div className="flex-1"><PillInput label="Header value" value={v} onChange={(nv) => setHeaders(headers.map((h, j) => (j === i ? [h[0], nv] : h)))} pills={pills} payload={payload} /></div>
+                <Button type="button" size="sm" variant="outline" aria-label="Remove header" onClick={() => setHeaders(headers.filter((_, j) => j !== i))}><Trash2 className="h-4 w-4" /></Button>
+              </div>
+            ))}
+            <Button type="button" size="sm" variant="secondary" onClick={() => set({ headers: { ...(cfg.headers ?? {}), [`X-Header-${headers.length + 1}`]: "" } })}>Add header</Button></div>
+          {cfg.method !== "GET" && <div className="space-y-1"><Label>Body</Label><PillInput label="Body" multiline value={cfg.body ?? ""} onChange={(v) => set({ body: v })} pills={pills} payload={payload} placeholder='{"email": "{{trigger.user.email}}"}' /></div>}
+        </div>
+      );
+    }
+    case "send_slack":
+      return (
+        <div className="space-y-3">
+          <div className="space-y-1"><Label>Slack connection</Label>
+            <Select label="Slack connection" value={cfg.connection_id ?? ""} onChange={(v) => set({ connection_id: v ? Number(v) : null })}>
+              <option value="">Choose a connection…</option>{ctx.connections.filter((c) => c.kind === "slack_webhook").map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </Select>
+            {!ctx.connections.some((c) => c.kind === "slack_webhook") && <p className="text-xs text-muted-foreground">Add a “Slack incoming webhook” under Connections first.</p>}</div>
+          <div className="space-y-1"><Label>Message</Label><PillInput label="Slack message" multiline value={cfg.message ?? ""} onChange={(v) => set({ message: v })} pills={pills} payload={payload} />
+            <p className="text-xs text-muted-foreground">Plain text. Mentions and links are neutralised so user-supplied values cannot ping channels.</p></div>
+        </div>
+      );
+    case "send_email":
+      return (
+        <div className="space-y-3">
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-1"><Label>To</Label><PillInput label="Email recipient" value={cfg.to ?? ""} onChange={(v) => set({ to: v })} pills={pills} payload={payload} />
+              <p className="text-xs text-muted-foreground">One address. It must belong to an active user or to an allowed email domain.</p></div>
+            <div className="space-y-1"><Label>Subject</Label><PillInput label="Email subject" value={cfg.subject ?? ""} onChange={(v) => set({ subject: v })} pills={pills} payload={payload} /></div>
+          </div>
+          <div className="space-y-1"><Label>Message</Label><PillInput label="Email body" multiline value={cfg.body ?? ""} onChange={(v) => set({ body: v })} pills={pills} payload={payload} /></div>
+        </div>
+      );
+    case "log":
+      return <div className="space-y-1"><Label>Message</Label><PillInput label="Message" value={cfg.message ?? ""} onChange={(v) => set({ message: v })} pills={pills} payload={payload} /></div>;
+    case "condition":
+      return (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-sm"><span>If</span>
+            <Select label="Match mode" className="!w-auto" value={cfg.match} onChange={(v) => set({ match: v })}><option value="all">all</option><option value="any">any</option></Select>
+            <span>of these are true:</span></div>
+          <Comparisons items={cfg.conditions ?? []} onChange={(c) => set({ conditions: c })} pills={decisionPills(ctx.meta, ctx.trigger, before)} payload={payload} />
+          <p className="text-xs text-muted-foreground">Fields users can edit themselves (names, phone, title…) are not offered: they cannot drive decisions.</p>
+        </div>
+      );
+    case "stop":
+      return (
+        <div className="grid gap-3 md:grid-cols-[12rem_1fr]">
+          <div className="space-y-1"><Label>Finish as</Label><Select label="Outcome" value={cfg.outcome} onChange={(v) => set({ outcome: v })}><option value="success">Success</option><option value="failed">Failed</option></Select></div>
+          <div className="space-y-1"><Label>Message</Label><PillInput label="Stop message" value={cfg.message ?? ""} onChange={(v) => set({ message: v })} pills={pills} payload={payload} /></div>
+        </div>
+      );
+    case "for_each_member":
+      return (
+        <div className="grid gap-3 md:grid-cols-[1fr_10rem]">
+          <div className="space-y-1"><Label>Group</Label>
+            <Select label="Loop group" value={cfg.group_id ?? ""} onChange={(v) => set({ group_id: v ? Number(v) : null })}>
+              <option value="">Choose a group…</option>{ctx.groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </Select>
+            <p className="text-xs text-muted-foreground">The steps below run once per member. Use “Current member” datapills inside. Loops cannot be nested.</p></div>
+          <div className="space-y-1"><Label>Max members (1–100)</Label>
+            <Input aria-label="Loop limit" type="number" min={1} max={100} className="h-10" value={cfg.limit ?? 50} onChange={(e) => set({ limit: Number(e.target.value) })} /></div>
+        </div>
+      );
+    case "approval":
+      return (
+        <div className="grid gap-3 md:grid-cols-[1fr_12rem]">
+          <div className="space-y-1"><Label>Question for the approver</Label><PillInput label="Approval message" value={cfg.message ?? ""} onChange={(v) => set({ message: v })} pills={pills} payload={payload} /></div>
+          <div className="space-y-1"><Label>Give up after (hours, 1–168)</Label>
+            <Input aria-label="Approval timeout hours" type="number" min={1} max={168} className="h-10" value={cfg.timeout_hours ?? 24} onChange={(e) => set({ timeout_hours: Number(e.target.value) })} />
+            <p className="text-xs text-muted-foreground">Approved runs “Then”; denied or timed out runs “Otherwise”.</p></div>
+        </div>
+      );
+    default:
+      return null;
+  }
+}
+
+export function TriggerCard({ def, meta, groups, setTrigger }: { def: Definition; meta: RecipeMeta; groups: Group[]; setTrigger: (patch: Partial<Definition["trigger"]>) => void }) {
+  const trig = meta.triggers.find((t) => t.type === def.trigger.type)!;
+  const tcfg = (patch: Record<string, any>) => setTrigger({ config: { ...def.trigger.config, ...patch } });
+  const triggerPills = trig.fields;
+  const filterPills = decisionPills(meta, def.trigger.type, []);
+  const isGroupTrig = def.trigger.type.startsWith("group.member_");
+  return (
+    <Card className="mb-4" data-testid="trigger-card">
+        <CardHeader className="py-3"><CardTitle className="text-base">When this happens (trigger)</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <Select label="Trigger" value={def.trigger.type} onChange={(v) => setTrigger({ type: v, config: v === "schedule" ? { interval_minutes: 60 } : v === "login.failed" ? { min_failures: 3 } : v === "user.attribute_changed" ? { attribute: meta.managed_attributes[0]?.key ?? "" } : {}, filter: [] })}>
+            {meta.triggers.map((t) => <option key={t.type} value={t.type}>{t.label}</option>)}
+          </Select>
+          <p className="text-sm text-muted-foreground">{trig.description}</p>
+          {isGroupTrig && (
+            <div className="space-y-1"><Label>Only for group</Label>
+              <Select label="Group filter" value={def.trigger.config.group_id ?? ""} onChange={(v) => tcfg({ group_id: v ? Number(v) : null })}><option value="">Any group</option>{groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</Select></div>
+          )}
+          {def.trigger.type === "user.attribute_changed" && (
+            <div className="space-y-1"><Label>Attribute</Label>
+              <Select label="Attribute to watch" value={def.trigger.config.attribute ?? ""} onChange={(v) => tcfg({ attribute: v })}>{meta.managed_attributes.map((a) => <option key={a.key} value={a.key}>{a.display_name}</option>)}</Select>
+              <div className="grid gap-3 pt-2 md:grid-cols-2">
+                <div className="space-y-1"><Label htmlFor="t-from">Only when it changes from (optional)</Label><Input id="t-from" placeholder="any value" value={def.trigger.config.from_value ?? ""} onChange={(e) => tcfg({ from_value: e.target.value === "" ? null : e.target.value })} /></div>
+                <div className="space-y-1"><Label htmlFor="t-to">…to (optional)</Label><Input id="t-to" placeholder="any value" value={def.trigger.config.to_value ?? ""} onChange={(e) => tcfg({ to_value: e.target.value === "" ? null : e.target.value })} /></div>
+              </div></div>
+          )}
+          {def.trigger.type === "login.failed" && (
+            <div className="space-y-1"><Label htmlFor="t-min">Minimum consecutive failures</Label><Input id="t-min" type="number" min={1} max={100} className="w-32" value={def.trigger.config.min_failures ?? 1} onChange={(e) => tcfg({ min_failures: Number(e.target.value) })} /></div>
+          )}
+          {def.trigger.type === "schedule" && (
+            <div className="space-y-1"><Label htmlFor="t-int">Run every (minutes, 5 to 1440)</Label><Input id="t-int" type="number" min={5} max={1440} className="w-32" value={def.trigger.config.interval_minutes ?? 60} onChange={(e) => tcfg({ interval_minutes: Number(e.target.value) })} /></div>
+          )}
+          <details open={def.trigger.filter.length > 0}>
+            <summary className="cursor-pointer text-sm text-muted-foreground">Only continue if… (optional filter)</summary>
+            <div className="mt-2"><Comparisons items={def.trigger.filter} onChange={(f) => setTrigger({ filter: f })} pills={filterPills} payload={trig.payload_pills} /></div>
+          </details>
+          {trig.fields.length > 0 && <p className="text-xs text-muted-foreground">Datapills from this trigger: {triggerPills.slice(0, 6).map((p) => p.label).join(", ")}{triggerPills.length > 6 ? ", …" : ""}</p>}
+        </CardContent>
+      </Card>
+  );
+}
