@@ -6,7 +6,9 @@ import { Copy, GripVertical, Plus, Redo2, Trash2, Undo2, Zap } from "lucide-reac
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Select, StepForm, TriggerCard, defaultConfig, type Ctx } from "@/components/recipe-editor/forms";
+import { Select, StepForm, TriggerCard, defaultConfig, pillsFor, type Ctx } from "@/components/recipe-editor/forms";
+import { PillFieldsContext, type PillRegistry } from "@/components/recipe-editor/pill-context";
+import { PillTray } from "@/components/recipe-editor/pill-tray";
 import { allIds, countSteps, duplicateStep, gapKey, insertAt, locate, moveProblem, moveStep, newId, nextGap, parseGap, removeStep, replaceStep, allGaps, type Gap, type LaneRef } from "@/components/recipe-editor/tree";
 import { laneSteps } from "@/components/recipe-editor/tree";
 import type { Definition, RecipeMeta, StepNode } from "@/lib/recipes";
@@ -111,10 +113,12 @@ export function Studio(props: Props) {
   const [sel, setSel] = useState<string>("trigger");
   const full = countSteps(def) >= meta.limits.max_steps;
   const [dragging, setDragging] = useState<string | null>(null);
+  const [dragPill, setDragPill] = useState<string | null>(null);
+  const registry = useRef<PillRegistry>({ fields: new Map(), active: { current: null } });
   const [note, setNote] = useState<string | null>(null);
   const focusAfter = useRef<string | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
-  const collide: CollisionDetection = (a) => { const hit = pointerWithin(a); return hit.length ? hit : closestCenter(a); };
+  const collide: CollisionDetection = (a) => { const hit = pointerWithin(a); return hit.length || String(a.active.id).startsWith("pill:") ? hit : closestCenter(a); };
   const max = meta.limits.max_nesting;
   // why each drop position would be refused for the step being dragged (computed only while dragging)
   const problems = useMemo(() => {
@@ -129,8 +133,13 @@ export function Studio(props: Props) {
   });
   const label = (id: string) => { const l = locate(def, id); return l ? (meta.steps.find((m) => m.type === l.step.type)?.label ?? l.step.type) : id; };
   function dropOn(e: DragEndEvent) {
-    setDragging(null);
+    setDragging(null); setDragPill(null);
     const id = String(e.active.id);
+    if (id.startsWith("pill:")) {   // a datapill dropped on a field
+      const over = e.over ? String(e.over.id) : "";
+      if (over.startsWith("field:")) registry.current.fields.get(over.slice(6))?.(id.slice(5));
+      return;
+    }
     const gap = e.over ? parseGap(String(e.over.id)) : null;
     if (!gap) return;
     const why = moveProblem(def, id, gap.ref, gap.index, max);
@@ -236,7 +245,8 @@ export function Studio(props: Props) {
   const isAction = located ? meta.steps.find((m) => m.type === located.step.type)?.kind === "action" : false;
 
   return (
-    <DndContext sensors={sensors} collisionDetection={collide} onDragStart={(e) => { setDragging(String(e.active.id)); setSel(String(e.active.id)); setNote(null); }} onDragEnd={dropOn} onDragCancel={() => setDragging(null)}>
+    <DndContext sensors={sensors} collisionDetection={collide} onDragStart={(e) => { const id = String(e.active.id); if (id.startsWith("pill:")) { setDragPill(id.slice(5)); return; } setDragging(id); setSel(id); setNote(null); }} onDragEnd={dropOn} onDragCancel={() => { setDragging(null); setDragPill(null); }}>
+    <PillFieldsContext.Provider value={registry.current}>
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_26rem]" data-testid="studio"
       onKeyDown={(e) => {
         const t = e.target as HTMLElement;
@@ -275,6 +285,7 @@ export function Studio(props: Props) {
                 <code className="ml-2 text-xs font-normal text-muted-foreground">{located.step.id}</code></CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 <StepForm step={located.step} ctx={panelCtx} onChange={(n) => edit(replaceStep(def, n), true)} />
+                {canEdit && located.step.type !== "condition" && <PillTray pills={pillsFor(panelCtx, located.step.id)} />}
                 {isAction && (
                   <div className="grid gap-3 border-t pt-3">
                     <div className="space-y-1"><Label>If this step fails</Label>
@@ -289,7 +300,11 @@ export function Studio(props: Props) {
         </fieldset>
       </aside>
     </div>
-    <DragOverlay>{dragging ? <div className="rounded-lg border bg-card px-4 py-3 text-sm font-medium shadow-lg">{label(dragging)}</div> : null}</DragOverlay>
+    <DragOverlay>
+      {dragging ? <div className="rounded-lg border bg-card px-4 py-3 text-sm font-medium shadow-lg">{label(dragging)}</div>
+        : dragPill ? <span className="rounded-full border bg-primary/10 px-2 py-0.5 text-xs shadow-lg">{dragPill}</span> : null}
+    </DragOverlay>
+    </PillFieldsContext.Provider>
     </DndContext>
   );
 }
