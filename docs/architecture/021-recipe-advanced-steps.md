@@ -6,7 +6,7 @@
 ## Why this needs care
 ADR 008 chose "no expression language, no code" on purpose: recipes run with the platform's authority (they add people to groups, set attributes, deactivate users) and a self-editable profile value must never become an instruction (the taint rule). Everything below widens that surface. Each feature therefore comes with the guard that keeps ADR 008's guarantees. Code steps are the dangerous one: they are remote code execution by design, so they get their own isolation boundary and are off by default.
 
-## 1. Formula mode (functions on pills)
+## 1. Formula mode (functions on pills) — IMPLEMENTED
 - A field can switch from "text with pills" to **formula**: `{{ upper(trigger.user.last_name) }}`, `{{ trigger.user.email | domain }}`-style helpers are *not* used; one syntax only: function calls over pills and literals.
 - Implemented as a **small, closed expression language we parse ourselves** (no `eval`, no Python `ast.literal_eval` tricks): literals, pill paths, `+ - * / %`, comparison, `and/or/not`, `? :`, and a fixed library: text (`upper lower trim split join replace substring contains starts_with ends_with length`), numbers (`round abs min max`), dates (`now today add_days format_date parse_date diff_days`), lists (`first last count contains map_get join`), logic (`if coalesce is_blank`), encoding (`base64 url_encode sha256 hmac_sha256` where the secret is a connection field, never a literal), `json_parse/json_stringify`.
 - Pure functions, no I/O, hard limits (expression length 2000, depth 20, 10 000 evaluation steps, output 64 KB).
@@ -72,3 +72,67 @@ Include in the roadmap, not in this ADR's first cut: recipe **folders/tags/searc
 3. **Who can write code**: super admins only (recommended) or also an `automation` role?
 4. **Network from code steps**: none by default with per-step host allow-list (recommended)?
 5. **Is IdentityForge single-organisation for the foreseeable future?** If hostile tenants are possible, code steps need microVM isolation before launch.
+
+
+---
+
+# Implemented: formula mode (reference)
+
+**Syntax.** A formula is written `{{= expression }}` inside any field that accepts datapills (plain `{{path}}` pills keep working and can be mixed with text and formulas in one field: `Hi {{= upper(trigger.user.first_name) }}`). A field that is exactly one formula keeps the value's type (a number stays a number). At most 10 formulas per field.
+
+**Language.** Numbers, `'text'` or `"text"` (escapes `\\ \' \" \n \t`), `true false null`, lists `[1, 2]`, datapill paths, function calls, `+ - * / %` (`+` also joins two texts), `== != < <= > >=`, `and or not`, `cond ? a : b`, parentheses. Missing datapills read as nothing inside a formula (use `coalesce` / `is_blank`); the save-time check still rejects paths that are not available at that step. Dates are ISO text (`2030-01-31` or `2030-01-31T12:00:00Z`, UTC).
+
+**Safety (code: `backend/app/recipes/formula.py`, `templates.py`).**
+- We tokenise, parse and evaluate ourselves: no `eval`, no attribute access, names are limited to datapill roots and the function table below; every function is a pure computation (no I/O, no regular expressions, so no ReDoS).
+- Limits: 2000 characters, nesting 20, 10 000 evaluation steps, 64 KB text, 5 000 list items, 10 formulas per field.
+- **Taint.** The evaluator can only read data through the caller's `read` callback, which runs the same path check and taint check as a plain pill. At save time `pills_in()` reports every path a formula reads, so a formula that reads a user-editable value (first/last name, self-editable attributes, `error.*`) is refused in the same places a plain pill is (state-changing steps, decisions), however it is wrapped.
+- A parser fuzz test (random token soups and mutations of valid formulas) must only ever produce a normal error.
+
+**Editor.** Typing `{{=` opens suggestions for functions and datapills (arrows, Enter/Tab, Escape); the step panel lists every function with its example; a formula shows as an `ƒ` chip under the field (red when it reads a path that is not available); **Preview with the sample** evaluates the step's formulas against the sample user chosen under Test (`POST /admin/recipes/{id}/formula-preview`; earlier steps' outputs are not available there, run a test for those).
+
+**Not included yet** (from the original list): `hmac_sha256` (needs a connection-held secret, see section 5), maps over lists, user-defined functions.
+
+**Functions**
+
+| Signature | What it does | Example |
+|---|---|---|
+| `upper(text)` | Upper case | `upper("Ann") → "ANN"` |
+| `lower(text)` | Lower case | `lower("Ann") → "ann"` |
+| `trim(text)` | Remove spaces at both ends | `trim("  a ") → "a"` |
+| `length(text or list)` | Number of characters or items | `length("abc") → 3` |
+| `contains(text or list, value)` | True if the text or list holds the value | `contains("a@b.com", "@") → true` |
+| `starts_with(text, prefix)` | True if the text starts with the prefix | `starts_with("abc", "a") → true` |
+| `ends_with(text, suffix)` | True if the text ends with the suffix | `ends_with("abc", "c") → true` |
+| `replace(text, find, with)` | Replace every occurrence (plain text, not a pattern) | `replace("a-b", "-", "_") → "a_b"` |
+| `substring(text, start, length?)` | Part of a text (start at 0) | `substring("abcdef", 1, 3) → "bcd"` |
+| `split(text, separator?)` | Split a text into a list (default separator is a comma) | `split("a,b") → ["a","b"]` |
+| `join(list, separator?)` | Join a list into one text | `join(["a","b"], "-") → "a-b"` |
+| `text(value)` | Turn any value into text | `text(42) → "42"` |
+| `email_domain(email)` | The part after the @, lower case | `email_domain("a@Corp.com") → "corp.com"` |
+| `email_name(email)` | The part before the @ | `email_name("ann@corp.com") → "ann"` |
+| `number(value)` | Turn text into a number | `number("42") → 42` |
+| `round(number, digits?)` | Round to a number of decimals (default 0) | `round(2.567, 1) → 2.6` |
+| `floor(number)` | Round down | `floor(2.9) → 2` |
+| `ceil(number)` | Round up | `ceil(2.1) → 3` |
+| `abs(number)` | Absolute value | `abs(-3) → 3` |
+| `min(a, b, ...)` | Smallest number | `min(3, 1) → 1` |
+| `max(a, b, ...)` | Largest number | `max(3, 1) → 3` |
+| `now()` | The current date and time (UTC) | `now()` |
+| `today()` | Today's date (UTC) | `today()` |
+| `add_days(date, days)` | Add (or subtract) days | `add_days("2030-01-30", 2) → "2030-02-01"` |
+| `diff_days(later, earlier)` | Whole days between two dates | `diff_days("2030-02-01", "2030-01-30") → 2` |
+| `format_date(date, format)` | Format a date (%Y %m %d %H %M %S %B %b %A %a %e %j %y %Z) | `format_date("2030-01-31", "%d %B %Y") → "31 January 2030"` |
+| `parse_date(text)` | Check and normalise a date | `parse_date("2030-01-31") → "2030-01-31"` |
+| `first(list)` | First item | `first(["a","b"]) → "a"` |
+| `last(list)` | Last item | `last(["a","b"]) → "b"` |
+| `count(list)` | Number of items | `count(["a","b"]) → 2` |
+| `get(object or list, key or position)` | Read one entry; nothing when it is missing | `get(trigger.payload, "id")` |
+| `if(condition, then, otherwise)` | Pick a value (only the chosen one is evaluated) | `if(length(a) > 3, "long", "short")` |
+| `coalesce(a, b, ...)` | The first value that is not empty | `coalesce(trigger.user.attributes.nickname, "friend")` |
+| `is_blank(value)` | True when the value is missing or empty | `is_blank("") → true` |
+| `base64_encode(text)` | Base64 text | `base64_encode("a") → "YQ=="` |
+| `base64_decode(text)` | Decode base64 text | `base64_decode("YQ==") → "a"` |
+| `url_encode(text)` | Make a text safe for a URL | `url_encode("a b") → "a%20b"` |
+| `sha256(text)` | SHA-256 hash as hex | `sha256("a")` |
+| `json_parse(text)` | Read JSON text into a value | `json_parse("{\"a\":1}")` |
+| `json_stringify(value)` | Write a value as JSON text | `json_stringify([1,2]) → "[1,2]"` |

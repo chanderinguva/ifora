@@ -18,8 +18,46 @@ type Props = {
   def: Definition; meta: RecipeMeta; ctx: Ctx; groups: Group[]; canEdit: boolean;
   edit: (d: Definition, merge?: boolean) => void; setTrigger: (patch: Partial<Definition["trigger"]>) => void;
   result: Job | null; stale: boolean;
+  previewFormulas: (templates: string[]) => Promise<PreviewItem[]>;
   undo: () => void; redo: () => void; canUndo: boolean; canRedo: boolean;
 };
+
+export type PreviewItem = { template: string; ok: boolean; value?: unknown; error?: string };
+
+function formulasIn(v: unknown): string[] {
+  if (typeof v === "string") return v.includes("{{=") ? [v] : [];
+  if (Array.isArray(v)) return v.flatMap(formulasIn);
+  if (v && typeof v === "object") return Object.values(v).flatMap(formulasIn);
+  return [];
+}
+
+/** Shows what this step's formulas give for the sample event chosen in the Test section. */
+function FormulaPreview({ templates, run }: { templates: string[]; run: (t: string[]) => Promise<PreviewItem[]> }) {
+  const [items, setItems] = useState<PreviewItem[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { setItems(null); setErr(null); }, [templates.join("\u0000")]);
+  if (templates.length === 0) return null;
+  return (
+    <div className="space-y-2 border-t pt-3" data-testid="formula-preview">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium">Formulas</span>
+        <Button type="button" size="sm" variant="outline" disabled={busy} onClick={async () => {
+          setBusy(true); setErr(null);
+          try { setItems(await run(templates)); } catch (e) { setItems(null); setErr(e instanceof Error ? e.message : "Preview failed"); } finally { setBusy(false); }
+        }}>Preview with the sample</Button>
+      </div>
+      {err && <p className="text-xs text-destructive">{err}</p>}
+      {items?.map((it, i) => (
+        <div key={i} className="rounded border p-2 text-xs" data-testid="formula-result" data-ok={it.ok ? "yes" : "no"}>
+          <div className="truncate font-mono text-muted-foreground" title={it.template}>{it.template}</div>
+          {it.ok ? <pre className="mt-1 whitespace-pre-wrap break-words">{typeof it.value === "string" ? it.value : JSON.stringify(it.value)}</pre> : <p className="mt-1 text-destructive">{it.error}</p>}
+        </div>
+      ))}
+      <p className="text-xs text-muted-foreground">Uses the sample user chosen under Test. Data from earlier steps is not available in a preview; run a test to see it.</p>
+    </div>
+  );
+}
 
 type Outcome = "ok" | "failed" | "skipped" | "other";
 
@@ -356,6 +394,7 @@ export function Studio(props: Props) {
               <CardContent className="space-y-3">
                 <StepForm step={located.step} ctx={panelCtx} onChange={(n) => edit(replaceStep(def, n), true)} />
                 {canEdit && located.step.type !== "condition" && <PillTray pills={pillsFor(panelCtx, located.step.id)} />}
+                <FormulaPreview templates={formulasIn(located.step.config)} run={props.previewFormulas} />
                 <div className="space-y-1 border-t pt-3"><Label htmlFor="step-note">Note (optional)</Label>
                   <textarea id="step-note" rows={2} maxLength={300} placeholder="Why this step exists. Shown on the card; never used when the recipe runs." value={located.step.note ?? ""}
                     onChange={(e) => edit(replaceStep(def, { ...located.step, note: e.target.value || null }), true)} className="w-full rounded-md border bg-background px-3 py-2 text-sm" /></div>
