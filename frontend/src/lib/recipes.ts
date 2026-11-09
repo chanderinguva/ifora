@@ -66,6 +66,7 @@ export type RecipeMeta = {
   managed_attributes: { key: string; display_name: string; data_type: string; enum_options: string[] | null }[];
   safe_user_fields: string[];
   limits: { max_steps: number; max_nesting: number };
+  functions?: { name: string; signature: string; description: string; example: string }[];
 };
 
 export type JobStep = {

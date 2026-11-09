@@ -25,7 +25,8 @@ from backend.app.db import get_db
 from backend.app.groups.model import Group
 from backend.app.profiles import catalog as profile_catalog
 from backend.app.recipes import conditions as cond
-from backend.app.recipes import crypto, definition as defn, engine, portable
+from backend.app.recipes import crypto, definition as defn, engine, formula, portable
+from backend.app.recipes import templates as tpl
 from backend.app.recipes.models import (
     Recipe, RecipeConnection, RecipeJob, RecipeJobStep, RecipeVersion,
 )
@@ -225,6 +226,7 @@ def meta(db: Session = Depends(get_db), _: User = Depends(require_admin)):
         ],
         "safe_user_fields": sorted(defn._SAFE_USER_FIELDS),
         "limits": {"max_steps": defn.MAX_STEPS, "max_nesting": defn.MAX_NESTING},
+        "functions": formula.CATALOG,
     }
 
 
@@ -710,6 +712,28 @@ def test_run(recipe_id: int, body: RunBody, request: Request, db: Session = Depe
     _audit(db, AuditAction.RECIPE_TEST_RUN, actor, r.id, {"trigger": d["trigger"]["type"]}, request)
     job = engine.run_dry(db, r, d, ctx)
     return _job_detail(db, job)
+
+
+class PreviewBody(RunBody):
+    templates: List[str] = Field(default_factory=list, max_length=20)
+
+
+@router.post("/{recipe_id}/formula-preview")
+def formula_preview(recipe_id: int, body: PreviewBody, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    """Evaluate fields (pills and formulas) against a sample event. Reads only; earlier steps' outputs are not available."""
+    r = _need(db, recipe_id, actor, "edit")
+    d = _validated(db, r.draft, actor=actor)
+    data = {"trigger": _sample_trigger(db, d, body, actor), "steps": {}, "recipe": {"id": r.id, "name": r.name, "version": 0}, "job": {"id": 0}}
+    items = []
+    for t in body.templates:
+        if len(t) > 2000:
+            items.append({"template": t[:50], "ok": False, "error": "too long"})
+            continue
+        try:
+            items.append({"template": t, "ok": True, "value": tpl.render(t, data)})
+        except tpl.TemplateError as e:
+            items.append({"template": t, "ok": False, "error": str(e)})
+    return {"items": items}
 
 
 @router.post("/{recipe_id}/run", status_code=202)

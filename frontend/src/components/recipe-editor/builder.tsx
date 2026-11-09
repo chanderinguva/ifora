@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Badge, PageHeader, fieldClass } from "@/components/bits";
 import { JobView, RecipeTabs } from "@/components/recipe-bits";
 import { Studio } from "@/components/recipe-editor/studio";
+import { FunctionsContext } from "@/components/recipe-editor/pill-context";
 import { Select, Comparisons, StepForm, TriggerCard, defaultConfig, type Ctx } from "@/components/recipe-editor/forms";
 import { FlowDiagram } from "@/components/recipe-flow";
 import { http, qs, type Page } from "@/lib/http";
@@ -166,6 +167,7 @@ export function RecipeBuilder({ studio = false }: { studio?: boolean }) {
   const save = async () => { const r = await http<RecipeSummary>(`/admin/recipes/${id}`, { method: "PUT", body: { name, description: recipe.description, definition: def } }); adopt(r); load(); return r; };
 
   return (
+    <FunctionsContext.Provider value={meta.functions ?? []}>
     <div>
       <PageHeader title={recipe.name}>
         <Badge tone={recipe.enabled ? "good" : "neutral"}>{recipe.enabled ? "enabled" : "disabled"}</Badge>
@@ -208,7 +210,7 @@ export function RecipeBuilder({ studio = false }: { studio?: boolean }) {
       {studio ? (
         <div className="mb-6">
           <Studio def={def} meta={meta} ctx={ctx} groups={groups} canEdit={canEdit} edit={edit} setTrigger={setTrigger}
-            result={result} stale={resultRev !== hist.rev} undo={undo} redo={redo} canUndo={hist.past.length > 0} canRedo={hist.future.length > 0} />
+            result={result} stale={resultRev !== hist.rev} previewFormulas={async (templates) => (await http<{ items: { template: string; ok: boolean; value?: unknown; error?: string }[] }>(`/admin/recipes/${id}/formula-preview`, { method: "POST", body: { templates, user_id: test.user_id ? Number(test.user_id) : null, group_id: test.group_id ? Number(test.group_id) : null, payload: safeJson(test.payload) } })).items} undo={undo} redo={redo} canUndo={hist.past.length > 0} canRedo={hist.future.length > 0} />
         </div>
       ) : (<>
       <div className="mb-3 flex gap-1" role="tablist" aria-label="Builder view">
@@ -275,6 +277,7 @@ export function RecipeBuilder({ studio = false }: { studio?: boolean }) {
         </CardContent></Card>
       </div>
     </div>
+    </FunctionsContext.Provider>
   );
 }
 

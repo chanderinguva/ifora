@@ -2,7 +2,7 @@
 
 import { useContext, useMemo, useState } from "react";
 import { useDraggable } from "@dnd-kit/core";
-import { PillFieldsContext } from "@/components/recipe-editor/pill-context";
+import { FunctionsContext, PillFieldsContext } from "@/components/recipe-editor/pill-context";
 import type { Pill } from "@/lib/recipes";
 
 function group(p: Pill): string {
@@ -39,7 +39,15 @@ export function PillTray({ pills }: { pills: Pill[] }) {
     const put = id ? reg?.fields.get(id) : undefined;
     if (put) { put(p.path); setNote(null); } else setNote("Click into a field first, or drag the data onto one.");
   };
-  if (pills.length === 0) return null;
+  const fns = useContext(FunctionsContext);
+  const [fq, setFq] = useState("");
+  const shownFns = fns.filter((f) => (f.name + " " + f.description).toLowerCase().includes(fq.toLowerCase()));
+  const insertFn = (name: string) => {
+    const id = reg?.active.current;
+    const put = id ? reg?.fields.get(id) : undefined;
+    if (put) { put(`{{= ${name}() }}`); setNote(null); } else setNote("Click into a field first.");
+  };
+  if (pills.length === 0 && fns.length === 0) return null;
   return (
     <div className="space-y-2 border-t pt-3" data-testid="pill-tray">
       <div className="text-sm font-medium">Data you can use here</div>
@@ -54,6 +62,23 @@ export function PillTray({ pills }: { pills: Pill[] }) {
         ))}
         {groups.length === 0 && <p className="text-xs text-muted-foreground">Nothing matches.</p>}
       </div>
+      {fns.length > 0 && (
+        <details className="text-sm" data-testid="formula-functions">
+          <summary className="cursor-pointer font-medium">Formula functions ({fns.length})</summary>
+          <p className="mt-1 text-xs text-muted-foreground">Type <code>{"{{="}</code> in a field to write a formula, e.g. <code>{"{{= upper(trigger.user.username) }}"}</code>. Click a function to insert it.</p>
+          <input aria-label="Search functions" placeholder="Search functions…" value={fq} onChange={(e) => setFq(e.target.value)} className="my-2 h-8 w-full rounded border bg-background px-2 text-sm" />
+          <ul className="max-h-60 space-y-1 overflow-auto">
+            {shownFns.map((f) => (
+              <li key={f.name}>
+                <button type="button" onClick={() => insertFn(f.name)} className="block w-full rounded px-2 py-1 text-left hover:bg-muted" title={f.example}>
+                  <span className="font-mono text-xs">{f.signature}</span>
+                  <span className="block text-xs text-muted-foreground">{f.description}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </div>
   );
 }

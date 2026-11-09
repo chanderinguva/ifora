@@ -8,3 +8,7 @@ export type PillRegistry = {
   active: { current: string | null };
 };
 export const PillFieldsContext = createContext<PillRegistry | null>(null);
+
+export type FunctionInfo = { name: string; signature: string; description: string; example: string };
+/** The formula function catalogue (from the server), for suggestions. Empty outside the editors. */
+export const FunctionsContext = createContext<FunctionInfo[]>([]);

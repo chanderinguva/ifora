@@ -4,8 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useContext, useEffect, useId, useRef, useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
-import { PillFieldsContext } from "@/components/recipe-editor/pill-context";
-import { openPill, parseSegments } from "@/lib/pills";
+import { FunctionsContext, PillFieldsContext, type FunctionInfo } from "@/components/recipe-editor/pill-context";
+import { formulaPaths, openPill, parseSegments } from "@/lib/pills";
 import { Badge, fieldClass, fmt } from "@/components/bits";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -51,7 +51,7 @@ export function PillInput({
     const el = ref.current;
     const at = el?.selectionStart ?? value.length;
     const end = el?.selectionEnd ?? at;
-    onChange(value.slice(0, at) + `{{${path}}}` + value.slice(end));
+    onChange(value.slice(0, at) + (path.startsWith("{{") ? path : `{{${path}}}`) + value.slice(end));
   };
   useEffect(() => {   // the tray inserts through this, so it always sees the current value
     if (!reg) return;
@@ -62,11 +62,33 @@ export function PillInput({
     ["Trigger", pills.filter((p) => p.path.startsWith("trigger."))],
     ["Earlier steps", pills.filter((p) => p.path.startsWith("steps."))],
   ];
+  const fns = useContext(FunctionsContext);
+  const pendingCaret = useRef<number | null>(null);
+  useEffect(() => {   // put the cursor where a suggestion asked for it, once the new value is on screen
+    if (pendingCaret.current !== null && ref.current) { ref.current.setSelectionRange(pendingCaret.current, pendingCaret.current); setCaret(pendingCaret.current); pendingCaret.current = null; }
+  }, [value]);
   const open = dismissed ? null : openPill(value, caret);
-  const matches = open ? pills.filter((p) => (p.label + " " + p.path).toLowerCase().includes(open.query.toLowerCase())).slice(0, 8) : [];
-  const choose = (path: string) => {
+  const formulaMode = !!open && open.query.startsWith("=");
+  const token = open ? (open.query.match(/[A-Za-z0-9_.]*$/)?.[0] ?? "") : "";
+  type Opt = { key: string; label: string; detail?: string; fn?: FunctionInfo; path?: string };
+  const matches: Opt[] = !open ? [] : formulaMode
+    ? [
+        ...(token.includes(".") ? [] : fns.filter((f) => f.name.startsWith(token.toLowerCase())).slice(0, 6).map((f) => ({ key: "fn:" + f.name, label: f.signature, detail: f.description, fn: f }))),
+        ...pills.filter((p) => token === "" || (p.label + " " + p.path).toLowerCase().includes(token.toLowerCase())).slice(0, 8).map((p) => ({ key: p.path, label: p.label, detail: p.path, path: p.path })),
+      ].slice(0, 10)
+    : pills.filter((p) => (p.label + " " + p.path).toLowerCase().includes(open.query.toLowerCase())).slice(0, 8).map((p) => ({ key: p.path, label: p.label, path: p.path }));
+  const choose = (o: Opt) => {
     if (!open) return;
-    onChange(value.slice(0, open.start) + `{{${path}}}` + value.slice(caret));
+    if (formulaMode) {
+      const insert = o.fn ? `${o.fn.name}()` : o.path!;
+      const from = caret - token.length;
+      const after = value.slice(caret);
+      const close = after.includes("}}") ? "" : " }}";
+      onChange(value.slice(0, from) + insert + close + after);
+      pendingCaret.current = from + (o.fn ? o.fn.name.length + 1 : insert.length);
+    } else {
+      onChange(value.slice(0, open.start) + `{{${o.path}}}` + value.slice(caret));
+    }
     setDismissed(false);
   };
   const known = (path: string) => pills.some((p) => p.path === path) || (payload && path.startsWith("trigger.payload."));
@@ -76,7 +98,7 @@ export function PillInput({
     if (!open || matches.length === 0) return;
     if (e.key === "ArrowDown") { e.preventDefault(); setPick((pick + 1) % matches.length); }
     else if (e.key === "ArrowUp") { e.preventDefault(); setPick((pick + matches.length - 1) % matches.length); }
-    else if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); choose(matches[Math.min(pick, matches.length - 1)].path); }
+    else if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); choose(matches[Math.min(pick, matches.length - 1)]); }
     else if (e.key === "Escape") { e.preventDefault(); setDismissed(true); }
   };
   const change = (v: string, c: number | null) => { onChange(v); setCaret(c ?? v.length); setPick(0); setDismissed(false); };
@@ -108,21 +130,30 @@ export function PillInput({
         </select>
       </div>
       {open && matches.length > 0 && (
-        <ul role="listbox" aria-label={`Datapills for ${label}`} data-testid="pill-suggest" className="absolute z-20 mt-1 max-h-56 w-80 overflow-auto rounded-md border bg-popover p-1 text-sm shadow-md">
-          {matches.map((p, i) => (
-            <li key={p.path} role="option" aria-selected={i === pick}>
-              <button type="button" tabIndex={-1} onMouseDown={(e) => { e.preventDefault(); choose(p.path); }}
-                className={cn("block w-full rounded px-2 py-1 text-left", i === pick && "bg-muted")}>{p.label}</button>
+        <ul role="listbox" aria-label={`Datapills for ${label}`} data-testid="pill-suggest" className="absolute z-20 mt-1 max-h-64 w-96 overflow-auto rounded-md border bg-popover p-1 text-sm shadow-md">
+          {matches.map((o, i) => (
+            <li key={o.key} role="option" aria-selected={i === pick}>
+              <button type="button" tabIndex={-1} onMouseDown={(e) => { e.preventDefault(); choose(o); }}
+                className={cn("block w-full rounded px-2 py-1 text-left", i === pick && "bg-muted")}>
+                <span className={cn(o.fn && "font-mono")}>{o.fn ? "ƒ " : ""}{o.label}</span>
+                {o.detail && <span className="block text-xs text-muted-foreground">{o.detail}</span>}
+              </button>
             </li>
           ))}
         </ul>
       )}
-      {segments.some((x) => "pill" in x) && (
+      {segments.some((x) => !("text" in x)) && (
         <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground" data-testid="pill-preview" aria-hidden="true">
-          {segments.map((x, i) => "pill" in x
-            ? <span key={i} title={known(x.pill) ? x.pill : "Not available at this step"} className={cn("rounded-full px-2 py-0.5", known(x.pill) ? "bg-primary/10 text-foreground" : "bg-destructive/10 text-destructive")}>
-                {pills.find((p) => p.path === x.pill)?.label ?? x.pill}</span>
-            : <span key={i} className="whitespace-pre-wrap">{x.text}</span>)}
+          {segments.map((x, i) => {
+            if ("text" in x) return <span key={i} className="whitespace-pre-wrap">{x.text}</span>;
+            if ("formula" in x) {
+              const bad = formulaPaths(x.formula).find((p) => !known(p));
+              return <span key={i} data-testid="formula-chip" title={bad ? `Not available at this step: ${bad}` : x.formula}
+                className={cn("max-w-full truncate rounded-full px-2 py-0.5 font-mono", bad ? "bg-destructive/10 text-destructive" : "bg-violet-500/10 text-foreground")}>ƒ {x.formula}</span>;
+            }
+            return <span key={i} title={known(x.pill) ? x.pill : "Not available at this step"} className={cn("rounded-full px-2 py-0.5", known(x.pill) ? "bg-primary/10 text-foreground" : "bg-destructive/10 text-destructive")}>
+              {pills.find((p) => p.path === x.pill)?.label ?? x.pill}</span>;
+          })}
         </div>
       )}
     </div>
