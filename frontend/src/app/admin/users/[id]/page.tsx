@@ -12,6 +12,7 @@ import { Badge, PageHeader, fmt } from "@/components/bits";
 import { useCurrentUser } from "@/components/auth-guard";
 import { http } from "@/lib/http";
 import { UserActivity, UserApplications } from "@/components/user-tabs";
+import { AdminRolesCard } from "@/components/admin-roles-card";
 import { AttrField, fromApi, toApi } from "@/components/attr-field";
 import { USER_STATUSES, statusTone, type ProfileAttribute, type User } from "@/lib/types";
 
@@ -115,6 +116,7 @@ export default function UserDetail() {
       {tab === "applications" && <UserApplications userId={user.id} />}
       {tab === "activity" && <UserActivity userId={user.id} />}
       {tab === "profile" && (<>
+      {me.is_super_admin && user.is_admin && !user.is_super_admin && <AdminRolesCard userId={user.id} />}
       <Card className="mb-6">
         <CardHeader><CardTitle>Account</CardTitle></CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2">
