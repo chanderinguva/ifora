@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Copy, Plus, Redo2, Trash2, Undo2, Zap } from "lucide-react";
+import { DndContext, DragOverlay, PointerSensor, closestCenter, pointerWithin, useDraggable, useDroppable, useSensor, useSensors, type CollisionDetection, type DragEndEvent } from "@dnd-kit/core";
+import { Copy, GripVertical, Plus, Redo2, Trash2, Undo2, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, StepForm, TriggerCard, defaultConfig, type Ctx } from "@/components/recipe-editor/forms";
-import { allIds, countSteps, duplicateStep, insertAt, locate, newId, removeStep, replaceStep, type LaneRef } from "@/components/recipe-editor/tree";
+import { allIds, countSteps, duplicateStep, gapKey, insertAt, locate, moveProblem, moveStep, newId, nextGap, parseGap, removeStep, replaceStep, allGaps, type Gap, type LaneRef } from "@/components/recipe-editor/tree";
 import { laneSteps } from "@/components/recipe-editor/tree";
 import type { Definition, RecipeMeta, StepNode } from "@/lib/recipes";
 import type { Group } from "@/lib/types";
@@ -78,12 +79,71 @@ function AddMenu({ options, onPick, disabled, label, empty }: { options: StepMen
     </div>
   );
 }
+/** A place a step can be dropped (and where the + button lives). */
+function GapSlot({ gap, active, problem, children }: { gap: Gap; active: boolean; problem: string | null; children: React.ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id: gapKey(gap) });
+  if (!active) return <div ref={setNodeRef}>{children}</div>;
+  const tone = problem ? (isOver ? "border-destructive bg-destructive/10" : "border-transparent opacity-40") : isOver ? "border-primary bg-primary/10" : "border-primary/40";
+  return (
+    <div ref={setNodeRef} data-testid="drop-slot" data-gap={gapKey(gap)} data-valid={problem ? "no" : "yes"} aria-hidden="true"
+      className={"flex h-8 items-center justify-center rounded border-2 border-dashed text-xs " + tone}>
+      {isOver ? (problem ?? "Drop here") : ""}
+    </div>
+  );
+}
+
+function DragHandle({ id, label, onKeyMove }: { id: string; label: string; onKeyMove: (dir: -1 | 1) => void }) {
+  const { attributes, listeners, setNodeRef } = useDraggable({ id });
+  return (
+    <button type="button" ref={setNodeRef} {...attributes} {...listeners} data-testid="drag-handle" data-handle-for={id}
+      aria-label={`${label}. Drag, or press Alt and the up or down arrow to move it.`}
+      className="flex h-7 w-5 shrink-0 cursor-grab touch-none items-center justify-center rounded text-muted-foreground hover:bg-muted active:cursor-grabbing"
+      onKeyDown={(e) => { if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) { e.preventDefault(); e.stopPropagation(); onKeyMove(e.key === "ArrowUp" ? -1 : 1); } }}>
+      <GripVertical className="h-4 w-4" />
+    </button>
+  );
+}
+
 type StepMenuItem = { type: string; label: string; kind: "action" | "control" };
 
 export function Studio(props: Props) {
   const { def, meta, groups, canEdit, edit } = props;
   const [sel, setSel] = useState<string>("trigger");
   const full = countSteps(def) >= meta.limits.max_steps;
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const focusAfter = useRef<string | null>(null);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const collide: CollisionDetection = (a) => { const hit = pointerWithin(a); return hit.length ? hit : closestCenter(a); };
+  const max = meta.limits.max_nesting;
+  // why each drop position would be refused for the step being dragged (computed only while dragging)
+  const problems = useMemo(() => {
+    const m = new Map<string, string | null>();
+    if (dragging) for (const g of allGaps(def)) m.set(gapKey(g), moveProblem(def, dragging, g.ref, g.index, max));
+    return m;
+  }, [dragging, def, max]);
+  useEffect(() => {
+    if (!focusAfter.current) return;
+    document.querySelector<HTMLElement>(`[data-handle-for="${focusAfter.current}"]`)?.focus();
+    focusAfter.current = null;
+  });
+  const label = (id: string) => { const l = locate(def, id); return l ? (meta.steps.find((m) => m.type === l.step.type)?.label ?? l.step.type) : id; };
+  function dropOn(e: DragEndEvent) {
+    setDragging(null);
+    const id = String(e.active.id);
+    const gap = e.over ? parseGap(String(e.over.id)) : null;
+    if (!gap) return;
+    const why = moveProblem(def, id, gap.ref, gap.index, max);
+    if (why) { setNote(`Can't move it there: ${why}.`); return; }
+    const next = moveStep(def, id, gap.ref, gap.index);
+    if (JSON.stringify(next) === JSON.stringify(def)) return;
+    edit(next); setSel(id); setNote(`Moved “${label(id)}”.`);
+  }
+  function keyMove(id: string, dir: -1 | 1) {
+    const g = nextGap(def, id, dir, max);
+    if (!g) { setNote(`“${label(id)}” can't move ${dir < 0 ? "up" : "down"} any further.`); return; }
+    edit(moveStep(def, id, g.ref, g.index)); setSel(id); focusAfter.current = id; setNote(`Moved “${label(id)}” ${dir < 0 ? "up" : "down"}.`);
+  }
 
   const ctxFor = (section: "steps" | "on_error", inLoop = false): Ctx => ({
     ...props.ctx, root: section === "steps" ? def.steps : def.on_error ?? [], other: section === "steps" ? def.on_error ?? [] : def.steps,
@@ -110,16 +170,20 @@ export function Studio(props: Props) {
     );
     return (
       <div className={depth > 0 ? "ml-3 border-l-2 pl-3" : ""}>
-        {steps.length === 0 && <div className="py-2">{adder(0, true) ?? <span className="text-sm text-muted-foreground">No steps.</span>}</div>}
+        {steps.length === 0 && (
+          <div className="py-2"><GapSlot gap={{ ref: lane, index: 0 }} active={!!dragging} problem={problems.get(gapKey({ ref: lane, index: 0 })) ?? null}>
+            {adder(0, true) || <span className="text-sm text-muted-foreground">No steps.</span>}</GapSlot></div>
+        )}
         {steps.map((s, i) => (
           <div key={s.id}>
             <div className="flex h-5 items-center justify-center"><div className="h-full w-px bg-border" /></div>
-            {adder(i)}
+            <GapSlot gap={{ ref: lane, index: i }} active={!!dragging} problem={problems.get(gapKey({ ref: lane, index: i })) ?? null}>{adder(i)}</GapSlot>
             <div className="flex h-5 items-center justify-center"><div className="h-full w-px bg-border" /></div>
             {renderCard(s, i, depth, inLoop, lane.section)}
           </div>
         ))}
-        {steps.length > 0 && (<><div className="flex h-5 justify-center"><div className="h-full w-px bg-border" /></div>{adder(steps.length)}</>)}
+        {steps.length > 0 && (<><div className="flex h-5 justify-center"><div className="h-full w-px bg-border" /></div>
+          <GapSlot gap={{ ref: lane, index: steps.length }} active={!!dragging} problem={problems.get(gapKey({ ref: lane, index: steps.length })) ?? null}>{adder(steps.length)}</GapSlot></>)}
       </div>
     );
   }
@@ -129,8 +193,9 @@ export function Studio(props: Props) {
     const selected = sel === step.id;
     const remove = () => { edit(removeStep(def, step.id)); setSel("trigger"); };
     return (
-      <div className={"rounded-lg border bg-card " + (selected ? "ring-2 ring-primary" : "")} data-testid="studio-card" data-step-id={step.id}>
+      <div className={"rounded-lg border bg-card " + (selected ? "ring-2 ring-primary " : "") + (dragging === step.id ? "opacity-40" : "")} data-testid="studio-card" data-step-id={step.id}>
         <div className="flex items-center gap-2 p-3">
+          {canEdit && <DragHandle id={step.id} label={`Step ${index + 1}, ${info?.label ?? step.type}`} onKeyMove={(d) => keyMove(step.id, d)} />}
           <button type="button" className="flex min-w-0 flex-1 items-center gap-3 text-left" aria-label={`Open step ${index + 1}: ${info?.label ?? step.type}`}
             aria-pressed={selected} onClick={() => setSel(step.id)}
             onKeyDown={(e) => { if (canEdit && (e.key === "Delete" || e.key === "Backspace")) { e.preventDefault(); remove(); } }}>
@@ -171,6 +236,7 @@ export function Studio(props: Props) {
   const isAction = located ? meta.steps.find((m) => m.type === located.step.type)?.kind === "action" : false;
 
   return (
+    <DndContext sensors={sensors} collisionDetection={collide} onDragStart={(e) => { setDragging(String(e.active.id)); setSel(String(e.active.id)); setNote(null); }} onDragEnd={dropOn} onDragCancel={() => setDragging(null)}>
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_26rem]" data-testid="studio"
       onKeyDown={(e) => {
         const t = e.target as HTMLElement;
@@ -182,6 +248,7 @@ export function Studio(props: Props) {
           <Button type="button" size="sm" variant="outline" aria-label="Undo" disabled={!props.canUndo} onClick={props.undo}><Undo2 className="h-4 w-4" /></Button>
           <Button type="button" size="sm" variant="outline" aria-label="Redo" disabled={!props.canRedo} onClick={props.redo}><Redo2 className="h-4 w-4" /></Button>
           <span className="text-xs text-muted-foreground">{countSteps(def)} of {meta.limits.max_steps} steps</span>
+          <span aria-live="polite" data-testid="studio-note" className={"text-xs " + (note?.startsWith("Can't") ? "text-destructive" : "text-muted-foreground")}>{note}</span>
         </div>
         <div className="mx-auto max-w-xl">
           <button type="button" data-testid="studio-trigger" aria-pressed={sel === "trigger"} onClick={() => setSel("trigger")}
@@ -222,5 +289,7 @@ export function Studio(props: Props) {
         </fieldset>
       </aside>
     </div>
+    <DragOverlay>{dragging ? <div className="rounded-lg border bg-card px-4 py-3 text-sm font-medium shadow-lg">{label(dragging)}</div> : null}</DragOverlay>
+    </DndContext>
   );
 }
