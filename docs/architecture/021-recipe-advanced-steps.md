@@ -62,6 +62,7 @@ Include in the roadmap, not in this ADR's first cut: recipe **folders/tags/searc
 2. Formula mode (parser, library, tests incl. a fuzz test for the parser and the taint rule).
 3. **Done**: variables, wait/delay and throttle (see "Implemented: variables, wait, throttle"). Still open: wait-for-event.
 4. **Done** (formula function deferred): lookup tables (models, admin page, steps). See "Implemented: lookup tables".
+4a. **Done**: list functions and repeat for each item (see "Implemented: list functions and For each item in a list").
 5. Callable recipes (child jobs, schema, depth/recursion guards).
 6. Custom API call upgrades, then custom connectors (+ OpenAPI import).
 7. Code-runner service and code steps, off by default, with a documented threat model and a hardening checklist; each language image added separately (Python first).
@@ -166,3 +167,14 @@ Not included: wait for an event or a date, throttling across recipes, per-user t
 The *key* of a lookup must never be user-editable text, because it picks which admin-written row comes back (a user who could choose the key could choose the group, for example). The rule is applied on save by following which steps read recipe-writable tables, and again at run time from the table's current setting: if an administrator later switches a table from administrator-managed to recipe-writable, published recipes that used it in a decision or account change fail their step instead of acting on data that is no longer trusted (the switch lists the recipes affected and is audited).
 
 **Not included:** a `lookup(...)` formula function (formulas are deliberately free of I/O; use the step and a variable), per-table permissions, row-level history, bulk updates from a recipe, column removal or retyping.
+
+# Implemented: list functions and "For each item in a list"
+**Formulas** gained `sum`, `index`, `reverse`, `uniq`, `flatten`, `compact`, `concat`, `pluck`, `smart_join`, and `min`/`max` now take either several values or one list (an empty list gives nothing). They are pure functions on data already in the job; nothing new is reachable.
+
+**Step `for_each_item`** repeats the steps inside it once per item of a list given by one datapill or formula (`list`, plus `limit` 1 to 100, default 50). Inside, `loop.item` (and `loop.item.<field>` for objects), `loop.index` (from 1) and `loop.total` are available; `loop.user.*` stays specific to the group-member loop and `loop.item` to this one. Rules:
+- Same placement as the member loop: top level of the main steps only, never nested, never in the error steps.
+- The value must be a list; more items than `limit` **fails the step** rather than silently skipping the rest; the list is stored in the job (at most 64 KB of plain data) so a resumed job iterates the same items.
+- **Taint**: the list expression is checked like a variable or a lookup key, so a list built from user-editable text (first or last name, self-editable attributes, error text, recipe-writable lookup reads) is refused on save and at run time. Items from a trusted list then need no extra marking.
+- Empty list: the body is skipped and the flow continues after the loop.
+
+**Not included:** `while` loops, batches of items, per-iteration error handling, loops over more than 100 items, nested loops.

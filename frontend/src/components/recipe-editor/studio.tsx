@@ -10,7 +10,7 @@ import { Select, StepForm, TriggerCard, defaultConfig, pillsFor, type Ctx } from
 import { PillFieldsContext, type PillRegistry } from "@/components/recipe-editor/pill-context";
 import { PillTray } from "@/components/recipe-editor/pill-tray";
 import { allIds, countSteps, duplicateStep, gapKey, insertAt, locate, moveProblem, moveStep, newId, nextGap, parseGap, removeStep, replaceStep, allGaps, type Gap, type LaneRef } from "@/components/recipe-editor/tree";
-import { laneSteps } from "@/components/recipe-editor/tree";
+import { isLoop, isLoopType, laneSteps } from "@/components/recipe-editor/tree";
 import { statusTone, type Definition, type Job, type JobStep, type RecipeMeta, type StepNode } from "@/lib/recipes";
 import type { Group } from "@/lib/types";
 
@@ -76,6 +76,7 @@ function summary(s: StepNode, props: Props): string {
     case "condition": { const n = (c.conditions ?? []).length; return n ? `${c.match === "any" ? "Any" : "All"} of ${n} condition${n > 1 ? "s" : ""}` : "Always applies"; }
     case "stop": return c.outcome === "failed" ? "Stop and fail the job" : "Stop the job";
     case "for_each_member": return `Members of ${group(c.group_id)}`;
+    case "for_each_item": return c.list ? `Each item of ${String(c.list).slice(0, 40)}` : "Choose a list";
     case "approval": return c.message ? String(c.message).slice(0, 50) : "Ask for approval";
     case "lookup_row": return c.table ? `Look up ${c.table} where ${c.column}` : "Choose a table";
     case "lookup_write": return c.table ? `${c.action === "delete" ? "Delete from" : c.action === "add" ? "Add to" : "Upsert into"} ${c.table}` : "Choose a table";
@@ -266,12 +267,12 @@ export function Studio(props: Props) {
 
   const optionsFor = (ref: LaneRef, depth: number): StepMenuItem[] =>
     meta.steps.filter((s) => (s.type !== "condition" && s.type !== "approval") || depth < meta.limits.max_nesting)
-      .filter((s) => !(s.type === "for_each_member" && (depth > 0 || ref.section === "on_error")) && !((s.type === "approval" || s.type === "wait" || s.type === "throttle") && ref.section === "on_error"));
+      .filter((s) => !(isLoopType(s.type) && (depth > 0 || ref.section === "on_error")) && !((s.type === "approval" || s.type === "wait" || s.type === "throttle") && ref.section === "on_error"));
 
   function add(ref: LaneRef, index: number, type: string, inLoop: boolean) {
     const n: StepNode = { id: newId(allIds(def)), type, config: defaultConfig(type, ctxFor(ref.section, inLoop)), on_error: "fail", max_attempts: 3 };
     if (type === "condition" || type === "approval") { n.then = []; n.else = []; }
-    if (type === "for_each_member") n.then = [];
+    if (isLoopType(type)) n.then = [];
     edit(insertAt(def, ref, index, n));
     setSel(n.id);
   }
@@ -337,9 +338,9 @@ export function Studio(props: Props) {
             {renderLane({ section, owner: step.id, branch: "else" }, depth + 1, inLoop)}
           </div>
         )}
-        {step.type === "for_each_member" && (
+        {isLoop(step) && (
           <div className="space-y-2 border-t p-3">
-            <div className="text-xs font-medium uppercase text-muted-foreground">For each member</div>
+            <div className="text-xs font-medium uppercase text-muted-foreground">{step.type === "for_each_item" ? "For each item" : "For each member"}</div>
             {renderLane({ section, owner: step.id, branch: "then" }, depth + 1, true)}
           </div>
         )}

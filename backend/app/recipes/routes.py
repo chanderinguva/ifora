@@ -203,7 +203,7 @@ STEP_INFO = {
     "deactivate_user": ("Deactivate user", "action"), "http_request": ("Send an HTTP request", "action"),
     "log": ("Write to the job log", "action"),
     "send_slack": ("Send a Slack message", "action"), "send_email": ("Send an email", "action"), "condition": ("If / else", "control"), "stop": ("Stop", "control"),
-    "for_each_member": ("For each member of a group", "control"), "approval": ("Wait for approval", "control"),
+    "for_each_member": ("For each member of a group", "control"), "for_each_item": ("For each item in a list", "control"), "approval": ("Wait for approval", "control"),
     "lookup_row": ("Look up a row", "action"), "lookup_write": ("Add, update or delete a lookup row", "action"),
     "set_variable": ("Set a variable", "control"), "wait": ("Wait (delay)", "control"), "throttle": ("Throttle", "control"),
 }

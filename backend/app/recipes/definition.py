@@ -39,9 +39,10 @@ ACTION_TYPES = (
     "add_to_group", "remove_from_group", "set_attribute", "activate_user", "deactivate_user", "http_request", "log",
     "send_slack", "send_email", "lookup_row", "lookup_write",
 )
-STEP_TYPES = ACTION_TYPES + ("condition", "stop", "for_each_member", "approval", "set_variable", "wait", "throttle")
+STEP_TYPES = ACTION_TYPES + ("condition", "stop", "for_each_member", "for_each_item", "approval", "set_variable", "wait", "throttle")
 BRANCHING = ("condition", "approval")  # then/else steps
 MAX_LOOP_MEMBERS = 100
+LOOP_TYPES = ("for_each_member", "for_each_item")
 MAX_VARIABLES = 20
 MAX_WAIT_MINUTES = 7 * 24 * 60
 WAIT_UNIT_MINUTES = {"minutes": 1, "hours": 60, "days": 1440}
@@ -137,6 +138,11 @@ class _Loop(_Cfg):
     limit: int = Field(50, ge=1, le=MAX_LOOP_MEMBERS)  # at most this many members (lowest ids first); the rest are skipped
 
 
+class _ItemLoop(_Cfg):
+    list: str = Field(..., min_length=1, max_length=1000)   # one datapill or formula that gives a list
+    limit: int = Field(50, ge=1, le=MAX_LOOP_MEMBERS)       # more items than this fails the step (nothing is skipped silently)
+
+
 class _Approval(_Cfg):
     message: str = Field(..., min_length=1, max_length=500)
     timeout_hours: int = Field(24, ge=1, le=168)  # no decision in time = "denied" branch
@@ -185,7 +191,7 @@ STEP_CFG = {
     "add_to_group": _AddRemove, "remove_from_group": _AddRemove, "set_attribute": _SetAttr,
     "activate_user": _UserOnly, "deactivate_user": _UserOnly, "http_request": _Http, "log": _Log,
     "send_slack": _Slack, "send_email": _Email,
-    "condition": _Condition, "stop": _Stop, "for_each_member": _Loop, "approval": _Approval,
+    "condition": _Condition, "stop": _Stop, "for_each_member": _Loop, "for_each_item": _ItemLoop, "approval": _Approval,
 }
 
 # datapill catalog ------------------------------------------------------------------------------
@@ -226,7 +232,7 @@ STEP_OUTPUTS = {
     "activate_user": ["user_id", "changed"], "deactivate_user": ["user_id", "changed"],
     "http_request": ["status_code", "ok", "body", "json"], "log": ["message"],
     "send_slack": ["ok"], "send_email": ["to", "sent"], "condition": ["result"], "stop": [],
-    "for_each_member": ["total", "processed"], "approval": ["decision", "decided_by"],
+    "for_each_member": ["total", "processed"], "for_each_item": ["total", "processed"], "approval": ["decision", "decided_by"],
     "lookup_row": ["found", "count", "row"], "lookup_write": ["action", "changed"],
     "set_variable": ["value"], "wait": ["waited_seconds"], "throttle": ["waited_seconds"],
 }
@@ -280,10 +286,15 @@ def _pill_allowed(path: str, trigger_type: str, earlier_steps: Dict[str, str], d
     segs = path.split(".")
     if segs[0] == "loop":
         if not in_loop:
-            raise tpl.TemplateError("loop datapills are only available inside a 'for each member' step")
-        if path in LOOP_PILLS or (path.startswith("loop.user.attributes.") and len(segs) == 4 and segs[3] in db_keys):
+            raise tpl.TemplateError("loop datapills are only available inside a repeat step")
+        kind = in_loop if isinstance(in_loop, str) else "member"
+        if path in ("loop.index", "loop.total"):
             return
-        raise tpl.TemplateError(f"unknown datapill '{path}'")
+        if kind == "member" and (path in LOOP_PILLS or (path.startswith("loop.user.attributes.") and len(segs) == 4 and segs[3] in db_keys)):
+            return
+        if kind == "item" and (path == "loop.item" or path.startswith("loop.item.")):
+            return
+        raise tpl.TemplateError(f"unknown datapill '{path}' (this repeat gives {'the current item' if kind == 'item' else 'the current member'})")
     if segs[0] == "vars":
         if f"$var:{segs[1]}" not in earlier_steps:
             raise tpl.TemplateError(f"variable '{segs[1]}' is not set by an earlier 'Set variable' step")
@@ -435,14 +446,14 @@ def validate_definition(db: Session, definition: Any, *, for_publish: bool = Fal
                     raise DefinitionError(f"{where}: the error handler cannot wait for approvals")
                 node["then"] = walk(st.get("then") or [], depth + 1)   # approved
                 node["else"] = walk(st.get("else") or [], depth + 1)   # denied or timed out
-            elif stype == "for_each_member":
+            elif stype in LOOP_TYPES:
                 if mode["loop"]:
                     raise DefinitionError(f"{where}: loops cannot be nested")
                 if mode["handler"]:
                     raise DefinitionError(f"{where}: the error handler cannot loop")
                 if st.get("else"):
                     raise DefinitionError(f"{where}: a loop has only a body")
-                mode["loop"] = True
+                mode["loop"] = "item" if stype == "for_each_item" else "member"
                 try:
                     node["then"] = walk(st.get("then") or [], depth + 1)
                 finally:
@@ -514,7 +525,7 @@ def _check_step(db, stype, cfg, ttype, earlier, managed, taint, where, handler=F
         return
     for p in tpl.all_pills({k: v for k, v in cfg.items() if k not in ("connection_id", "name", "unit", "when_full")}):
         _pill_allowed(p, ttype, earlier, managed, handler, in_loop)
-        if stype in STATE_CHANGING or stype in ("set_variable", "lookup_row"):   # a variable must not carry user-editable text onward; a lookup key picks what is read
+        if stype in STATE_CHANGING or stype in ("set_variable", "lookup_row", "for_each_item"):   # a variable must not carry user-editable text onward; a lookup key picks what is read
             taint(p)
     if stype in ("add_to_group", "remove_from_group"):
         g = db.get(Group, cfg["group_id"])
@@ -558,7 +569,7 @@ def compile_program(steps: List[dict]) -> List[dict]:
 
     def emit(items: List[dict]) -> None:
         for st in items:
-            if st["type"] == "for_each_member":
+            if st["type"] in LOOP_TYPES:
                 head_pc = len(prog)
                 head = {**st, "end_to": 0}
                 prog.append(head)

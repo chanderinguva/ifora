@@ -1,6 +1,10 @@
 /** Pure helpers for editing a recipe's step tree (no React). Lanes are addressed by owner step id + branch. */
 import type { Definition, StepNode } from "@/lib/recipes";
 
+/** Steps that repeat their nested steps: one per group member, or one per list item. */
+export const isLoopType = (t: string) => t === "for_each_member" || t === "for_each_item";
+export const isLoop = (s: { type: string }) => isLoopType(s.type);
+
 export type Section = "steps" | "on_error";
 export type LaneRef = { section: Section; owner: string | null; branch: "then" | "else" | null };
 
@@ -42,7 +46,7 @@ export function locate(def: Definition, id: string): Located | null {
   const walk = (steps: StepNode[], loop: boolean, section: Section): Located | null => {
     for (const s of steps) {
       if (s.id === id) return { step: s, section, inLoop: loop };
-      const inner = loop || s.type === "for_each_member";
+      const inner = loop || isLoop(s);
       const hit = walk(s.then ?? [], inner, section) ?? walk(s.else ?? [], loop, section);
       if (hit) return hit;
     }
@@ -135,14 +139,14 @@ export function laneDepth(def: Definition, ref: LaneRef): number {
 }
 export function laneInLoop(def: Definition, ref: LaneRef): boolean {
   if (!ref.owner) return false;
-  return (pathOf(def, ref.owner) ?? []).some((s) => s.type === "for_each_member");
+  return (pathOf(def, ref.owner) ?? []).some((s) => isLoop(s));
 }
 
 /** How many levels below this step the deepest if/else or approval sits (0 = the step itself is one; -1 = there is none). */
 function branchHeight(s: StepNode): number {
   const kids = [...(s.then ?? []), ...(s.else ?? [])].map(branchHeight).filter((h) => h >= 0);
   const inner = kids.length ? Math.max(...kids) + 1 : -1;
-  return isBranching(s) ? Math.max(0, inner) : s.type === "for_each_member" ? inner : -1;
+  return isBranching(s) ? Math.max(0, inner) : isLoop(s) ? inner : -1;
 }
 
 const text = (s: StepNode) => JSON.stringify(s.config ?? {});
@@ -162,7 +166,7 @@ export function pillProblems(def: Definition): string[] {
         for (const m of t.matchAll(/(?:\{\{\s*|")steps\.([a-z][a-z0-9_]*)/g)) if (!before.has(m[1])) out.push(`${s.id}:steps.${m[1]}`);
         if (/(?:\{\{\s*|")loop\./.test(t) && !inLoop) out.push(`${s.id}:loop`);
         if (/(?:\{\{\s*|")error\./.test(t) && section !== "on_error") out.push(`${s.id}:error`);
-        walk(s.then ?? [], inLoop || s.type === "for_each_member");
+        walk(s.then ?? [], inLoop || isLoop(s));
         walk(s.else ?? [], inLoop);
       }
     };
@@ -181,8 +185,8 @@ export function moveProblem(def: Definition, id: string, ref: LaneRef, index: nu
   const d = laneDepth(def, ref);
   const h = branchHeight(step);
   if (h >= 0 && d + h >= maxNesting) return `Steps can be nested ${maxNesting} levels deep at most`;
-  if (flat([step]).some((s) => s.type === "for_each_member") && (d > 0 || ref.section === "on_error")) return "A repeat step must sit at the top level of the main steps";
-  if (ref.section === "on_error" && flat([step]).some((s) => s.type === "approval" || s.type === "for_each_member" || s.type === "wait" || s.type === "throttle")) return "Approvals, repeats, waits and throttles cannot be used in the error steps";
+  if (flat([step]).some((s) => isLoop(s)) && (d > 0 || ref.section === "on_error")) return "A repeat step must sit at the top level of the main steps";
+  if (ref.section === "on_error" && flat([step]).some((s) => s.type === "approval" || isLoop(s) || s.type === "wait" || s.type === "throttle")) return "Approvals, repeats, waits and throttles cannot be used in the error steps";
   const moved = moveStep(def, id, ref, index);
   const before = new Set(pillProblems(def));
   const worse = pillProblems(moved).find((p) => !before.has(p));
@@ -225,7 +229,7 @@ export function allGaps(def: Definition): Gap[] {
     const ref = { section, owner, branch };
     steps.forEach((s, i) => {
       out.push({ ref, index: i });
-      if (isBranching(s) || s.type === "for_each_member") lane(section, s.then ?? [], s.id, "then");
+      if (isBranching(s) || isLoop(s)) lane(section, s.then ?? [], s.id, "then");
       if (isBranching(s)) lane(section, s.else ?? [], s.id, "else");
     });
     out.push({ ref, index: steps.length });
