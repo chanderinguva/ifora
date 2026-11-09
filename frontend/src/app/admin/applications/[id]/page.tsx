@@ -13,6 +13,7 @@ import { AppIcon } from "@/components/app-icon";
 import { SamlCard } from "@/components/saml-card";
 import { SwaCard } from "@/components/swa-card";
 import { AuthPolicyCard } from "@/components/auth-policy-card";
+import { SelfServiceCard } from "@/components/self-service-card";
 import { http, qs, type Page } from "@/lib/http";
 import { appBody, SIGN_ON_LABEL, type AppSummary } from "@/lib/applications";
 import type { Group, User } from "@/lib/types";
@@ -122,6 +123,8 @@ export default function ApplicationDetail() {
           </div>
         </CardContent>
       </Card>
+
+      {app.sign_on_mode !== "none" && <SelfServiceCard appId={app.id} />}
 
       </>)}
 

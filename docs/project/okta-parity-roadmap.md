@@ -12,7 +12,7 @@ Status: **Done** / **Partial** / **Todo**. Work in order; each phase is one PR.
 | Directory > Profile Editor | User/app profile, mappings | Partial: user profile; Todo: per-app profile + attribute mapping UI |
 | Directory > Directory Integrations | AD/LDAP agents | Todo (out of scope until a connector is needed) |
 | Applications > Applications | Create App Integration wizard, catalog, tabs (General, Sign On, Assignments, Provisioning, Push Groups, Import) | Done: wizard, tabbed page, 16-entry bookmark catalog. Todo: SSO-capable catalog entries, Push Groups, Import |
-| Applications > Self Service | Request/approve | Todo |
+| Applications > Self Service | Request/approve | Partial (phase 10, ADR 017): per-app switch, request with reason, approve/deny queue, dashboard task. Todo: email notices, approver groups, expiry |
 | Security > Authenticators | Enrol policy per factor | Partial: TOTP, passkeys; Todo: factor catalogue, email OTP |
 | Security > Authentication policies | Per-app sign-on policy: network, group, device, factor, re-auth frequency | Partial (phase 6, ADR 013): per-app allow/block network zones, require MFA, recent sign-in; enforced at OIDC, SAML and SWA. Todo: group- and device-based rules, rule ordering, policy simulation |
 | Security > Global session policy | Session lifetime, MFA at sign-in, rules | Partial: fixed idle timeout; Todo: configurable policy |
@@ -31,7 +31,7 @@ Status: **Done** / **Partial** / **Todo**. Work in order; each phase is one PR.
 | App tiles, search, launch | Done |
 | Sections / tabs ("Work", "Add section") and drag-reorder | Done (phase 9, ADR 016): own sections, move earlier/later and section menu (keyboard-friendly instead of drag and drop), stored on the account |
 | Recently used, favourites | Done (phase 9): favourites group, last-30-days recents row, old browser pins imported once |
-| Add-apps / request access | Todo |
+| Add-apps / request access | Done (phase 10): Request access page and My requests |
 | Notifications and tasks | Todo |
 | Settings page: personal info, security methods, password, recovery | Partial: Account settings |
 | Activity ("Recent activity" on sign-ins) | Done (phase 9): own sign-in and credential events on the dashboard |

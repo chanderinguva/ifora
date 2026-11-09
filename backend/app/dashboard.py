@@ -37,7 +37,12 @@ def dashboard(db: Session = Depends(get_db), _: User = Depends(require_admin)):
                   .filter(Application.status == "active", Application.require_assignment.is_(True), Application.sign_on_mode != "none",
                           ~Application.id.in_(db.query(assigned.c.application_id))).scalar())
 
+    from backend.app.access_requests.models import AccessRequest
+
+    pending_requests = db.query(func.count(AccessRequest.id)).filter(AccessRequest.status == "pending").scalar()
+
     tasks: list = []
+    _task(tasks, "access_requests", "medium", "Access requests waiting for a decision", pending_requests, "/admin/access-requests")
     _task(tasks, "admins_no_mfa", "high", "Administrators without a second factor", no_factor, "/admin/users")
     _task(tasks, "failed_logins", "high", "Failed sign-ins in the last 24 hours", failed_24h if failed_24h >= FAILED_LOGIN_ALERT else 0, "/admin/audit?action=LOGIN_FAILURE")
     _task(tasks, "provisioning_failed", "high", "Failed provisioning tasks", failed_prov, "/admin/app-provisioning")
