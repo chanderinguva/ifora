@@ -28,7 +28,7 @@ from backend.app.recipes import conditions as cond
 from backend.app.recipes import crypto, definition as defn, engine, formula, portable
 from backend.app.recipes import templates as tpl
 from backend.app.recipes.models import (
-    Recipe, RecipeConnection, RecipeJob, RecipeJobStep, RecipeVersion,
+    LookupTable, Recipe, RecipeConnection, RecipeJob, RecipeJobStep, RecipeVersion,
 )
 from backend.app.recipes.redact import redact
 from backend.app.users.model import User
@@ -204,6 +204,7 @@ STEP_INFO = {
     "log": ("Write to the job log", "action"),
     "send_slack": ("Send a Slack message", "action"), "send_email": ("Send an email", "action"), "condition": ("If / else", "control"), "stop": ("Stop", "control"),
     "for_each_member": ("For each member of a group", "control"), "approval": ("Wait for approval", "control"),
+    "lookup_row": ("Look up a row", "action"), "lookup_write": ("Add, update or delete a lookup row", "action"),
     "set_variable": ("Set a variable", "control"), "wait": ("Wait (delay)", "control"), "throttle": ("Throttle", "control"),
 }
 
@@ -228,6 +229,8 @@ def meta(db: Session = Depends(get_db), _: User = Depends(require_admin)):
         "safe_user_fields": sorted(defn._SAFE_USER_FIELDS),
         "limits": {"max_steps": defn.MAX_STEPS, "max_nesting": defn.MAX_NESTING},
         "functions": formula.CATALOG,
+        "lookup_tables": [{"name": t.name, "columns": t.columns, "key_column": t.key_column, "admin_managed": t.admin_managed}
+                          for t in db.query(LookupTable).order_by(LookupTable.name).all()],
     }
 
 

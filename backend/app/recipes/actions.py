@@ -21,7 +21,7 @@ from backend.app.auth.sessions_util import revoke_user_sessions
 from backend.app.groups import rules as group_rules
 from backend.app.groups.model import Group, user_group_association
 from backend.app.profiles import catalog as profile_catalog
-from backend.app.recipes import crypto, events
+from backend.app.recipes import crypto, events, lookup
 from backend.app.recipes import templates as tpl
 from backend.app.recipes.http_client import (
     EgressBlocked, HttpFailure, ResponseTooLarge, safe_request, validate_url, EgressPolicy,
@@ -408,8 +408,55 @@ def _email(rc: RunCtx, cfg: dict):
     return inp, {"to": to, "sent": True}
 
 
+def _lookup_table(rc: RunCtx, name: str):
+    t = lookup.get_table(rc.db, name)
+    if t is None:
+        raise StepError(f"the lookup table '{name}' no longer exists")
+    return t
+
+
+def _lookup_row(rc: RunCtx, cfg: dict):
+    t = _lookup_table(rc, cfg["table"])
+    value = rc.render(cfg["value"])   # the key must not be user-editable text: it picks which row is read
+    try:
+        n, row = lookup.read(rc.db, t, cfg["column"], value)
+    except lookup.LookupError_ as e:
+        raise StepError(str(e))
+    return {"table": t.name, "column": cfg["column"], "value": value}, {"found": n > 0, "count": n, "row": row}
+
+
+def _lookup_write(rc: RunCtx, cfg: dict):
+    t = _lookup_table(rc, cfg["table"])
+    if t.admin_managed:
+        raise StepError(f"the table '{t.name}' is administrator-managed; recipes cannot change it")
+    action = cfg["action"]
+    # values may carry user-editable text: that is why rows read back from this table are treated as user-editable too
+    values = rc.render(cfg["values"], tainted_ok=True) if action != "delete" else {}
+    key = rc.render(cfg["key"], tainted_ok=True) if action == "delete" else None
+    inp = {"table": t.name, "action": action, **({"values": values} if action != "delete" else {"key": key})}
+    try:
+        if rc.dry:
+            if action == "delete":
+                lookup.coerce(key, lookup.column_types(t).get(t.key_column or "", "text"), t.key_column or "")
+                return inp, {"action": "would_delete", "changed": False, "dry_run": True}
+            lookup.coerce_row(t, values, complete=action == "add")
+            return inp, {"action": "would_" + action, "changed": False, "dry_run": True}
+        if action == "add":
+            row = lookup.add_row(rc.db, t, values)
+            result, kv = "inserted", row.key_value
+        elif action == "upsert":
+            result = lookup.upsert_row(rc.db, t, values)
+            kv = lookup.key_text(lookup.coerce(values.get(t.key_column), lookup.column_types(t)[t.key_column]))
+        else:
+            result, kv = lookup.delete_by_key(rc.db, t, key), lookup.key_text(key)
+    except lookup.LookupError_ as e:
+        raise StepError(str(e))
+    audit_as_recipe(rc, AuditAction.RECIPE_LOOKUP_WRITE, t.id, "lookup_table", {"table": t.name, "action": result, "key": kv})
+    return inp, {"action": result, "changed": result != "not_found"}
+
+
 EXECUTORS: Dict[str, Callable[[RunCtx, dict], Tuple[dict, dict]]] = {
     "add_to_group": _add_to_group, "remove_from_group": _remove_from_group, "set_attribute": _set_attribute,
     "activate_user": _activate, "deactivate_user": _deactivate, "http_request": _http, "log": _log,
-    "send_slack": _slack, "send_email": _email,
+    "send_slack": _slack, "send_email": _email, "lookup_row": _lookup_row, "lookup_write": _lookup_write,
 }

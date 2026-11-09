@@ -18,6 +18,7 @@ export function RecipeTabs() {
     { href: "/admin/recipes/jobs", label: "Job history", active: path.startsWith("/admin/recipes/jobs") },
     { href: "/admin/recipes/health", label: "Health", active: path.startsWith("/admin/recipes/health") },
     { href: "/admin/recipes/connections", label: "Connections", active: path.startsWith("/admin/recipes/connections") },
+    { href: "/admin/recipes/lookup-tables", label: "Lookup tables", active: path.startsWith("/admin/recipes/lookup-tables") },
   ];
   return (
     <nav aria-label="Automation" className="mb-4 flex gap-1 border-b">

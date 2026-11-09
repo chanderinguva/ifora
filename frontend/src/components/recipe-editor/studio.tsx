@@ -77,6 +77,8 @@ function summary(s: StepNode, props: Props): string {
     case "stop": return c.outcome === "failed" ? "Stop and fail the job" : "Stop the job";
     case "for_each_member": return `Members of ${group(c.group_id)}`;
     case "approval": return c.message ? String(c.message).slice(0, 50) : "Ask for approval";
+    case "lookup_row": return c.table ? `Look up ${c.table} where ${c.column}` : "Choose a table";
+    case "lookup_write": return c.table ? `${c.action === "delete" ? "Delete from" : c.action === "add" ? "Add to" : "Upsert into"} ${c.table}` : "Choose a table";
     case "set_variable": return c.name ? `Set ${c.name}` : "Name the variable";
     case "wait": return `Wait ${c.amount ?? "?"} ${c.unit ?? "minutes"}`;
     case "throttle": return `${c.max_runs ?? "?"} per ${c.per_minutes ?? "?"} min, then ${c.when_full === "stop" ? "drop" : "wait"}`;

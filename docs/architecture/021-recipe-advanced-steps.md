@@ -61,7 +61,7 @@ Include in the roadmap, not in this ADR's first cut: recipe **folders/tags/searc
 1. Editor phases 1-4 (ADR 020).
 2. Formula mode (parser, library, tests incl. a fuzz test for the parser and the taint rule).
 3. **Done**: variables, wait/delay and throttle (see "Implemented: variables, wait, throttle"). Still open: wait-for-event.
-4. Lookup tables (models, admin page, steps, formula function).
+4. **Done** (formula function deferred): lookup tables (models, admin page, steps). See "Implemented: lookup tables".
 5. Callable recipes (child jobs, schema, depth/recursion guards).
 6. Custom API call upgrades, then custom connectors (+ OpenAPI import).
 7. Code-runner service and code steps, off by default, with a documented threat model and a hardening checklist; each language image added separately (Python first).
@@ -149,3 +149,20 @@ Include in the roadmap, not in this ADR's first cut: recipe **folders/tags/searc
 **Throttle** (`throttle`, `max_runs` per `per_minutes`, 1 to 1440): counts how many jobs of the recipe passed this step in the window (the history rows of live jobs, so it follows `RECIPES_JOB_RETENTION_DAYS`: keep retention at 1 day or more). One job decides at a time (a Postgres advisory lock held until the step commits), so two jobs cannot take the last slot. When full, `wait` pauses the job until the oldest pass leaves the window (re-checked then; one history row, not one per re-check), `stop` cancels the job with the reason "dropped by the throttle step" (a dropped job is not counted as a pass). Test runs are never limited. Not allowed in the error steps.
 
 Not included: wait for an event or a date, throttling across recipes, per-user throttles, list/map variables with in-place updates (set a new value instead).
+
+
+---
+
+# Implemented: lookup tables
+
+**Tables** (`lookup_tables`, `lookup_rows`, migration 0048): name (`a-z0-9_`, 40 characters, never renamed), up to 20 typed columns (text, number, yes/no, date), an optional **key column** (values unique, recipes can update or delete by it), up to 50 000 rows (a row at most 4 KB, a text cell 500 characters) and 50 tables per tenant. Managed under **Recipes › Lookup tables** (grid editor, search, CSV import and export) and `/admin/lookup-tables`, area `automation` (so the existing role map applies: read-only roles can read, only write roles change anything). Columns can be added later, not removed or retyped. A table that a recipe (draft or published version) uses cannot be deleted. Every change is audited (`LOOKUP_TABLE_*`, `LOOKUP_ROWS_CHANGED` with the key, never the values; recipe writes as `RECIPE_LOOKUP_WRITE`). CSV import is all or nothing (first five problems listed with line numbers, 5 000 rows per import, append or replace); export neutralises spreadsheet formulas.
+
+**Steps.** *Look up a row* (`lookup_row`): table, column, value. Outputs `found`, `count` and the first matching row (`row.<column>`, empty columns read as nothing). Exact, case-sensitive match on the typed value (so `5.0` finds `5`). *Add, update or delete a lookup row* (`lookup_write`): `add`, `upsert` (by key) or `delete` (by key); values are templates converted to the column types; a bad value fails the step. A test run reads for real and writes nothing.
+
+**Trust (the part that matters).** A table is either
+- **administrator-managed** (default): only administrators write it (recipes cannot, refused on save and at run time), so what a recipe reads from it is as trustworthy as the table and can drive decisions and account changes; or
+- **recipe-writable**: recipes may write any text into it, including text users typed themselves, so everything read from it is treated like user-editable text: it is refused in conditions, in state-changing steps and in variables (same rule and same error as a user's first name), and allowed in log, http and email steps.
+
+The *key* of a lookup must never be user-editable text, because it picks which admin-written row comes back (a user who could choose the key could choose the group, for example). The rule is applied on save by following which steps read recipe-writable tables, and again at run time from the table's current setting: if an administrator later switches a table from administrator-managed to recipe-writable, published recipes that used it in a decision or account change fail their step instead of acting on data that is no longer trusted (the switch lists the recipes affected and is audited).
+
+**Not included:** a `lookup(...)` formula function (formulas are deliberately free of I/O; use the step and a variable), per-table permissions, row-level history, bulk updates from a recipe, column removal or retyping.

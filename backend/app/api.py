@@ -155,10 +155,11 @@ def create_app() -> FastAPI:
     app.include_router(oidc_clients_router, prefix="/api/v1")
 
     from backend.app.recipes.routes import connections_router as recipe_conn_router
+    from backend.app.recipes.lookup_routes import router as lookup_router
     from backend.app.recipes.routes import hooks_router as recipe_hooks_router
     from backend.app.recipes.routes import router as recipes_router
 
-    for r in (recipes_router, recipe_conn_router, recipe_hooks_router):
+    for r in (recipes_router, recipe_conn_router, recipe_hooks_router, lookup_router):
         app.include_router(r, prefix="/api/v1")
     from backend.app.applications.routes import me_router as my_apps_router
     from backend.app.applications.routes import router as applications_router

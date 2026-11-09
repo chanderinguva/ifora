@@ -33,6 +33,8 @@ export function defaultConfig(type: string, ctx: Ctx): Record<string, any> {
     case "stop": return { outcome: "success", message: "" };
     case "for_each_member": return { group_id: ctx.groups[0]?.id ?? null, limit: 50 };
     case "approval": return { message: "", timeout_hours: 24 };
+    case "lookup_row": { const t = ctx.meta.lookup_tables?.[0]; return { table: t?.name ?? "", column: t?.key_column ?? t?.columns[0]?.name ?? "", value: "" }; }
+    case "lookup_write": { const t = ctx.meta.lookup_tables?.find((x) => !x.admin_managed); return { table: t?.name ?? "", action: t?.key_column ? "upsert" : "add", values: {}, key: "" }; }
     case "set_variable": return { name: "", value: "" };
     case "wait": return { amount: 5, unit: "minutes" };
     case "throttle": return { max_runs: 10, per_minutes: 60, when_full: "wait" };
@@ -219,6 +221,58 @@ export function StepForm({ step, ctx, onChange }: { step: StepNode; ctx: Ctx; on
             <p className="text-xs text-muted-foreground">Approved runs “Then”; denied or timed out runs “Otherwise”.</p></div>
         </div>
       );
+    case "lookup_row": {
+      const tables = ctx.meta.lookup_tables ?? [];
+      const t = tables.find((x) => x.name === cfg.table);
+      return (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1"><Label>Table</Label>
+            <Select label="Lookup table" value={cfg.table ?? ""} onChange={(v) => { const n = tables.find((x) => x.name === v); set({ table: v, column: n?.key_column ?? n?.columns[0]?.name ?? "" }); }}>
+              <option value="">Choose a table…</option>{tables.map((x) => <option key={x.name} value={x.name}>{x.name}</option>)}
+            </Select>
+            {tables.length === 0 && <p className="text-xs text-muted-foreground">Create a table under Recipes › Lookup tables first.</p>}</div>
+          <div className="space-y-1"><Label>Find the row where</Label>
+            <Select label="Lookup column" value={cfg.column ?? ""} onChange={(v) => set({ column: v })}>
+              {(t?.columns ?? []).map((c) => <option key={c.name} value={c.name}>{c.name}{c.name === t?.key_column ? " (key)" : ""}</option>)}
+            </Select></div>
+          <div className="space-y-1 sm:col-span-2"><Label>equals</Label>
+            <PillInput label="Lookup value" value={cfg.value ?? ""} onChange={(v) => set({ value: v })} pills={decisionPills(ctx.meta, ctx.trigger, before)} payload={payload} />
+            <p className="text-xs text-muted-foreground">Outputs: found, count, and the first matching row (<code>row.column</code>). Text the user can edit themselves cannot be the key.
+              {t && !t.admin_managed && " This table can be written by recipes, so what it returns cannot be used in decisions or to change accounts."}</p></div>
+        </div>
+      );
+    }
+    case "lookup_write": {
+      const tables = (ctx.meta.lookup_tables ?? []).filter((x) => !x.admin_managed);
+      const t = tables.find((x) => x.name === cfg.table);
+      const values: Record<string, string> = cfg.values ?? {};
+      const setVal = (col: string, v: string) => { const n = { ...values }; if (v === "") delete n[col]; else n[col] = v; set({ values: n }); };
+      return (
+        <div className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1"><Label>Table</Label>
+              <Select label="Lookup table" value={cfg.table ?? ""} onChange={(v) => { const n = tables.find((x) => x.name === v); set({ table: v, values: {}, action: n?.key_column ? "upsert" : "add" }); }}>
+                <option value="">Choose a table…</option>{tables.map((x) => <option key={x.name} value={x.name}>{x.name}</option>)}
+              </Select>
+              {tables.length === 0 && <p className="text-xs text-muted-foreground">Only tables set to “Administrators and recipes” can be written by a recipe.</p>}</div>
+            <div className="space-y-1"><Label>Action</Label>
+              <Select label="Lookup action" value={cfg.action ?? "upsert"} onChange={(v) => set({ action: v })}>
+                <option value="add">Add a row</option>{t?.key_column && <option value="upsert">Add or update the row with the same key</option>}{t?.key_column && <option value="delete">Delete the row with this key</option>}
+              </Select></div>
+          </div>
+          {cfg.action === "delete" ? (
+            <div className="space-y-1"><Label>Key ({t?.key_column ?? "key"}) of the row to delete</Label>
+              <PillInput label="Lookup key" value={cfg.key ?? ""} onChange={(v) => set({ key: v })} pills={pills} payload={payload} /></div>
+          ) : (
+            <div className="space-y-2">
+              {(t?.columns ?? []).map((c) => (
+                <div key={c.name} className="space-y-1"><Label>{c.name}{c.name === t?.key_column ? " (key)" : ""} <span className="font-normal text-muted-foreground">{c.type}</span></Label>
+                  <PillInput label={`Value for ${c.name}`} value={values[c.name] ?? ""} onChange={(v) => setVal(c.name, v)} pills={pills} payload={payload} placeholder={cfg.action === "upsert" && c.name !== t?.key_column ? "Leave empty to keep the current value" : ""} /></div>))}
+              <p className="text-xs text-muted-foreground">Values are converted to the column type. Anything stored here, including text the user typed, is treated as user-editable when read back. A test run writes nothing.</p>
+            </div>)}
+        </div>
+      );
+    }
     case "set_variable":
       return (
         <div className="grid gap-3 md:grid-cols-[12rem_1fr]">

@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from backend.app.groups.model import Group
 from backend.app.profiles import catalog as profile_catalog
 from backend.app.recipes import conditions as cond
+from backend.app.recipes import lookup
 from backend.app.recipes import templates as tpl
 from backend.app.recipes.models import RecipeConnection
 
@@ -36,7 +37,7 @@ EVENT_TRIGGERS = (
 TRIGGER_TYPES = EVENT_TRIGGERS + ("schedule", "manual", "webhook")
 ACTION_TYPES = (
     "add_to_group", "remove_from_group", "set_attribute", "activate_user", "deactivate_user", "http_request", "log",
-    "send_slack", "send_email",
+    "send_slack", "send_email", "lookup_row", "lookup_write",
 )
 STEP_TYPES = ACTION_TYPES + ("condition", "stop", "for_each_member", "approval", "set_variable", "wait", "throttle")
 BRANCHING = ("condition", "approval")  # then/else steps
@@ -162,7 +163,24 @@ class _Throttle(_Cfg):
     when_full: Literal["wait", "stop"] = "wait"    # wait for a free slot, or drop (cancel) the job
 
 
+_IDENT = r"^[a-z][a-z0-9_]{0,39}$"
+
+
+class _LookupRow(_Cfg):
+    table: str = Field(..., pattern=_IDENT)
+    column: str = Field(..., pattern=_IDENT)
+    value: str = Field(..., min_length=1, max_length=500)
+
+
+class _LookupWrite(_Cfg):
+    table: str = Field(..., pattern=_IDENT)
+    action: Literal["add", "upsert", "delete"] = "upsert"
+    values: Dict[str, str] = Field(default_factory=dict)   # column -> template (add, upsert)
+    key: str = Field("", max_length=500)                   # template (delete)
+
+
 STEP_CFG = {
+    "lookup_row": _LookupRow, "lookup_write": _LookupWrite,
     "set_variable": _SetVar, "wait": _Wait, "throttle": _Throttle,
     "add_to_group": _AddRemove, "remove_from_group": _AddRemove, "set_attribute": _SetAttr,
     "activate_user": _UserOnly, "deactivate_user": _UserOnly, "http_request": _Http, "log": _Log,
@@ -209,6 +227,7 @@ STEP_OUTPUTS = {
     "http_request": ["status_code", "ok", "body", "json"], "log": ["message"],
     "send_slack": ["ok"], "send_email": ["to", "sent"], "condition": ["result"], "stop": [],
     "for_each_member": ["total", "processed"], "approval": ["decision", "decided_by"],
+    "lookup_row": ["found", "count", "row"], "lookup_write": ["action", "changed"],
     "set_variable": ["value"], "wait": ["waited_seconds"], "throttle": ["waited_seconds"],
 }
 _RECIPE_FIELDS = ["recipe.id", "recipe.name", "recipe.version", "job.id"]
@@ -219,12 +238,18 @@ def admin_managed_keys(db: Session) -> set:
     return {a.key for a in profile_catalog.catalog(db) if not a.user_editable}
 
 
-def taint_checker(db: Session) -> Callable[[str], None]:
-    """Refuse datapills a user can edit themselves (first/last name, self-editable attributes). ADR 008 D2."""
+def taint_checker(db: Session, tainted_step: Optional[Callable[[str], bool]] = None) -> Callable[[str], None]:
+    """Refuse datapills a user can edit themselves (first/last name, self-editable attributes) and what a recipe reads
+    from a recipe-writable lookup table (`tainted_step(id)` says which steps did). ADR 008 D2, ADR 021 section 2."""
     managed = admin_managed_keys(db)
 
     def check(path: str) -> None:
         segs = path.split(".")
+        if segs[0] == "steps" and len(segs) > 1 and tainted_step is not None and tainted_step(segs[1]):
+            raise tpl.TemplateError(
+                f"'{path}' comes from a lookup table that recipes can write, so it cannot be used here; "
+                "mark the table administrator-managed, or use it in log, http or email steps"
+            )
         if segs[0] == "error":  # may carry text from a remote system or a user-controlled value
             raise tpl.TemplateError(f"'{path}' cannot be used to change accounts or make decisions; use it in log or http steps")
         if segs[:2] in (["trigger", "user"], ["loop", "user"]):
@@ -312,7 +337,8 @@ def validate_definition(db: Session, definition: Any, *, for_publish: bool = Fal
         raise DefinitionError(f"unknown trigger '{ttype}'")
     tcfg = _pyd(TRIGGER_CFG[ttype], trig.get("config") or {}, "trigger")
     managed = admin_managed_keys(db)
-    taint = taint_checker(db)
+    seen: Dict[str, str] = {}
+    taint = taint_checker(db, lambda sid: ("$taint:" + sid) in seen)
     if ttype == "user.attribute_changed" and tcfg["attribute"] not in managed:
         raise DefinitionError("trigger: only administrator-managed attributes can trigger a recipe")
     if ttype in ("group.member_added", "group.member_removed") and tcfg.get("group_id") is not None:
@@ -331,7 +357,6 @@ def validate_definition(db: Session, definition: Any, *, for_publish: bool = Fal
     except tpl.TemplateError as e:
         raise DefinitionError(f"trigger filter: {e}")
 
-    seen: Dict[str, str] = {}
     used: set = set()
     count = [0]
     variables: set = set()
@@ -377,6 +402,8 @@ def validate_definition(db: Session, definition: Any, *, for_publish: bool = Fal
                 node["note"] = note.strip()   # display only: never resolved, never sent anywhere
             seen[sid] = stype
             used.add(sid)
+            if stype == "lookup_row" and not lookup.get_table(db, cfg["table"]).admin_managed:
+                seen["$taint:" + sid] = "lookup"   # everything it returns is treated as user-editable
             if stype == "set_variable":
                 variables.add(cfg["name"])
                 if len(variables) > MAX_VARIABLES:
@@ -441,6 +468,35 @@ def validate_definition(db: Session, definition: Any, *, for_publish: bool = Fal
     return out
 
 
+def _check_lookup(db, stype, cfg) -> None:
+    t = lookup.get_table(db, cfg["table"])
+    if t is None:
+        raise tpl.TemplateError(f"unknown lookup table '{cfg['table']}'")
+    cols = lookup.column_types(t)
+    if stype == "lookup_row":
+        if cfg["column"] not in cols:
+            raise tpl.TemplateError(f"the table '{t.name}' has no column '{cfg['column']}'")
+        return
+    if t.admin_managed:
+        raise tpl.TemplateError(f"the table '{t.name}' is administrator-managed: only administrators change its rows (turn that off to let recipes write to it)")
+    action = cfg["action"]
+    unknown = [c for c in cfg["values"] if c not in cols]
+    if unknown:
+        raise tpl.TemplateError(f"the table '{t.name}' has no column '{unknown[0]}'")
+    if len(cfg["values"]) > lookup.MAX_COLUMNS:
+        raise tpl.TemplateError("too many values")
+    if action in ("add", "upsert") and not cfg["values"]:
+        raise tpl.TemplateError("give at least one column value")
+    if action in ("upsert", "delete") and not t.key_column:
+        raise tpl.TemplateError(f"the table '{t.name}' has no key column, so rows cannot be {'updated' if action == 'upsert' else 'deleted'} by key")
+    if action == "upsert" and t.key_column not in cfg["values"]:
+        raise tpl.TemplateError(f"an upsert needs a value for the key column '{t.key_column}'")
+    if action == "add" and t.key_column and t.key_column not in cfg["values"]:
+        raise tpl.TemplateError(f"a new row needs a value for the key column '{t.key_column}'")
+    if action == "delete" and not cfg["key"].strip():
+        raise tpl.TemplateError("give the key of the row to delete")
+
+
 def _check_connection_use(db, cfg, actor) -> None:
     from backend.app.recipes.access import can_use_connection
 
@@ -458,7 +514,7 @@ def _check_step(db, stype, cfg, ttype, earlier, managed, taint, where, handler=F
         return
     for p in tpl.all_pills({k: v for k, v in cfg.items() if k not in ("connection_id", "name", "unit", "when_full")}):
         _pill_allowed(p, ttype, earlier, managed, handler, in_loop)
-        if stype in STATE_CHANGING or stype == "set_variable":   # a variable must not carry user-editable text onward
+        if stype in STATE_CHANGING or stype in ("set_variable", "lookup_row"):   # a variable must not carry user-editable text onward; a lookup key picks what is read
             taint(p)
     if stype in ("add_to_group", "remove_from_group"):
         g = db.get(Group, cfg["group_id"])
@@ -466,6 +522,8 @@ def _check_step(db, stype, cfg, ttype, earlier, managed, taint, where, handler=F
             raise tpl.TemplateError("unknown group")
         if g.is_system_group:
             raise tpl.TemplateError("system groups cannot be changed by recipes")
+    elif stype in ("lookup_row", "lookup_write"):
+        _check_lookup(db, stype, cfg)
     elif stype == "for_each_member":
         g = db.get(Group, cfg["group_id"])
         if g is None:

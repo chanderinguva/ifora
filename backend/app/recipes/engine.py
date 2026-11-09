@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.audit.model import AuditAction, AuditEvent
 from backend.app.config import settings
-from backend.app.recipes import actions, conditions as cond
+from backend.app.recipes import actions, conditions as cond, lookup
 from backend.app.recipes import templates as tpl
 from backend.app.recipes.definition import ACTION_TYPES, WAIT_UNIT_MINUTES, compile_program, taint_checker
 from backend.app.recipes.models import Recipe, RecipeJob, RecipeJobStep, RecipeOutbox, RecipeVersion
@@ -276,11 +276,13 @@ def _step_row(job: RecipeJob, seq: int, instr: dict, status: str, attempt: int, 
 
 def execute_job(db: Session, job_id: int, now: datetime) -> str:
     """Run a claimed (`running`) job until it finishes or must wait for a retry. Returns the resulting status."""
-    taint = taint_checker(db)
+    taint = None   # built once the job (and so its definition) is known
     while True:
         job = db.get(RecipeJob, job_id)
         if job is None or job.status != "running":
             return job.status if job else "missing"
+        if taint is None:   # what a recipe-writable lookup table returned counts as user-editable (checked again at run time)
+            taint = taint_checker(db, lookup.tainted_step_ids(db, job.definition).__contains__)
         recipe = db.get(Recipe, job.recipe_id)
         if job.cancel_requested:
             _finish(db, job, "cancelled", now, "cancelled by an administrator")
