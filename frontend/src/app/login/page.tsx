@@ -11,6 +11,7 @@ import { getCurrentUser, login, loginMfa, loginWithPasskey } from "@/lib/auth-cl
 import Link from "next/link";
 import { KeyRound } from "lucide-react";
 import { ExpiredPasswordForm } from "@/components/password-form";
+import { useBranding } from "@/lib/branding";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { inAdminView } from "@/lib/roles";
@@ -36,6 +37,7 @@ const loginSchema = z.object({
 type LoginFormData = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
+  const { branding } = useBranding();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -123,11 +125,12 @@ export default function LoginPage() {
       <Card className="w-full max-w-md">
         <CardHeader>
           <Logo size="lg" className="mb-4" />
+          {branding.tagline && <p className="mb-2 text-sm text-muted-foreground" data-testid="login-tagline">{branding.tagline}</p>}
           <CardTitle>{expired ? "Change your password" : mfaToken ? "Two-step verification" : "Sign In"}</CardTitle>
           <CardDescription>
             {mfaToken
               ? "Enter the 6-digit code from your authenticator app, or a recovery code."
-              : "Enter your credentials to access IdentityForge"}
+              : `Enter your credentials to access ${branding.display_name}`}
           </CardDescription>
         </CardHeader>
 

@@ -28,6 +28,8 @@ _AREAS = [
     ("/admin/profile-attributes", "directory_settings"),
     ("/admin/recipes", "automation"),
     ("/admin/recipe-connections", "automation"),
+    ("/admin/branding", "branding"),
+    ("/admin/email-templates", "branding"),
     ("/admin/roles", "roles"),
 ]
 AREA_NAMES = sorted({a for _, a in _AREAS})

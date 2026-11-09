@@ -60,16 +60,13 @@ class ExpiredBody(BaseModel):
         return validate_password(v)
 
 
-def send_link(user: User, purpose: str, raw: str) -> bool:
-    """Email the link. Returns False (without raising) when mail is unavailable or fails."""
+def send_link(user: User, purpose: str, raw: str, db: Session) -> bool:
+    """Email the link, using the organization's template. Returns False (without raising) when mail is unavailable or fails."""
+    from backend.app.branding import templates
+
     url = password_tokens.link(raw, purpose)
-    if purpose == "invite":
-        subject, lead = "You have been invited to IdentityForge", "An administrator created an account for you. Set your password to get started:"
-        valid = f"{settings.INVITE_HOURS} hours"
-    else:
-        subject, lead = "Reset your IdentityForge password", "Someone (hopefully you) asked to reset your password. Choose a new one here:"
-        valid = f"{settings.PASSWORD_RESET_MINUTES} minutes"
-    body = f"Hello {user.first_name},\n\n{lead}\n\n{url}\n\nThe link works once and expires in {valid}. If you did not expect this email, ignore it.\n"
+    valid = f"{settings.INVITE_HOURS} hours" if purpose == "invite" else f"{settings.PASSWORD_RESET_MINUTES} minutes"
+    subject, body = templates.compose(db, "invite" if purpose == "invite" else "reset", first_name=user.first_name, link=url, valid_for=valid)
     try:
         mailer.send(mailer.build(user.email, subject, body), timeout=10)
         return True
@@ -92,7 +89,7 @@ def forgot_password(body: ForgotBody, request: Request, db: Session = Depends(ge
         raw = password_tokens.issue(db, user, "reset")
         record(db, AuditAction.PASSWORD_RESET_REQUESTED, request, None, user.id, "user", {})
         db.commit()
-        send_link(user, "reset", raw)
+        send_link(user, "reset", raw, db)
     return _GENERIC
 
 
