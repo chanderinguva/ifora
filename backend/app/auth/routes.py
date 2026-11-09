@@ -105,12 +105,35 @@ def _session_info(session: AuthSession) -> dict:
     }
 
 
+_KNOWN_IP_DAYS, _KNOWN_IP_MAX = 30, 20
+
+
+def remember_ip(user_id: int, ip: str) -> None:
+    """Note an address this person has signed in from (kept 30 days). Best effort: Redis trouble must not block sign-in."""
+    try:
+        r, key = ratelimit._redis(), f"kip:{user_id}"
+        if r.scard(key) < _KNOWN_IP_MAX:
+            r.sadd(key, ip)
+        r.expire(key, _KNOWN_IP_DAYS * 86400)
+    except Exception:  # noqa: BLE001
+        logger.warning("login.known_ip_unavailable")
+
+
+def is_known_ip(user_id: int, ip: str) -> bool:
+    try:
+        return bool(ratelimit._redis().sismember(f"kip:{user_id}", ip))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 async def complete_login(db: Session, request: Request, response: Response, user: User, method: str) -> dict:
     """Create the session + cookie for a fully authenticated user (password, and MFA if enrolled)."""
     now = datetime.now(timezone.utc)
     user.failed_login_attempts = 0
     user.lockout_until = None
     user.last_login_at = now
+    if request.client:
+        remember_ip(user.id, request.client.host)
 
     from backend.app.security_policy import service as sec_policy
 
@@ -181,7 +204,9 @@ async def login_endpoint(
         logger.warning("login.attempt_failed", reason="user_not_found")
         raise fail()
 
-    if user.is_locked_out():
+    # Anyone can type wrong passwords for someone else's email and lock them out. So a locked account still lets the
+    # owner in from an address they have signed in from recently; everywhere else the lockout holds.
+    if user.is_locked_out() and not is_known_ip(user.id, ip):
         try:
             argon2.verify(login_data.password, _DUMMY_HASH)  # equalise timing
         except Exception:
@@ -190,6 +215,9 @@ async def login_endpoint(
         raise fail()
 
     if not user.verify_password(login_data.password):
+        if user.is_locked_out():  # known address during a lockout: refuse, but do not extend the lockout
+            logger.warning("login.attempt_failed", reason="invalid_password_while_locked", user_id=user.id)
+            raise fail()
         user.failed_login_attempts += 1
         from backend.app.recipes import events as recipe_events
 
@@ -306,6 +334,11 @@ async def bootstrap_admin_endpoint(
     if existing_user:
         logger.warning("bootstrap.attempt_failed", reason="email_in_use", email=bootstrap_data.email)
         raise HTTPException(status_code=409, detail="Email already in use")
+
+    from backend.app.security_policy import service as sec_policy
+
+    # The first administrator is held to the same password policy as everyone else.
+    sec_policy.validate_new(db, bootstrap_data.password, email=bootstrap_data.email, first=bootstrap_data.first_name, last=bootstrap_data.last_name)
 
     # Create super admin user
     user = User(

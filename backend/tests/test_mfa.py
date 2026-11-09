@@ -169,7 +169,10 @@ def test_expired_challenge_rejected(db, enrolled):
     assert r.status_code == 401
 
 
-def test_mfa_failures_lock_the_account(db, enrolled):
+def test_mfa_failures_lock_the_account(db, enrolled, monkeypatch):
+    from backend.app.auth import routes as auth_routes
+
+    monkeypatch.setattr(auth_routes, "is_known_ip", lambda *a: False)  # the lockout holds away from the owner's usual addresses
     api = Api()
     token = api.login("mfa@example.com").json()["mfa_token"]
     for _ in range(settings.MAX_LOGIN_ATTEMPTS):

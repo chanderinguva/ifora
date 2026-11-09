@@ -238,8 +238,22 @@ def metadata(db: Session = Depends(get_db)):
     return Response(xml, media_type="application/samlmetadata+xml", headers={"Cache-Control": "public, max-age=300"})
 
 
+def _error_code(msg: str) -> str:
+    m = msg.lower()
+    if "signature" in m or "signed" in m or "certificate" in m or "rsa" in m:
+        return "signature"
+    if "unknown service provider" in m:
+        return "unknown_sp"
+    if "not available" in m:
+        return "unavailable"
+    if "assertionconsumerserviceurl" in m:
+        return "acs"
+    return "invalid_request"
+
+
 def _error_redirect(msg: str) -> RedirectResponse:
-    return RedirectResponse(f"{ui_base()}/saml/continue?{urlencode({'error': msg})}", status_code=303, headers=NO_STORE)
+    # A fixed code, never free text: the page maps it to its own wording, so a crafted link cannot show an attacker's message.
+    return RedirectResponse(f"{ui_base()}/saml/continue?{urlencode({'error': _error_code(msg)})}", status_code=303, headers=NO_STORE)
 
 
 def _start(db: Session, request: Request, saml_request: Optional[str], relay_state: Optional[str], redirect_binding: bool):
@@ -277,6 +291,9 @@ def _start(db: Session, request: Request, saml_request: Optional[str], relay_sta
                 P.verify_redirect_signature(request.url.query, p.sp_cert)
             else:
                 P.verify_post_signature(req.root, p.sp_cert)
+        elif signed and not redirect_binding:
+            # A signature we cannot check is not a signature: refuse rather than treat the request as vouched for.
+            raise P.SamlError("The request is signed but no certificate is registered to verify the signature")
         elif p.require_signed_requests:
             raise P.SamlError("No certificate is registered to verify the request")
     except P.SamlError as e:
