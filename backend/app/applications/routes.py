@@ -435,6 +435,9 @@ def launch(app_id: int, request: Request, db: Session = Depends(get_db), user: U
     if a is None or not _launchable(a, initiate) or not ent.is_entitled(db, a.id, user.id):
         raise HTTPException(status_code=404, detail="Application not found")  # same answer whether it exists or not
     record(db, AuditAction.APPLICATION_LAUNCHED, request, user, a.id, "application", {"name": a.name})
+    from backend.app.dashboard_prefs.routes import note_launch
+
+    note_launch(db, user, a.id)
     db.commit()
     return {"url": _launch_target(a, initiate)}
 
