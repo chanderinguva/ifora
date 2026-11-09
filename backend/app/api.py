@@ -164,6 +164,9 @@ def create_app() -> FastAPI:
     for r in (branding_public, branding_admin, email_templates_router):
         app.include_router(r, prefix="/api/v1")
     app.include_router(admin_roles_router, prefix="/api/v1")
+    from backend.app.dashboard_prefs.routes import router as dashboard_prefs_router
+
+    app.include_router(dashboard_prefs_router, prefix="/api/v1")
     app.include_router(admin_access_router, prefix="/api/v1")
 
     app.include_router(zones_router, prefix="/api/v1")

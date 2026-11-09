@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge, PageHeader } from "@/components/bits";
 import { useCurrentUser } from "@/components/auth-guard";
 import { AppTiles } from "@/components/app-tiles";
+import { RecentActivity } from "@/components/recent-activity";
 import { inAdminView } from "@/lib/roles";
 import { http } from "@/lib/http";
 import type { User } from "@/lib/types";
@@ -51,6 +52,8 @@ export default function UserHome() {
           <Link href="/settings#security" className="inline-block text-sm underline-offset-4 hover:underline">Manage in Account settings →</Link>
         </CardContent>
       </Card>
+
+      <RecentActivity />
 
       <Card>
         <CardHeader><CardTitle>My groups</CardTitle></CardHeader>

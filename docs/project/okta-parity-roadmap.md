@@ -29,12 +29,12 @@ Status: **Done** / **Partial** / **Todo**. Work in order; each phase is one PR.
 | Okta | IdentityForge |
 |---|---|
 | App tiles, search, launch | Done |
-| Sections / tabs ("Work", "Add section") and drag-reorder | Todo |
-| Recently used, favourites | Todo |
+| Sections / tabs ("Work", "Add section") and drag-reorder | Done (phase 9, ADR 016): own sections, move earlier/later and section menu (keyboard-friendly instead of drag and drop), stored on the account |
+| Recently used, favourites | Done (phase 9): favourites group, last-30-days recents row, old browser pins imported once |
 | Add-apps / request access | Todo |
 | Notifications and tasks | Todo |
 | Settings page: personal info, security methods, password, recovery | Partial: Account settings |
-| Activity ("Recent activity" on sign-ins) | Todo |
+| Activity ("Recent activity" on sign-ins) | Done (phase 9): own sign-in and credential events on the dashboard |
 | Org branding on dashboard | Todo |
 
 ## Order of work

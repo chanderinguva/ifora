@@ -1,43 +1,71 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { ExternalLink, KeyRound, Pin, PinOff, Search } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowDown, ArrowUp, ExternalLink, KeyRound, Plus, Search, Settings2, Star, Trash2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AppIcon } from "@/components/app-icon";
+import { fieldClass } from "@/components/bits";
 import { http } from "@/lib/http";
 import type { MyApp } from "@/lib/applications";
 
-const PIN_KEY = "if.pinned-apps";
+type Section = { id: number; name: string; position: number };
+type Pref = { favorite: boolean; section_id: number | null; position: number; last_launched_at: string | null };
+type Overview = { sections: Section[]; apps: Record<string, Pref>; recent: number[] };
+const OLD_PINS = "if.pinned-apps";
+const NONE: Pref = { favorite: false, section_id: null, position: 0, last_launched_at: null };
 
-function readPins(): number[] {
-  try { const v = JSON.parse(localStorage.getItem(PIN_KEY) ?? "[]"); return Array.isArray(v) ? v.filter((x) => typeof x === "number") : []; } catch { return []; }
-}
-function writePins(p: number[]) { try { localStorage.setItem(PIN_KEY, JSON.stringify(p)); } catch { /* private mode: pins last for this page only */ } }
-
-/** The signed-in user's applications as launch tiles: search, pin favourites, one click to sign in. */
+/** The signed-in user's applications: favourites, recently used, own sections, search. Preferences live on the server. */
 export function AppTiles() {
   const [apps, setApps] = useState<MyApp[] | null>(null);
+  const [ov, setOv] = useState<Overview>({ sections: [], apps: {}, recent: [] });
   const [err, setErr] = useState<string | null>(null);
   const [q, setQ] = useState("");
-  const [pins, setPins] = useState<number[]>([]);
+  const [organise, setOrganise] = useState(false);
+  const [newSection, setNewSection] = useState("");
+  const started = useRef(false);
+
+  const loadPrefs = useCallback(() => http<Overview>("/me/dashboard").then(setOv).catch((e) => setErr(e.message)), []);
 
   useEffect(() => {
-    setPins(readPins());
-    http<{ items: MyApp[] }>("/me/apps").then((r) => setApps(r.items)).catch((e) => setErr(e.message));
-  }, []);
+    if (started.current) return;
+    started.current = true;
+    (async () => {
+      try {
+        const r = await http<{ items: MyApp[] }>("/me/apps");
+        setApps(r.items);
+        // one-time move of the old browser-only pins to the account
+        try {
+          const old = JSON.parse(localStorage.getItem(OLD_PINS) ?? "[]");
+          if (Array.isArray(old) && old.length) await http("/me/dashboard/import-favorites", { method: "POST", body: { app_ids: old.filter((x: unknown) => typeof x === "number") } });
+          localStorage.removeItem(OLD_PINS);
+        } catch { /* storage unavailable or import refused: nothing to move */ }
+        await loadPrefs();
+      } catch (e) { setErr(e instanceof Error ? e.message : "Could not load your apps"); }
+    })();
+  }, [loadPrefs]);
 
-  const shown = useMemo(() => {
-    const t = q.trim().toLowerCase();
-    const list = (apps ?? []).filter((a) => !t || a.name.toLowerCase().includes(t) || (a.description ?? "").toLowerCase().includes(t));
-    return [...list.filter((a) => pins.includes(a.id)), ...list.filter((a) => !pins.includes(a.id))];
-  }, [apps, q, pins]);
+  const pref = (id: number) => ov.apps[String(id)] ?? NONE;
 
-  function togglePin(id: number) {
-    const next = pins.includes(id) ? pins.filter((x) => x !== id) : [...pins, id];
-    setPins(next);
-    writePins(next);
+  async function act(fn: () => Promise<unknown>) {
+    setErr(null);
+    try { await fn(); await loadPrefs(); } catch (e) { setErr(e instanceof Error ? e.message : "That did not work"); }
   }
+  const put = (id: number, body: object) => act(() => http(`/me/dashboard/apps/${id}`, { method: "PUT", body }));
+
+  const searching = q.trim() !== "";
+  const matches = useMemo(() => {
+    const t = q.trim().toLowerCase();
+    return (apps ?? []).filter((a) => !t || a.name.toLowerCase().includes(t) || (a.description ?? "").toLowerCase().includes(t));
+  }, [apps, q]);
+
+  const byOrder = (list: MyApp[]) => [...list].sort((a, b) => pref(a.id).position - pref(b.id).position || a.name.localeCompare(b.name));
+  const favourites = byOrder(matches.filter((a) => pref(a.id).favorite));
+  const rest = matches.filter((a) => !pref(a.id).favorite);
+  const knownSections = new Set(ov.sections.map((s) => s.id));
+  const inSection = (sid: number | null) => byOrder(rest.filter((a) => (pref(a.id).section_id && knownSections.has(pref(a.id).section_id!) ? pref(a.id).section_id : null) === sid));
+  const recent = ov.recent.map((id) => (apps ?? []).find((a) => a.id === id)).filter((a): a is MyApp => !!a && a.launchable);
 
   async function launch(a: MyApp) {
     setErr(null);
@@ -45,49 +73,129 @@ export function AppTiles() {
     try {
       const r = await http<{ url: string }>(`/me/apps/${a.id}/launch`, { method: "POST" });
       if (w) { w.opener = null; w.location.href = r.url; } else window.location.href = r.url;
+      loadPrefs();
     } catch (e) {
       w?.close();
       setErr(e instanceof Error ? e.message : "Could not open the application");
     }
   }
 
+  function tile(a: MyApp) {
+    const p = pref(a.id);
+    return (
+      <li key={a.id} className="group relative" data-testid={`tile-${a.id}`}>
+        <button type="button" disabled={!a.launchable} onClick={() => launch(a)} aria-label={a.launchable ? `Open ${a.name}` : `${a.name} (no launch link)`}
+          className="flex h-full w-full flex-col items-center gap-2 rounded-xl border bg-card p-4 text-center shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60">
+          <AppIcon path={`/me/apps/${a.id}/icon`} name={a.name} hasIcon={a.has_icon} />
+          <span className="line-clamp-2 text-sm font-medium">{a.name}</span>
+          {a.description && <span className="line-clamp-2 text-xs text-muted-foreground">{a.description}</span>}
+          {a.launchable && !organise && <ExternalLink aria-hidden className="h-3.5 w-3.5 text-muted-foreground opacity-0 transition group-hover:opacity-100" />}
+        </button>
+        {a.sign_on_mode === "swa" && (
+          <a href={`/swa/continue?app=${a.id}&manage=1`} aria-label={`Change saved sign-in for ${a.name}`} title="Change saved sign-in"
+            className="absolute left-2 top-2 rounded-md p-1 text-muted-foreground opacity-60 hover:bg-muted hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100">
+            <KeyRound className="h-3.5 w-3.5" />
+          </a>
+        )}
+        <button type="button" onClick={() => put(a.id, { favorite: !p.favorite })} aria-pressed={p.favorite} aria-label={p.favorite ? `Remove ${a.name} from favourites` : `Add ${a.name} to favourites`}
+          className="absolute right-2 top-2 rounded-md p-1 text-muted-foreground opacity-60 hover:bg-muted hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100">
+          <Star className={"h-3.5 w-3.5 " + (p.favorite ? "fill-current text-amber-500" : "")} />
+        </button>
+        {organise && (
+          <div className="mt-1 flex items-center justify-center gap-1">
+            <Button type="button" variant="ghost" size="sm" aria-label={`Move ${a.name} earlier`} onClick={() => put(a.id, { move: "earlier" })}><ArrowUp className="h-3.5 w-3.5" /></Button>
+            <Button type="button" variant="ghost" size="sm" aria-label={`Move ${a.name} later`} onClick={() => put(a.id, { move: "later" })}><ArrowDown className="h-3.5 w-3.5" /></Button>
+            <select aria-label={`Section for ${a.name}`} className={fieldClass + " h-8 w-28 py-0 text-xs"} value={p.section_id ?? ""}
+              onChange={(e) => put(a.id, e.target.value ? { section_id: Number(e.target.value) } : { clear_section: true })}>
+              <option value="">Other</option>
+              {ov.sections.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </div>
+        )}
+      </li>
+    );
+  }
+
+  const grid = (list: MyApp[], id: string) => (
+    <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4" data-testid={id}>{list.map((a) => tile(a))}</ul>
+  );
+
+  const hasApps = !!apps && apps.length > 0;
+  const otherApps = inSection(null);
+
   return (
     <div data-testid="app-tiles">
       {err && <Alert variant="destructive" className="mb-4" role="status"><AlertDescription>{err}</AlertDescription></Alert>}
-      {apps && apps.length > 0 && (
-        <div className="relative mb-4 max-w-sm">
-          <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input aria-label="Search my apps" placeholder="Search apps…" className="pl-9" value={q} onChange={(e) => setQ(e.target.value)} />
+      {hasApps && (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <div className="relative max-w-sm flex-1">
+            <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input aria-label="Search my apps" placeholder="Search apps…" className="pl-9" value={q} onChange={(e) => setQ(e.target.value)} />
+          </div>
+          <Button type="button" variant={organise ? "default" : "outline"} size="sm" aria-pressed={organise} onClick={() => setOrganise((v) => !v)} data-testid="organise-toggle">
+            <Settings2 className="mr-1 h-4 w-4" /> {organise ? "Done" : "Organise"}
+          </Button>
         </div>
       )}
       {apps && apps.length === 0 && <p className="text-sm text-muted-foreground" data-testid="no-apps">No applications have been assigned to you yet. When an administrator gives you access, they appear here.</p>}
-      {apps && apps.length > 0 && shown.length === 0 && <p className="text-sm text-muted-foreground">No app matches “{q}”.</p>}
-      <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4" data-testid="my-apps">
-        {shown.map((a) => {
-          const pinned = pins.includes(a.id);
-          return (
-            <li key={a.id} className="group relative">
-              <button type="button" disabled={!a.launchable} onClick={() => launch(a)} aria-label={a.launchable ? `Open ${a.name}` : `${a.name} (no launch link)`}
-                className="flex h-full w-full flex-col items-center gap-2 rounded-xl border bg-card p-4 text-center shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60">
-                <AppIcon path={`/me/apps/${a.id}/icon`} name={a.name} hasIcon={a.has_icon} />
-                <span className="line-clamp-2 text-sm font-medium">{a.name}</span>
-                {a.description && <span className="line-clamp-2 text-xs text-muted-foreground">{a.description}</span>}
-                {a.launchable && <ExternalLink aria-hidden className="h-3.5 w-3.5 text-muted-foreground opacity-0 transition group-hover:opacity-100" />}
-              </button>
-              {a.sign_on_mode === "swa" && (
-                <a href={`/swa/continue?app=${a.id}&manage=1`} aria-label={`Change saved sign-in for ${a.name}`} title="Change saved sign-in"
-                  className="absolute left-2 top-2 rounded-md p-1 text-muted-foreground opacity-60 hover:bg-muted hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100">
-                  <KeyRound className="h-3.5 w-3.5" />
-                </a>
+      {hasApps && matches.length === 0 && <p className="text-sm text-muted-foreground">No app matches “{q}”.</p>}
+
+      {!searching && recent.length > 0 && (
+        <section className="mb-6" aria-labelledby="recent-h" data-testid="recent-apps">
+          <h3 id="recent-h" className="mb-2 text-sm font-semibold text-muted-foreground">Recently used</h3>
+          <ul className="flex flex-wrap gap-2">
+            {recent.map((a) => (
+              <li key={a.id}>
+                <button type="button" onClick={() => launch(a)} aria-label={`Recent: ${a.name}`} className="flex items-center gap-2 rounded-full border bg-card px-3 py-1.5 text-sm shadow-sm hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  <AppIcon path={`/me/apps/${a.id}/icon`} name={a.name} hasIcon={a.has_icon} size={20} /> {a.name}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {favourites.length > 0 && (
+        <section className="mb-6" aria-labelledby="fav-h" data-testid="favourites">
+          <h3 id="fav-h" className="mb-2 text-sm font-semibold text-muted-foreground">Favourites</h3>
+          {grid(favourites, "fav-apps")}
+        </section>
+      )}
+
+      {ov.sections.map((s, i) => {
+        const list = inSection(s.id);
+        if (searching && list.length === 0) return null;
+        return (
+          <section key={s.id} className="mb-6" aria-labelledby={`sec-${s.id}`} data-testid={`section-${s.id}`}>
+            <div className="mb-2 flex items-center gap-1">
+              <h3 id={`sec-${s.id}`} className="text-sm font-semibold text-muted-foreground">{s.name}</h3>
+              {organise && (
+                <>
+                  <Button type="button" variant="ghost" size="sm" aria-label={`Move section ${s.name} earlier`} disabled={i === 0} onClick={() => act(() => http(`/me/dashboard/sections/${s.id}`, { method: "PATCH", body: { move: "earlier" } }))}><ArrowUp className="h-3.5 w-3.5" /></Button>
+                  <Button type="button" variant="ghost" size="sm" aria-label={`Move section ${s.name} later`} disabled={i === ov.sections.length - 1} onClick={() => act(() => http(`/me/dashboard/sections/${s.id}`, { method: "PATCH", body: { move: "later" } }))}><ArrowDown className="h-3.5 w-3.5" /></Button>
+                  <Button type="button" variant="ghost" size="sm" aria-label={`Rename section ${s.name}`} onClick={() => { const n = window.prompt("Section name", s.name); if (n?.trim()) act(() => http(`/me/dashboard/sections/${s.id}`, { method: "PATCH", body: { name: n } })); }}>Rename</Button>
+                  <Button type="button" variant="ghost" size="sm" aria-label={`Delete section ${s.name}`} onClick={() => act(() => http(`/me/dashboard/sections/${s.id}`, { method: "DELETE" }))}><Trash2 className="h-3.5 w-3.5" /></Button>
+                </>
               )}
-              <button type="button" onClick={() => togglePin(a.id)} aria-pressed={pinned} aria-label={pinned ? `Unpin ${a.name}` : `Pin ${a.name}`}
-                className="absolute right-2 top-2 rounded-md p-1 text-muted-foreground opacity-60 hover:bg-muted hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100">
-                {pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+            </div>
+            {list.length > 0 ? grid(list, `sec-apps-${s.id}`) : <p className="text-xs text-muted-foreground">{organise ? "Empty. Use an app’s Section menu to file it here." : "No apps in this section."}</p>}
+          </section>
+        );
+      })}
+
+      {otherApps.length > 0 && (
+        <section className="mb-6" aria-labelledby="other-h" data-testid="other-apps">
+          {(ov.sections.length > 0 || favourites.length > 0) && <h3 id="other-h" className="mb-2 text-sm font-semibold text-muted-foreground">{ov.sections.length > 0 ? "Other" : "All apps"}</h3>}
+          {grid(otherApps, "my-apps")}
+        </section>
+      )}
+
+      {organise && (
+        <form className="mt-2 flex max-w-sm gap-2" onSubmit={(e) => { e.preventDefault(); const n = newSection.trim(); if (!n) return; setNewSection(""); act(() => http("/me/dashboard/sections", { method: "POST", body: { name: n } })); }}>
+          <Input aria-label="New section name" placeholder="New section…" maxLength={40} value={newSection} onChange={(e) => setNewSection(e.target.value)} />
+          <Button type="submit" variant="outline" size="sm" data-testid="add-section"><Plus className="mr-1 h-4 w-4" /> Add section</Button>
+        </form>
+      )}
     </div>
   );
 }
