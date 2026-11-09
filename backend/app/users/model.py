@@ -116,7 +116,7 @@ class User(TenantOwned, Base):
     @property
     def is_active(self) -> bool:
         """Check if user is active."""
-        return self.status == UserStatus.ACTIVE.value and not self.is_locked_out
+        return self.status == UserStatus.ACTIVE.value and not self.is_locked_out()
 
     def is_locked_out(self) -> bool:
         """Check if account is currently locked out."""
