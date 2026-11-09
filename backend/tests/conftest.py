@@ -114,7 +114,7 @@ def db():
     s.close()
 
 
-def make_user(db, email, password=STRONG, admin=False, super_admin=False, **kw):
+def make_user(db, email, password=STRONG, admin=False, super_admin=False, roles=(), **kw):
     from backend.app.users.model import User
 
     u = User(
@@ -129,6 +129,12 @@ def make_user(db, email, password=STRONG, admin=False, super_admin=False, **kw):
     db.add(u)
     db.commit()
     db.refresh(u)
+    if admin and not super_admin and roles is not None:
+        from backend.app.admin_roles.models import AdminRoleAssignment
+
+        for r in roles or ["org_admin"]:  # no role means no admin access (ADR 019); tests get a full admin unless they ask otherwise
+            db.add(AdminRoleAssignment(user_id=u.id, role=r))
+        db.commit()
     return u
 
 

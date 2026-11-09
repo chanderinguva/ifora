@@ -546,8 +546,12 @@ def _sync_members(ctx: Ctx, g: Group, public_ids: List[str]) -> Dict[str, int]:
     users = db.query(User).filter(User.public_id.in_(public_ids)).all() if public_ids else []
     if len(users) != len(public_ids):
         raise invalid_value("A member refers to an unknown user")
+    from backend.app.admin_roles.resolve import group_has_roles
+
     desired = {u.id for u in users}
     current = {r[0].id: r[1] for r in _member_rows(db, g)}
+    if group_has_roles(db, g.id) and desired != set(current):
+        raise mutability("This group carries administrator roles; its membership cannot be changed through SCIM", 403)
     gone = [uid for uid in current if uid not in desired]
     if any(current[uid] is not None for uid in gone):
         raise mutability("A membership is managed by a group rule and cannot be removed through SCIM", 409)

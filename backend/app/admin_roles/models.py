@@ -1,4 +1,4 @@
-"""Administrator role assignments (ADR 014). A user with no rows is a full organization administrator (the pre-roles behaviour)."""
+"""Administrator role assignments (ADR 014, 019). Roles come from direct rows and from the user's groups; no role means no administrator access."""
 
 from datetime import datetime, timezone
 
@@ -14,6 +14,19 @@ class AdminRoleAssignment(TenantOwned, Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    role = Column(String(32), nullable=False)
+    granted_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
+class GroupAdminRole(TenantOwned, Base):
+    """An administrator role granted to every member of a group (ADR 019). Only team groups may carry roles."""
+
+    __tablename__ = "group_admin_roles"
+    __table_args__ = (UniqueConstraint("group_id", "role", name="uq_group_admin_role"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=False, index=True)
     role = Column(String(32), nullable=False)
     granted_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))

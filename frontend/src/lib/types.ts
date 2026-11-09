@@ -26,6 +26,12 @@ export type Group = {
   name: string;
   description: string | null;
   is_system_group: boolean;
+  type: string;
+  owner_user_id: number | null;
+  sensitivity: string | null;
+  review_by: string | null;
+  tags: string[];
+  attributes: Record<string, string>;
   member_count: number;
   created_at: string | null;
   members?: { id: number; email: string; first_name: string; last_name: string; via_rule?: number | null }[];

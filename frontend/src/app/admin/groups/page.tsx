@@ -8,7 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge, PageHeader, Pager, td, th } from "@/components/bits";
+import { Badge, PageHeader, Pager, fieldClass, td, th } from "@/components/bits";
+import { GroupMetadataFields, EMPTY_META, metaBody, type Meta } from "@/components/group-metadata";
 import { http, qs, type Page } from "@/lib/http";
 import type { Group } from "@/lib/types";
 
@@ -21,10 +22,14 @@ export default function GroupsPage() {
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ name: "", description: "" });
+  const [meta, setMeta] = useState<Meta>(EMPTY_META);
+  const [typeFilter, setTypeFilter] = useState("");
+  const [stats, setStats] = useState<{ total: number; by_type: Record<string, number>; without_owner_count: number; review_overdue_count: number; empty: number; unclassified: number; with_admin_roles: number } | null>(null);
 
   const load = useCallback(() => {
-    http<Page<Group>>(`/admin/groups${qs({ q, page, page_size: PAGE_SIZE })}`).then(setData).catch((e) => setError(e.message));
-  }, [q, page]);
+    http<Page<Group>>(`/admin/groups${qs({ q, type: typeFilter, page, page_size: PAGE_SIZE })}`).then(setData).catch((e) => setError(e.message));
+    http<NonNullable<typeof stats>>("/admin/groups/analytics").then(setStats).catch(() => {});
+  }, [q, page, typeFilter]);
   useEffect(() => {
     const t = setTimeout(load, 200);
     return () => clearTimeout(t);
@@ -34,8 +39,9 @@ export default function GroupsPage() {
     e.preventDefault();
     setError(null);
     try {
-      await http("/admin/groups", { method: "POST", body: { name: form.name, description: form.description || null } });
+      await http("/admin/groups", { method: "POST", body: { name: form.name, description: form.description || null, ...metaBody(meta) } });
       setForm({ name: "", description: "" });
+      setMeta(EMPTY_META);
       setCreating(false);
       load();
     } catch (err) {
@@ -67,19 +73,36 @@ export default function GroupsPage() {
                 <Label htmlFor="g-desc">Description</Label>
                 <Input id="g-desc" maxLength={500} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
               </div>
+              <div className="sm:col-span-2"><GroupMetadataFields value={meta} onChange={setMeta} /></div>
               <div className="sm:col-span-2"><Button type="submit">Create group</Button></div>
             </form>
           </CardContent>
         </Card>
       )}
 
-      <Input aria-label="Search groups" placeholder="Search groups" className="mb-4 max-w-xs" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
+      {stats && (
+        <div className="mb-4 flex flex-wrap gap-2 text-sm" data-testid="group-analytics">
+          <Badge>{stats.total} groups</Badge>
+          {Object.entries(stats.by_type).filter(([, n]) => n > 0).map(([t, n]) => <Badge key={t}>{n} {t.replace("_", " ")}</Badge>)}
+          {stats.without_owner_count > 0 && <Badge tone="bad">{stats.without_owner_count} without an owner</Badge>}
+          {stats.review_overdue_count > 0 && <Badge tone="bad">{stats.review_overdue_count} review overdue</Badge>}
+          {stats.empty > 0 && <Badge>{stats.empty} empty</Badge>}
+          {stats.with_admin_roles > 0 && <Badge tone="info">{stats.with_admin_roles} carry admin roles</Badge>}
+        </div>
+      )}
+      <div className="mb-4 flex flex-wrap gap-2">
+        <Input aria-label="Search groups" placeholder="Search groups" className="max-w-xs" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
+        <select aria-label="Filter by type" className={fieldClass + " w-48"} value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); setPage(1); }}>
+          <option value="">All types</option>
+          {["team", "project", "app_access", "push", "app", "other"].map((t) => <option key={t} value={t}>{t.replace("_", " ")}</option>)}
+        </select>
+      </div>
 
       <Card>
         <CardContent className="overflow-x-auto p-0">
           <table className="w-full" data-testid="groups-table">
             <thead className="border-b">
-              <tr><th className={th}>Name</th><th className={th}>Description</th><th className={th}>Members</th></tr>
+              <tr><th className={th}>Name</th><th className={th}>Type</th><th className={th}>Description</th><th className={th}>Members</th></tr>
             </thead>
             <tbody>
               {data?.items.map((g) => (
@@ -88,11 +111,12 @@ export default function GroupsPage() {
                     <Link className="font-medium underline-offset-4 hover:underline" href={`/admin/groups/${g.id}`}>{g.name}</Link>{" "}
                     {g.is_system_group && <Badge>system</Badge>}
                   </td>
+                  <td className={td}>{g.type.replace("_", " ")}</td>
                   <td className={td}>{g.description ?? "—"}</td>
                   <td className={td}>{g.member_count}</td>
                 </tr>
               ))}
-              {data && data.items.length === 0 && <tr><td className={td} colSpan={3}>No groups yet.</td></tr>}
+              {data && data.items.length === 0 && <tr><td className={td} colSpan={4}>No groups yet.</td></tr>}
             </tbody>
           </table>
         </CardContent>

@@ -4,7 +4,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import Column, DateTime, Integer, String, Boolean, ForeignKey, Table
+from sqlalchemy import Column, Date, DateTime, Integer, String, Boolean, ForeignKey, Table
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
 from backend.app.db import Base
@@ -51,7 +52,14 @@ class Group(TenantOwned, Base):
 
     # Group type
     is_system_group = Column(Boolean, default=False, nullable=False)
-    type = Column(String(50), default="standard", nullable=False)
+    # team | project | app_access | push | app | other (ADR 019); "other" is the unclassified default
+    type = Column(String(50), default="other", server_default="other", nullable=False)
+
+    # Governance metadata (ADR 019), readable by reports, analytics and provisioning tools
+    owner_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    sensitivity = Column(String(8), nullable=True)  # low | medium | high
+    review_by = Column(Date, nullable=True)
+    tags = Column(JSONB, nullable=False, default=list, server_default="[]")
 
     # Extensible attributes
     attributes = Column(String, nullable=True)
@@ -77,7 +85,7 @@ class Group(TenantOwned, Base):
         name: str,
         description: Optional[str] = None,
         is_system_group: bool = False,
-        group_type: str = "standard",
+        group_type: str = "other",
     ):
         self.name = name
         self.description = description
@@ -109,6 +117,10 @@ class Group(TenantOwned, Base):
             "description": self.description,
             "is_system_group": self.is_system_group,
             "type": self.type,
+            "owner_user_id": self.owner_user_id,
+            "sensitivity": self.sensitivity,
+            "review_by": self.review_by.isoformat() if self.review_by else None,
+            "tags": list(self.tags or []),
             "attributes": self.get_attributes(),
             "member_count": len(self.members),
             "created_at": self.created_at.isoformat() if self.created_at else None,

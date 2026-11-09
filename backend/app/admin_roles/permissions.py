@@ -68,8 +68,8 @@ def area_for(template: str) -> Optional[str]:
 
 
 def effective(roles: Iterable[str]) -> Dict[str, str]:
-    """Union of the roles' access; no roles at all means a full organization administrator."""
-    chosen = [r for r in roles if r in ROLES] or ["org_admin"]
+    """Union of the roles' access. No role means no access: an administrator needs a role, directly or through a group."""
+    chosen = [r for r in roles if r in ROLES]
     out: Dict[str, str] = {}
     for r in chosen:
         for area, level in ROLES[r]["access"].items():
@@ -82,14 +82,13 @@ def has_access(db, user, area: str) -> bool:
     """Does this admin hold at least read access to `area`? (super admins always do)"""
     if user.is_super_admin:
         return True
-    from backend.app.admin_roles.models import AdminRoleAssignment
+    from backend.app.admin_roles.resolve import roles_of
 
-    roles = [r for (r,) in db.query(AdminRoleAssignment.role).filter(AdminRoleAssignment.user_id == user.id)]
-    return area in effective(roles)
+    return area in effective(roles_of(db, user.id))
 
 
 def allowed(roles: Iterable[str], method: str, template: str) -> bool:
-    chosen = [r for r in roles if r in ROLES] or ["org_admin"]
+    chosen = [r for r in roles if r in ROLES]
     area = area_for(template)
     if area is None or area == "roles":
         return False  # unclassified: only super administrators (who never reach here); roles are theirs alone
