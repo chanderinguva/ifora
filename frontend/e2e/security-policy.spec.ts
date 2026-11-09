@@ -15,7 +15,7 @@ test("an administrator tightens the password policy and the rules show on the ch
     await page.getByTestId("sp-life").fill("1");
     await page.getByTestId("sp-idle").fill("120");
     await page.getByTestId("sp-save").click();
-    await expect(page.getByRole("alert").or(page.getByRole("status")).first()).toContainText(/idle timeout/i);
+    await expect(page.getByRole("status").filter({ hasText: /idle timeout/i })).toBeVisible();
 
     await page.goto("/settings");
     await expect(page.getByTestId("password-rules")).toContainText("At least 16 characters");
