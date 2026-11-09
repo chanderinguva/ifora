@@ -36,7 +36,7 @@ export function parseSegments(value: string): Segment[] {
 /** Datapill paths a formula reads (anything that looks like root.name...), for flagging unknown ones. */
 export function formulaPaths(expr: string): string[] {
   const noText = expr.replace(/'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"/g, '""');
-  return [...noText.matchAll(/\b(?:trigger|steps|recipe|job|error|loop)(?:\.[A-Za-z0-9_]+)+/g)].map((m) => m[0]);
+  return [...noText.matchAll(/\b(?:trigger|steps|recipe|job|error|loop|vars)(?:\.[A-Za-z0-9_]+)+/g)].map((m) => m[0]);
 }
 
 /** The unfinished `{{query` just before the caret, if any: where the suggestion list should open. */

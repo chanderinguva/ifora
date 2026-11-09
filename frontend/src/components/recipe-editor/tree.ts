@@ -155,7 +155,10 @@ export function pillProblems(def: Definition): string[] {
     const walk = (steps: StepNode[], inLoop: boolean) => {
       for (const s of steps) {
         const t = text(s);
-        const before = new Set(stepsBefore(root, s.id).map((x) => x.id));
+        const earlier = stepsBefore(root, s.id);
+        const before = new Set(earlier.map((x) => x.id));
+        const vars = new Set(earlier.filter((x) => x.type === "set_variable").map((x) => String(x.config?.name ?? "")));
+        for (const m of t.matchAll(/(?:\{\{\s*|")vars\.([a-z][a-z0-9_]*)/g)) if (!vars.has(m[1])) out.push(`${s.id}:vars.${m[1]}`);
         for (const m of t.matchAll(/(?:\{\{\s*|")steps\.([a-z][a-z0-9_]*)/g)) if (!before.has(m[1])) out.push(`${s.id}:steps.${m[1]}`);
         if (/(?:\{\{\s*|")loop\./.test(t) && !inLoop) out.push(`${s.id}:loop`);
         if (/(?:\{\{\s*|")error\./.test(t) && section !== "on_error") out.push(`${s.id}:error`);
@@ -179,7 +182,7 @@ export function moveProblem(def: Definition, id: string, ref: LaneRef, index: nu
   const h = branchHeight(step);
   if (h >= 0 && d + h >= maxNesting) return `Steps can be nested ${maxNesting} levels deep at most`;
   if (flat([step]).some((s) => s.type === "for_each_member") && (d > 0 || ref.section === "on_error")) return "A repeat step must sit at the top level of the main steps";
-  if (ref.section === "on_error" && flat([step]).some((s) => s.type === "approval" || s.type === "for_each_member")) return "Approvals and repeats cannot be used in the error steps";
+  if (ref.section === "on_error" && flat([step]).some((s) => s.type === "approval" || s.type === "for_each_member" || s.type === "wait" || s.type === "throttle")) return "Approvals, repeats, waits and throttles cannot be used in the error steps";
   const moved = moveStep(def, id, ref, index);
   const before = new Set(pillProblems(def));
   const worse = pillProblems(moved).find((p) => !before.has(p));
@@ -187,6 +190,7 @@ export function moveProblem(def: Definition, id: string, ref: LaneRef, index: nu
     const [sid, what] = worse.split(":");
     return what === "loop" ? `Step ${sid} uses data from the current repeat item, so it has to stay inside the repeat`
       : what === "error" ? `Step ${sid} uses the error message, so it has to stay in the error steps`
+      : what.startsWith("vars.") ? `Step ${sid} uses the variable ${what.slice(5)}, which would then be set later`
       : `Step ${sid} uses data from ${what.replace("steps.", "step ")}, which would then come later`;
   }
   return null;

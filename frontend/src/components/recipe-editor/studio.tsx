@@ -77,6 +77,9 @@ function summary(s: StepNode, props: Props): string {
     case "stop": return c.outcome === "failed" ? "Stop and fail the job" : "Stop the job";
     case "for_each_member": return `Members of ${group(c.group_id)}`;
     case "approval": return c.message ? String(c.message).slice(0, 50) : "Ask for approval";
+    case "set_variable": return c.name ? `Set ${c.name}` : "Name the variable";
+    case "wait": return `Wait ${c.amount ?? "?"} ${c.unit ?? "minutes"}`;
+    case "throttle": return `${c.max_runs ?? "?"} per ${c.per_minutes ?? "?"} min, then ${c.when_full === "stop" ? "drop" : "wait"}`;
     default: return "";
   }
 }
@@ -261,7 +264,7 @@ export function Studio(props: Props) {
 
   const optionsFor = (ref: LaneRef, depth: number): StepMenuItem[] =>
     meta.steps.filter((s) => (s.type !== "condition" && s.type !== "approval") || depth < meta.limits.max_nesting)
-      .filter((s) => !(s.type === "for_each_member" && (depth > 0 || ref.section === "on_error")) && !(s.type === "approval" && ref.section === "on_error"));
+      .filter((s) => !(s.type === "for_each_member" && (depth > 0 || ref.section === "on_error")) && !((s.type === "approval" || s.type === "wait" || s.type === "throttle") && ref.section === "on_error"));
 
   function add(ref: LaneRef, index: number, type: string, inLoop: boolean) {
     const n: StepNode = { id: newId(allIds(def)), type, config: defaultConfig(type, ctxFor(ref.section, inLoop)), on_error: "fail", max_attempts: 3 };

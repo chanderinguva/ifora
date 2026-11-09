@@ -204,6 +204,7 @@ STEP_INFO = {
     "log": ("Write to the job log", "action"),
     "send_slack": ("Send a Slack message", "action"), "send_email": ("Send an email", "action"), "condition": ("If / else", "control"), "stop": ("Stop", "control"),
     "for_each_member": ("For each member of a group", "control"), "approval": ("Wait for approval", "control"),
+    "set_variable": ("Set a variable", "control"), "wait": ("Wait (delay)", "control"), "throttle": ("Throttle", "control"),
 }
 
 

@@ -12,7 +12,7 @@ from typing import Any, Callable, Iterable, List, Optional, Tuple
 
 from backend.app.recipes import formula
 
-ROOTS = ("trigger", "steps", "recipe", "job", "error", "loop")
+ROOTS = ("trigger", "steps", "recipe", "job", "error", "loop", "vars")
 MAX_PATH_SEGMENTS = 10
 MAX_RENDERED = 10_000
 MAX_FORMULAS = 10

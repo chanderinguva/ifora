@@ -3,12 +3,14 @@
 outbox --dispatch--> job (idempotent) --claim (SKIP LOCKED + lease)--> step by step, one transaction per step.
 """
 
+import json
 import time
+import zlib
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import structlog
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -16,7 +18,7 @@ from backend.app.audit.model import AuditAction, AuditEvent
 from backend.app.config import settings
 from backend.app.recipes import actions, conditions as cond
 from backend.app.recipes import templates as tpl
-from backend.app.recipes.definition import ACTION_TYPES, compile_program, taint_checker
+from backend.app.recipes.definition import ACTION_TYPES, WAIT_UNIT_MINUTES, compile_program, taint_checker
 from backend.app.recipes.models import Recipe, RecipeJob, RecipeJobStep, RecipeOutbox, RecipeVersion
 from backend.app.recipes.redact import redact
 from backend.app.groups.model import Group, user_group_association
@@ -26,6 +28,8 @@ from backend.app.tenancy import Tenant, tenant_session, unscoped
 logger = structlog.get_logger(__name__)
 
 BACKOFF_CAP_SECONDS = 300
+MAX_VARIABLE_BYTES = 10_000      # one variable's value, as JSON
+MAX_VARIABLES_BYTES = 65_536     # all variables of a job together
 HEARTBEAT_KEY = "recipes:worker:heartbeat"
 HEARTBEAT_STALE_SECONDS = 30
 
@@ -290,6 +294,9 @@ def execute_job(db: Session, job_id: int, now: datetime) -> str:
         paused = job.paused_seconds or 0
         if job.approval:  # resuming from a wait that is not credited yet (done when the step completes)
             paused += max(int((now - datetime.fromisoformat(job.approval["requested_at"])).total_seconds()), 0)
+        active_wait = (job.step_outputs or {}).get("_wait")
+        if active_wait:  # a wait / throttle pause is not counted against the runtime limit either
+            paused += max(int((now - datetime.fromisoformat(active_wait["started_at"])).total_seconds()), 0)
         if (now - job.created_at).total_seconds() - paused > settings.RECIPES_MAX_RUNTIME_SECONDS:
             _finish(db, job, "failed", now, "stopped: maximum runtime exceeded")
             return "failed"
@@ -324,6 +331,7 @@ def execute_job(db: Session, job_id: int, now: datetime) -> str:
             "job": {"id": job.id},
             "error": (job.step_outputs or {}).get("_error", {}),
             "loop": _loop_ctx(db, job),
+            "vars": (job.step_outputs or {}).get("_vars", {}),
         }
         rc = actions.RunCtx(db, job.recipe_id, job.id, instr["id"], data, job.mode == "dry_run", taint)
         db.info["recipe_origin"] = {"recipe_id": job.recipe_id, "job_id": job.id, "depth": job.depth}
@@ -331,6 +339,8 @@ def execute_job(db: Session, job_id: int, now: datetime) -> str:
         extra: Dict[str, Any] = {}
         waiting = False
         decided_approval = False
+        finished_wait = False   # a wait / throttle pause ended with this step: credit it and forget it
+        quiet_wait = False      # waiting again on the same step: no new history row, no extra step counted
         err: Optional[actions.StepError] = None
         stop: Optional[tuple] = None
         next_pc = job.pc + 1
@@ -376,6 +386,65 @@ def execute_job(db: Session, job_id: int, now: datetime) -> str:
                         inp, out = {"message": ap["message"]}, {"decision": decision, "decided_by": ap.get("decided_by") or ""}
                         next_pc = instr["true_to"] if decision == "approved" else instr["false_to"]
                         decided_approval = True
+                elif instr["type"] == "set_variable":
+                    c = instr["config"]
+                    value = rc.render(c["value"])
+                    try:
+                        size = len(json.dumps(value, allow_nan=False))
+                    except (TypeError, ValueError):
+                        raise actions.StepError("the variable's value is not plain data")
+                    variables = dict((job.step_outputs or {}).get("_vars") or {})
+                    variables[c["name"]] = value
+                    if size > MAX_VARIABLE_BYTES or len(json.dumps(variables)) > MAX_VARIABLES_BYTES:
+                        raise actions.StepError("the variable's value is too large")
+                    extra["_vars"] = variables
+                    inp, out = {"name": c["name"]}, {"value": value}
+                elif instr["type"] in ("wait", "throttle"):
+                    c = instr["config"]
+                    w = (job.step_outputs or {}).get("_wait")
+                    w = w if (w or {}).get("step_id") == instr["id"] else None
+                    until: Optional[datetime] = None
+                    if instr["type"] == "wait":
+                        total = timedelta(minutes=c["amount"] * WAIT_UNIT_MINUTES[c["unit"]])
+                        inp = {"wait": f"{c['amount']} {c['unit']}"}
+                        if job.mode == "dry_run":   # a test run never pauses
+                            out = {"waited_seconds": 0}
+                        else:
+                            until = datetime.fromisoformat(w["until"]) if w else now + total
+                            if now >= until:
+                                out = {"waited_seconds": max(int((now - datetime.fromisoformat(w["started_at"])).total_seconds()), 0)}
+                    else:
+                        inp = {"max_runs": c["max_runs"], "per_minutes": c["per_minutes"], "when_full": c["when_full"]}
+                        if job.mode == "dry_run":
+                            out = {"waited_seconds": 0}
+                        else:
+                            # one job at a time decides, so two jobs cannot both take the last free slot (lock ends at commit)
+                            db.execute(text("SELECT pg_advisory_xact_lock(:k)"),
+                                       {"k": zlib.crc32(f"{job.recipe_id}:{instr['id']}".encode())})
+                            window = timedelta(minutes=c["per_minutes"])
+                            passes = [r[0] for r in db.query(RecipeJobStep.finished_at)
+                                      .join(RecipeJob, RecipeJob.id == RecipeJobStep.job_id)
+                                      .filter(RecipeJob.recipe_id == job.recipe_id, RecipeJob.mode == "live",
+                                              RecipeJobStep.step_id == instr["id"], RecipeJobStep.type == "throttle",
+                                              RecipeJobStep.status == "succeeded", RecipeJobStep.output.has_key("waited_seconds"),
+                                              RecipeJobStep.finished_at > now - window)
+                                      .order_by(RecipeJobStep.finished_at)]
+                            if len(passes) < c["max_runs"]:
+                                out = {"waited_seconds": max(int((now - datetime.fromisoformat(w["started_at"])).total_seconds()), 0) if w else 0}
+                            elif c["when_full"] == "stop":
+                                out = {"dropped": True}
+                                stop = ("throttled", f"dropped by the throttle step: {c['max_runs']} per {c['per_minutes']} minutes reached")
+                            else:
+                                until = passes[len(passes) - c["max_runs"]] + window
+                    if out is None:   # not through yet: pause the job until `until`
+                        outputs = dict(job.step_outputs or {})
+                        outputs["_wait"] = w or {"step_id": instr["id"], "started_at": now.isoformat(),
+                                                 "until": (until or now).isoformat()}
+                        job.step_outputs = outputs
+                        job.status, job.locked_until, job.next_run_at = "waiting", None, until
+                        waiting, quiet_wait = True, w is not None
+                    else:
+                        finished_wait = w is not None
                 elif instr["type"] == "stop":
                     msg = rc.render(instr["config"].get("message", ""), tainted_ok=True)
                     inp, out = {"outcome": instr["config"]["outcome"], "message": msg}, {}
@@ -392,14 +461,19 @@ def execute_job(db: Session, job_id: int, now: datetime) -> str:
         job = db.get(RecipeJob, job_id)
         started = now
         if err is None and waiting:
-            db.add(_step_row(job, seq, instr, "waiting", attempt, inp, None, None, started, None))
-            job.executed_steps = seq
+            if not quiet_wait:
+                db.add(_step_row(job, seq, instr, "waiting", attempt, inp, None, None, started, None))
+                job.executed_steps = seq
             db.commit()
             return "waiting"
         if err is None:
             outputs = dict(job.step_outputs or {})
             outputs.update(extra)
             outputs[instr["id"]] = out
+            if finished_wait:
+                waited = int((now - datetime.fromisoformat(outputs["_wait"]["started_at"])).total_seconds())
+                job.paused_seconds = (job.paused_seconds or 0) + max(waited, 0)
+                outputs.pop("_wait", None)
             if decided_approval:
                 waited = int((now - datetime.fromisoformat(job.approval["requested_at"])).total_seconds())
                 job.paused_seconds = (job.paused_seconds or 0) + max(waited, 0)
@@ -408,6 +482,9 @@ def execute_job(db: Session, job_id: int, now: datetime) -> str:
             job.executed_steps, job.attempt, job.pc = seq, 0, next_pc
             job.locked_until = now + timedelta(seconds=settings.RECIPES_LEASE_SECONDS) if job.mode == "live" else job.locked_until
             db.add(_step_row(job, seq, instr, "succeeded", attempt, inp, out, None, started, now))
+            if stop is not None and stop[0] == "throttled":
+                _finish(db, job, "cancelled", now, stop[1])
+                return "cancelled"
             if stop is not None:
                 return _end(db, job, "succeeded" if stop[0] == "success" else "failed", now,
                             None if stop[0] == "success" else (stop[1] or "stopped by a stop step"))

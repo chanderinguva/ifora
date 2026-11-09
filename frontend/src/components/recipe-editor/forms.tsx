@@ -33,6 +33,9 @@ export function defaultConfig(type: string, ctx: Ctx): Record<string, any> {
     case "stop": return { outcome: "success", message: "" };
     case "for_each_member": return { group_id: ctx.groups[0]?.id ?? null, limit: 50 };
     case "approval": return { message: "", timeout_hours: 24 };
+    case "set_variable": return { name: "", value: "" };
+    case "wait": return { amount: 5, unit: "minutes" };
+    case "throttle": return { max_runs: 10, per_minutes: 60, when_full: "wait" };
     default: return {};
   }
 }
@@ -214,6 +217,39 @@ export function StepForm({ step, ctx, onChange }: { step: StepNode; ctx: Ctx; on
           <div className="space-y-1"><Label>Give up after (hours, 1–168)</Label>
             <Input aria-label="Approval timeout hours" type="number" min={1} max={168} className="h-10" value={cfg.timeout_hours ?? 24} onChange={(e) => set({ timeout_hours: Number(e.target.value) })} />
             <p className="text-xs text-muted-foreground">Approved runs “Then”; denied or timed out runs “Otherwise”.</p></div>
+        </div>
+      );
+    case "set_variable":
+      return (
+        <div className="grid gap-3 md:grid-cols-[12rem_1fr]">
+          <div className="space-y-1"><Label>Variable name</Label>
+            <Input aria-label="Variable name" className="h-10" placeholder="total" value={cfg.name ?? ""} onChange={(e) => set({ name: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_").slice(0, 32) })} />
+            <p className="text-xs text-muted-foreground">Use it later as <code>{"{{vars." + (cfg.name || "name") + "}}"}</code>. Setting the same name again replaces it.</p></div>
+          <div className="space-y-1"><Label>Value</Label>
+            <PillInput label="Variable value" value={cfg.value ?? ""} onChange={(v) => set({ value: v })} pills={decisionPills(ctx.meta, ctx.trigger, before)} payload={payload} placeholder="Text, a datapill or {{= formula }}" />
+            <p className="text-xs text-muted-foreground">A value that is exactly one formula keeps its type (a number stays a number). Text the user can edit themselves, such as their name, cannot be stored.</p></div>
+        </div>
+      );
+    case "wait":
+      return (
+        <div className="grid gap-3 md:grid-cols-[10rem_10rem]">
+          <div className="space-y-1"><Label>Wait for</Label>
+            <Input aria-label="Wait amount" type="number" min={1} className="h-10" value={cfg.amount ?? 5} onChange={(e) => set({ amount: Number(e.target.value) })} /></div>
+          <div className="space-y-1"><Label>Unit</Label>
+            <Select label="Wait unit" value={cfg.unit ?? "minutes"} onChange={(v) => set({ unit: v })}><option value="minutes">Minutes</option><option value="hours">Hours</option><option value="days">Days</option></Select></div>
+          <p className="text-xs text-muted-foreground md:col-span-2">The job pauses (up to 7 days) and carries on with the next step. A test run never waits. The pause does not count against the job's run-time limit.</p>
+        </div>
+      );
+    case "throttle":
+      return (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1"><Label>Let through at most</Label>
+            <Input aria-label="Throttle max runs" type="number" min={1} max={1000} className="h-10" value={cfg.max_runs ?? 10} onChange={(e) => set({ max_runs: Number(e.target.value) })} /></div>
+          <div className="space-y-1"><Label>Per (minutes, 1–1440)</Label>
+            <Input aria-label="Throttle window minutes" type="number" min={1} max={1440} className="h-10" value={cfg.per_minutes ?? 60} onChange={(e) => set({ per_minutes: Number(e.target.value) })} /></div>
+          <div className="space-y-1 sm:col-span-2"><Label>When the limit is reached</Label>
+            <Select label="Throttle when full" value={cfg.when_full ?? "wait"} onChange={(v) => set({ when_full: v })}><option value="wait">Wait for a free slot</option><option value="stop">Drop the job (cancel it)</option></Select></div>
+          <p className="text-xs text-muted-foreground sm:col-span-2">Counts every job of this recipe that passed this step in the window. Put it before the steps you want to protect, for example before an email or an HTTP call. A test run is never limited.</p>
         </div>
       );
     default:
