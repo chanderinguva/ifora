@@ -173,7 +173,7 @@ export function RecipeBuilder({ studio = false }: { studio?: boolean }) {
       <RecipeTabs />
       <p className="mb-4 flex gap-4 text-sm"><Link className="underline underline-offset-4" href="/admin/recipes">← All recipes</Link>
         {studio ? <Link className="underline underline-offset-4" href={`/admin/recipes/${id}`}>Use the classic editor</Link> : <Link className="underline underline-offset-4" data-testid="try-studio" href={`/admin/recipes/${id}/studio`}>Try the new editor</Link>}</p>
-      {msg && <Alert variant={msg.ok ? "default" : "destructive"} className="mb-4" role="status"><AlertDescription>{msg.text}</AlertDescription></Alert>}
+      {msg && <Alert variant={msg.ok ? "default" : "destructive"} className="mb-4" role="status" data-testid="builder-msg"><AlertDescription>{msg.text}</AlertDescription></Alert>}
       {secret && (
         <Alert variant="warning" className="mb-4" data-testid="webhook-secret"><AlertDescription>
           Webhook signing secret (shown only once, copy it now): <code className="break-all">{secret}</code>
