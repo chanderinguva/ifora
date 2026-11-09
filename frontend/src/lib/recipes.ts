@@ -164,6 +164,7 @@ export function stepPills(meta: RecipeMeta, before: StepNode[]): Pill[] {
     const info = meta.steps.find((m) => m.type === s.type);
     const label = s.name || info?.label || s.type;
     for (const o of info?.outputs ?? []) pills.push({ path: `steps.${s.id}.output.${o}`, label: `${label} (${s.id}): ${o}` });
+    if (s.type === "set_variable" && s.config?.name) pills.push({ path: `vars.${s.config.name}`, label: `Variable: ${s.config.name}` });
     if (info?.kind === "action") pills.push({ path: `steps.${s.id}.output.error`, label: `${label} (${s.id}): error (when set to continue)` });
   }
   return pills;

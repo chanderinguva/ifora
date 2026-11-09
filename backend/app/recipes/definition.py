@@ -38,9 +38,12 @@ ACTION_TYPES = (
     "add_to_group", "remove_from_group", "set_attribute", "activate_user", "deactivate_user", "http_request", "log",
     "send_slack", "send_email",
 )
-STEP_TYPES = ACTION_TYPES + ("condition", "stop", "for_each_member", "approval")
+STEP_TYPES = ACTION_TYPES + ("condition", "stop", "for_each_member", "approval", "set_variable", "wait", "throttle")
 BRANCHING = ("condition", "approval")  # then/else steps
 MAX_LOOP_MEMBERS = 100
+MAX_VARIABLES = 20
+MAX_WAIT_MINUTES = 7 * 24 * 60
+WAIT_UNIT_MINUTES = {"minutes": 1, "hours": 60, "days": 1440}
 STATE_CHANGING = ("add_to_group", "remove_from_group", "set_attribute", "activate_user", "deactivate_user")
 
 
@@ -143,7 +146,24 @@ class _Stop(_Cfg):
     message: str = Field("", max_length=500)
 
 
+class _SetVar(_Cfg):
+    name: str = Field(..., pattern=r"^[a-z][a-z0-9_]{0,31}$")
+    value: str = Field("", max_length=1000)
+
+
+class _Wait(_Cfg):
+    amount: int = Field(..., ge=1, le=10080)
+    unit: Literal["minutes", "hours", "days"] = "minutes"
+
+
+class _Throttle(_Cfg):
+    max_runs: int = Field(..., ge=1, le=1000)      # at most this many jobs may pass this step ...
+    per_minutes: int = Field(..., ge=1, le=1440)   # ... in any window of this length
+    when_full: Literal["wait", "stop"] = "wait"    # wait for a free slot, or drop (cancel) the job
+
+
 STEP_CFG = {
+    "set_variable": _SetVar, "wait": _Wait, "throttle": _Throttle,
     "add_to_group": _AddRemove, "remove_from_group": _AddRemove, "set_attribute": _SetAttr,
     "activate_user": _UserOnly, "deactivate_user": _UserOnly, "http_request": _Http, "log": _Log,
     "send_slack": _Slack, "send_email": _Email,
@@ -189,6 +209,7 @@ STEP_OUTPUTS = {
     "http_request": ["status_code", "ok", "body", "json"], "log": ["message"],
     "send_slack": ["ok"], "send_email": ["to", "sent"], "condition": ["result"], "stop": [],
     "for_each_member": ["total", "processed"], "approval": ["decision", "decided_by"],
+    "set_variable": ["value"], "wait": ["waited_seconds"], "throttle": ["waited_seconds"],
 }
 _RECIPE_FIELDS = ["recipe.id", "recipe.name", "recipe.version", "job.id"]
 _SAFE_USER_FIELDS = {"id", "email", "username", "status"}
@@ -238,6 +259,10 @@ def _pill_allowed(path: str, trigger_type: str, earlier_steps: Dict[str, str], d
         if path in LOOP_PILLS or (path.startswith("loop.user.attributes.") and len(segs) == 4 and segs[3] in db_keys):
             return
         raise tpl.TemplateError(f"unknown datapill '{path}'")
+    if segs[0] == "vars":
+        if f"$var:{segs[1]}" not in earlier_steps:
+            raise tpl.TemplateError(f"variable '{segs[1]}' is not set by an earlier 'Set variable' step")
+        return
     if segs[0] == "error":
         if handler and path in ERROR_PILLS:
             return
@@ -309,6 +334,7 @@ def validate_definition(db: Session, definition: Any, *, for_publish: bool = Fal
     seen: Dict[str, str] = {}
     used: set = set()
     count = [0]
+    variables: set = set()
     mode = {"handler": False, "loop": False}
 
     def walk(steps: Any, depth: int) -> List[dict]:
@@ -351,6 +377,15 @@ def validate_definition(db: Session, definition: Any, *, for_publish: bool = Fal
                 node["note"] = note.strip()   # display only: never resolved, never sent anywhere
             seen[sid] = stype
             used.add(sid)
+            if stype == "set_variable":
+                variables.add(cfg["name"])
+                if len(variables) > MAX_VARIABLES:
+                    raise DefinitionError(f"at most {MAX_VARIABLES} variables")
+                seen["$var:" + cfg["name"]] = "variable"
+            elif stype in ("wait", "throttle") and mode["handler"]:
+                raise DefinitionError(f"{where}: the error handler cannot wait or throttle")
+            if stype == "wait" and cfg["amount"] * WAIT_UNIT_MINUTES[cfg["unit"]] > MAX_WAIT_MINUTES:
+                raise DefinitionError(f"{where}: wait at most 7 days")
             if stype == "condition":
                 if depth >= MAX_NESTING:
                     raise DefinitionError(f"conditions can be nested at most {MAX_NESTING} deep")
@@ -421,9 +456,9 @@ def _check_step(db, stype, cfg, ttype, earlier, managed, taint, where, handler=F
     _check_connection_use(db, cfg, actor)
     if stype in ("condition",):
         return
-    for p in tpl.all_pills({k: v for k, v in cfg.items() if k != "connection_id"}):
+    for p in tpl.all_pills({k: v for k, v in cfg.items() if k not in ("connection_id", "name", "unit", "when_full")}):
         _pill_allowed(p, ttype, earlier, managed, handler, in_loop)
-        if stype in STATE_CHANGING:
+        if stype in STATE_CHANGING or stype == "set_variable":   # a variable must not carry user-editable text onward
             taint(p)
     if stype in ("add_to_group", "remove_from_group"):
         g = db.get(Group, cfg["group_id"])

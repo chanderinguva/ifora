@@ -60,7 +60,7 @@ Include in the roadmap, not in this ADR's first cut: recipe **folders/tags/searc
 ## Order of work (each a PR; editor phases from ADR 020 come first)
 1. Editor phases 1-4 (ADR 020).
 2. Formula mode (parser, library, tests incl. a fuzz test for the parser and the taint rule).
-3. Variables, wait/delay, wait-for-event, throttle (small engine additions).
+3. **Done**: variables, wait/delay and throttle (see "Implemented: variables, wait, throttle"). Still open: wait-for-event.
 4. Lookup tables (models, admin page, steps, formula function).
 5. Callable recipes (child jobs, schema, depth/recursion guards).
 6. Custom API call upgrades, then custom connectors (+ OpenAPI import).
@@ -136,3 +136,16 @@ Include in the roadmap, not in this ADR's first cut: recipe **folders/tags/searc
 | `sha256(text)` | SHA-256 hash as hex | `sha256("a")` |
 | `json_parse(text)` | Read JSON text into a value | `json_parse("{\"a\":1}")` |
 | `json_stringify(value)` | Write a value as JSON text | `json_stringify([1,2]) → "[1,2]"` |
+
+
+---
+
+# Implemented: variables, wait, throttle
+
+**Set a variable** (`set_variable`, name `a-z0-9_`, 32 characters at most, value is a template: text, datapills, `{{= formula }}`). Read it with `{{vars.name}}` (or `vars.name` in a formula or condition). A value that is exactly one pill or formula keeps its type. At most 20 variables per recipe, 64 KB in total per job. Setting a name again replaces it. A variable must be set by an earlier step (checked on save, in the editor's pill list and when a step is dragged); the error steps do not see the main flow's variables. **Taint rule:** the value is checked like the input of a state-changing step, so a variable can never carry text the user can edit themselves (first name, last name, self-editable attributes) into a later step or decision. Everything else (email, status, managed attributes, step outputs) is allowed. A variable set only in a branch that did not run is missing later: a plain `{{vars.x}}` then fails the step, a formula sees nothing (`coalesce`).
+
+**Wait** (`wait`, 1 minute to 7 days): the job goes to `waiting` and the worker resumes it when due (same mechanism as approvals, no thread held). The pause is not counted against `RECIPES_MAX_RUNTIME_SECONDS`. A test run never waits. Waiting jobs can be cancelled. Not allowed in the error steps.
+
+**Throttle** (`throttle`, `max_runs` per `per_minutes`, 1 to 1440): counts how many jobs of the recipe passed this step in the window (the history rows of live jobs, so it follows `RECIPES_JOB_RETENTION_DAYS`: keep retention at 1 day or more). One job decides at a time (a Postgres advisory lock held until the step commits), so two jobs cannot take the last slot. When full, `wait` pauses the job until the oldest pass leaves the window (re-checked then; one history row, not one per re-check), `stop` cancels the job with the reason "dropped by the throttle step" (a dropped job is not counted as a pass). Test runs are never limited. Not allowed in the error steps.
+
+Not included: wait for an event or a date, throttling across recipes, per-user throttles, list/map variables with in-place updates (set a new value instead).
