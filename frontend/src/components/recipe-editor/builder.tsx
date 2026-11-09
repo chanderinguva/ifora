@@ -120,7 +120,8 @@ export function RecipeBuilder({ studio = false }: { studio?: boolean }) {
   const [result, setResult] = useState<Job | null>(null);
   const [versions, setVersions] = useState<{ version: number; published_at: string }[]>([]);
   const [recent, setRecent] = useState<Job[]>([]);
-  const [hist] = useState({ past: [] as Definition[], future: [] as Definition[], last: 0 });
+  const [hist] = useState({ past: [] as Definition[], future: [] as Definition[], last: 0, rev: 0 });
+  const [resultRev, setResultRev] = useState(0);
 
   const adopt = (r: RecipeSummary) => { setRecipe(r); setName(r.name); if (r.draft) setDef(r.draft); setDirty(false); };
   const load = useCallback(() => {
@@ -144,11 +145,11 @@ export function RecipeBuilder({ studio = false }: { studio?: boolean }) {
   const edit = (d: Definition, merge = false) => {
     const now = Date.now();
     if (!merge || now - hist.last > 800) { hist.past.push(def); if (hist.past.length > 50) hist.past.shift(); } // typing in a field undoes as one step; structural edits always get their own
-    hist.last = now; hist.future = [];
+    hist.last = now; hist.future = []; hist.rev += 1;
     setDef(d); setDirty(true);
   };
-  const undo = () => { const p = hist.past.pop(); if (p) { hist.future.push(def); hist.last = 0; setDef(p); setDirty(true); } };
-  const redo = () => { const n = hist.future.pop(); if (n) { hist.past.push(def); hist.last = 0; setDef(n); setDirty(true); } };
+  const undo = () => { const p = hist.past.pop(); if (p) { hist.future.push(def); hist.last = 0; hist.rev += 1; setDef(p); setDirty(true); } };
+  const redo = () => { const n = hist.future.pop(); if (n) { hist.past.push(def); hist.last = 0; hist.rev += 1; setDef(n); setDirty(true); } };
   const setTrigger = (patch: Partial<Definition["trigger"]>) => edit({ ...def, trigger: { ...def.trigger, ...patch } }, true);
   const tcfg = (patch: Record<string, any>) => setTrigger({ config: { ...def.trigger.config, ...patch } });
   const canEdit = recipe.can_edit !== false;
@@ -207,7 +208,7 @@ export function RecipeBuilder({ studio = false }: { studio?: boolean }) {
       {studio ? (
         <div className="mb-6">
           <Studio def={def} meta={meta} ctx={ctx} groups={groups} canEdit={canEdit} edit={edit} setTrigger={setTrigger}
-            undo={undo} redo={redo} canUndo={hist.past.length > 0} canRedo={hist.future.length > 0} />
+            result={result} stale={resultRev !== hist.rev} undo={undo} redo={redo} canUndo={hist.past.length > 0} canRedo={hist.future.length > 0} />
         </div>
       ) : (<>
       <div className="mb-3 flex gap-1" role="tablist" aria-label="Builder view">
@@ -233,7 +234,7 @@ export function RecipeBuilder({ studio = false }: { studio?: boolean }) {
       </fieldset>
       </>)}
 
-      <Card className="mt-6" data-testid="test-card">
+      <Card className="mt-6" id="test-card" data-testid="test-card">
         <CardHeader className="py-3"><CardTitle className="text-base">Test (dry run of the draft)</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           <p className="text-sm text-muted-foreground">Evaluates conditions and datapills for real and checks every target, but changes nothing and sends no request.</p>
@@ -244,6 +245,8 @@ export function RecipeBuilder({ studio = false }: { studio?: boolean }) {
           </div>
           <Button disabled={def.steps.length === 0} onClick={() => act(async () => {
             if (dirty) await save();
+            const at = hist.rev;
+            setResultRev(at);
             setResult(await http<Job>(`/admin/recipes/${id}/test`, { method: "POST", body: { user_id: test.user_id ? Number(test.user_id) : null, group_id: test.group_id ? Number(test.group_id) : null, payload: safeJson(test.payload) } }));
             load();
           })}>Run test</Button>
@@ -257,7 +260,17 @@ export function RecipeBuilder({ studio = false }: { studio?: boolean }) {
           <Link className="mt-2 inline-block underline underline-offset-4" href="/admin/recipes/jobs">Open job history</Link>
         </CardContent></Card>
         <Card><CardHeader className="py-3"><CardTitle className="text-base">Versions</CardTitle></CardHeader><CardContent className="text-sm">
-          {versions.length === 0 ? <span className="text-muted-foreground">Nothing published yet.</span> : <ul className="space-y-1">{versions.map((v) => <li key={v.version}>v{v.version} · {new Date(v.published_at).toLocaleString()}</li>)}</ul>}
+          {versions.length === 0 ? <span className="text-muted-foreground">Nothing published yet.</span> : <ul className="space-y-1">{versions.map((v) => (
+            <li key={v.version} className="flex items-center justify-between gap-2">
+              <span>v{v.version} · {new Date(v.published_at).toLocaleString()}</span>
+              {canEdit && <Button size="sm" variant="ghost" aria-label={`Restore version ${v.version} to the draft`} onClick={() => act(async () => {
+                if (dirty && !window.confirm("This replaces your unsaved changes with version " + v.version + ". Continue?")) return;
+                hist.past.push(def); hist.future = []; hist.rev += 1;
+                adopt(await http<RecipeSummary>(`/admin/recipes/${id}/versions/${v.version}/restore`, { method: "POST" }));
+                load();
+              }, `Version ${v.version} copied into the draft. It is not published.`)}>Restore to draft</Button>}
+            </li>
+          ))}</ul>}
           {recipe.webhook_path && <p className="mt-2 break-all text-xs text-muted-foreground">Webhook: {recipe.webhook_path} {recipe.webhook_secret_set ? "(secret set)" : ""}</p>}
         </CardContent></Card>
       </div>

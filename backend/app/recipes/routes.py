@@ -632,6 +632,20 @@ def get_version(recipe_id: int, version: int, db: Session = Depends(get_db), _: 
     return {"version": v.version, "published_at": v.published_at.isoformat(), "definition": v.definition}
 
 
+@router.post("/{recipe_id}/versions/{version}/restore")
+def restore_version(recipe_id: int, version: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    """Copy a published version into the draft. Nothing is published or enabled; the published version is untouched."""
+    r = _need(db, recipe_id, actor, "edit")
+    v = db.query(RecipeVersion).filter(RecipeVersion.recipe_id == recipe_id, RecipeVersion.version == version).first()
+    if v is None:
+        raise HTTPException(status_code=404, detail="Version not found")
+    r.draft = _validated(db, v.definition, actor=actor)   # the catalog may have changed since: say so rather than save a broken draft
+    r.updated_at = NOW()
+    _audit(db, AuditAction.RECIPE_UPDATED, actor, r.id, {"name": r.name, "restored_version": version}, request)
+    db.commit()
+    return _recipe_dict(db, r, detail=True, viewer=actor)
+
+
 class RunBody(BaseModel):
     user_id: Optional[int] = None
     group_id: Optional[int] = None

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DndContext, DragOverlay, PointerSensor, closestCenter, pointerWithin, useDraggable, useDroppable, useSensor, useSensors, type CollisionDetection, type DragEndEvent } from "@dnd-kit/core";
-import { Copy, GripVertical, Plus, Redo2, Trash2, Undo2, Zap } from "lucide-react";
+import { Check, Copy, FlaskConical, GripVertical, Minus, Plus, Redo2, ShieldAlert, Trash2, Undo2, X, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -11,14 +11,18 @@ import { PillFieldsContext, type PillRegistry } from "@/components/recipe-editor
 import { PillTray } from "@/components/recipe-editor/pill-tray";
 import { allIds, countSteps, duplicateStep, gapKey, insertAt, locate, moveProblem, moveStep, newId, nextGap, parseGap, removeStep, replaceStep, allGaps, type Gap, type LaneRef } from "@/components/recipe-editor/tree";
 import { laneSteps } from "@/components/recipe-editor/tree";
-import type { Definition, RecipeMeta, StepNode } from "@/lib/recipes";
+import { statusTone, type Definition, type Job, type JobStep, type RecipeMeta, type StepNode } from "@/lib/recipes";
 import type { Group } from "@/lib/types";
 
 type Props = {
   def: Definition; meta: RecipeMeta; ctx: Ctx; groups: Group[]; canEdit: boolean;
   edit: (d: Definition, merge?: boolean) => void; setTrigger: (patch: Partial<Definition["trigger"]>) => void;
+  result: Job | null; stale: boolean;
   undo: () => void; redo: () => void; canUndo: boolean; canRedo: boolean;
 };
+
+type Outcome = "ok" | "failed" | "skipped" | "other";
+
 
 function summary(s: StepNode, props: Props): string {
   const c = s.config ?? {};
@@ -37,6 +41,26 @@ function summary(s: StepNode, props: Props): string {
     case "approval": return c.message ? String(c.message).slice(0, 50) : "Ask for approval";
     default: return "";
   }
+}
+
+/** What a test run did with one step. A step with no rows in a finished run was on a branch that was not taken. */
+function outcomeOf(rows: JobStep[] | undefined, job: Job): { kind: Outcome; text: string } {
+  if (!rows || rows.length === 0) {
+    return ["queued", "running", "retrying", "waiting"].includes(job.status) ? { kind: "other", text: "not reached yet" } : { kind: "skipped", text: "did not run" };
+  }
+  if (rows.some((r) => r.status === "failed")) return { kind: "failed", text: "failed" };
+  const last = rows[rows.length - 1].status;
+  return last === "succeeded" ? { kind: "ok", text: "succeeded" } : { kind: "other", text: last };
+}
+
+function ResultDot({ kind, text }: { kind: Outcome; text: string }) {
+  const cls = kind === "ok" ? "bg-green-600 text-white" : kind === "failed" ? "bg-destructive text-destructive-foreground" : "bg-muted text-muted-foreground";
+  return (
+    <span data-testid="step-result" data-outcome={kind} title={`Test: ${text}`} className={"flex h-5 w-5 shrink-0 items-center justify-center rounded-full " + cls}>
+      {kind === "ok" ? <Check className="h-3 w-3" /> : kind === "failed" ? <X className="h-3 w-3" /> : <Minus className="h-3 w-3" />}
+      <span className="sr-only">Test result: {text}</span>
+    </span>
+  );
 }
 
 function AddMenu({ options, onPick, disabled, label, empty }: { options: StepMenuItem[]; onPick: (type: string) => void; disabled: boolean; label: string; empty?: boolean }) {
@@ -112,6 +136,11 @@ export function Studio(props: Props) {
   const { def, meta, groups, canEdit, edit } = props;
   const [sel, setSel] = useState<string>("trigger");
   const full = countSteps(def) >= meta.limits.max_steps;
+  const rowsByStep = useMemo(() => {
+    const m = new Map<string, JobStep[]>();
+    for (const r of props.result?.steps ?? []) m.set(r.step_id, [...(m.get(r.step_id) ?? []), r]);
+    return m;
+  }, [props.result]);
   const [dragging, setDragging] = useState<string | null>(null);
   const [dragPill, setDragPill] = useState<string | null>(null);
   const registry = useRef<PillRegistry>({ fields: new Map(), active: { current: null } });
@@ -210,8 +239,10 @@ export function Studio(props: Props) {
             onKeyDown={(e) => { if (canEdit && (e.key === "Delete" || e.key === "Backspace")) { e.preventDefault(); remove(); } }}>
             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">{index + 1}</span>
             <span className="min-w-0"><span className="block truncate text-sm font-medium">{info?.label ?? step.type}</span>
-              <span className="block truncate text-xs text-muted-foreground">{summary(step, props)}</span></span>
+              <span className="block truncate text-xs text-muted-foreground">{summary(step, props)}</span>
+              {step.note && <span className="block truncate text-xs italic text-muted-foreground" data-testid="step-note">{step.note}</span>}</span>
           </button>
+          {props.result && <ResultDot {...outcomeOf(rowsByStep.get(step.id), props.result)} />}
           {canEdit && (
             <div className="flex shrink-0 gap-1">
               <Button type="button" size="sm" variant="ghost" aria-label="Duplicate step" disabled={full} onClick={() => { const r = duplicateStep(def, step.id); edit(r.def); if (r.newId) setSel(r.newId); }}><Copy className="h-4 w-4" /></Button>
@@ -257,7 +288,9 @@ export function Studio(props: Props) {
         <div className="mb-3 flex items-center gap-2">
           <Button type="button" size="sm" variant="outline" aria-label="Undo" disabled={!props.canUndo} onClick={props.undo}><Undo2 className="h-4 w-4" /></Button>
           <Button type="button" size="sm" variant="outline" aria-label="Redo" disabled={!props.canRedo} onClick={props.redo}><Redo2 className="h-4 w-4" /></Button>
+          <Button type="button" size="sm" variant="outline" onClick={() => document.getElementById("test-card")?.scrollIntoView({ behavior: "smooth", block: "center" })}><FlaskConical className="mr-1 h-4 w-4" /> Test</Button>
           <span className="text-xs text-muted-foreground">{countSteps(def)} of {meta.limits.max_steps} steps</span>
+          {props.result && <span className="text-xs text-muted-foreground" data-testid="result-note">{props.stale ? "Test results are from an earlier draft" : `Test ${props.result.status}`}</span>}
           <span aria-live="polite" data-testid="studio-note" className={"text-xs " + (note?.startsWith("Can't") ? "text-destructive" : "text-muted-foreground")}>{note}</span>
         </div>
         <div className="mx-auto max-w-xl">
@@ -267,9 +300,9 @@ export function Studio(props: Props) {
             <span><span className="block text-sm font-medium">When: {trigInfo?.label ?? def.trigger.type}</span><span className="block text-xs text-muted-foreground">Trigger</span></span>
           </button>
           {renderLane({ section: "steps", owner: null, branch: null }, 0, false)}
-          <div className="mt-8 border-t pt-4">
-            <h3 className="text-sm font-semibold">If a step fails</h3>
-            <p className="mb-2 text-xs text-muted-foreground">Optional. Runs after a step fails for good (after its retries); the job is still recorded as failed.</p>
+          <div className="mt-8 rounded-lg border border-dashed p-3" data-testid="handle-errors">
+            <div className="flex items-center gap-2 text-sm font-semibold"><ShieldAlert className="h-4 w-4" /> Handle errors</div>
+            <p className="mb-2 mt-1 text-xs text-muted-foreground">Optional, for the whole recipe. If any step above fails for good (after its retries), these steps run with the error as data, and the job is still recorded as failed. Each step can also be set to carry on after a failure.</p>
             <div data-testid="error-handler">{renderLane({ section: "on_error", owner: null, branch: null }, 0, false)}</div>
           </div>
         </div>
@@ -286,6 +319,9 @@ export function Studio(props: Props) {
               <CardContent className="space-y-3">
                 <StepForm step={located.step} ctx={panelCtx} onChange={(n) => edit(replaceStep(def, n), true)} />
                 {canEdit && located.step.type !== "condition" && <PillTray pills={pillsFor(panelCtx, located.step.id)} />}
+                <div className="space-y-1 border-t pt-3"><Label htmlFor="step-note">Note (optional)</Label>
+                  <textarea id="step-note" rows={2} maxLength={300} placeholder="Why this step exists. Shown on the card; never used when the recipe runs." value={located.step.note ?? ""}
+                    onChange={(e) => edit(replaceStep(def, { ...located.step, note: e.target.value || null }), true)} className="w-full rounded-md border bg-background px-3 py-2 text-sm" /></div>
                 {isAction && (
                   <div className="grid gap-3 border-t pt-3">
                     <div className="space-y-1"><Label>If this step fails</Label>
@@ -294,6 +330,22 @@ export function Studio(props: Props) {
                       <Select label="Attempts" value={located.step.max_attempts ?? 3} onChange={(v) => edit(replaceStep(def, { ...located.step, max_attempts: Number(v) }))}>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}</Select></div>
                   </div>
                 )}
+                {props.result && (() => {
+                  const rows = rowsByStep.get(located.step.id);
+                  const o = outcomeOf(rows, props.result);
+                  return (
+                    <div className="space-y-2 border-t pt-3" data-testid="step-result-panel">
+                      <div className="flex items-center gap-2 text-sm font-medium">Test result <ResultDot {...o} /> <span className="font-normal text-muted-foreground">{o.text}{props.stale ? " (earlier draft)" : ""}</span></div>
+                      {(rows ?? []).map((r) => (
+                        <div key={`${r.seq}-${r.attempt}`} className="space-y-1 text-xs">
+                          {r.error && <p className="text-destructive">{r.error}</p>}
+                          <div className="text-muted-foreground">Input (redacted)</div><pre className="max-h-40 overflow-auto rounded bg-muted p-2">{JSON.stringify(r.input, null, 2)}</pre>
+                          <div className="text-muted-foreground">Output (redacted)</div><pre className="max-h-40 overflow-auto rounded bg-muted p-2">{JSON.stringify(r.output, null, 2)}</pre>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
               </CardContent>
             </Card>
           )}
