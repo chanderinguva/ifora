@@ -319,7 +319,7 @@ def validate_definition(db: Session, definition: Any, *, for_publish: bool = Fal
             count[0] += 1
             if count[0] > MAX_STEPS:
                 raise DefinitionError(f"at most {MAX_STEPS} steps")
-            if not isinstance(st, dict) or set(st) - {"id", "type", "name", "config", "on_error", "max_attempts", "then", "else"}:
+            if not isinstance(st, dict) or set(st) - {"id", "type", "name", "note", "config", "on_error", "max_attempts", "then", "else"}:
                 raise DefinitionError("a step has unknown fields")
             sid, stype = st.get("id"), st.get("type")
             if not isinstance(sid, str) or not _ID.match(sid):
@@ -343,7 +343,12 @@ def validate_definition(db: Session, definition: Any, *, for_publish: bool = Fal
                 _check_step(db, stype, cfg, ttype, dict(seen), managed, taint, where, mode["handler"], mode["loop"], actor)
             except tpl.TemplateError as e:
                 raise DefinitionError(f"{where}: {e}")
+            note = st.get("note")
+            if note is not None and (not isinstance(note, str) or len(note) > 300):
+                raise DefinitionError(f"{where}: the note is too long (300 characters at most)")
             node = {"id": sid, "type": stype, "name": name, "config": cfg, "on_error": on_error, "max_attempts": attempts}
+            if note and note.strip():
+                node["note"] = note.strip()   # display only: never resolved, never sent anywhere
             seen[sid] = stype
             used.add(sid)
             if stype == "condition":

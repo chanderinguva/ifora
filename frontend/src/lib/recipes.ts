@@ -6,6 +6,7 @@ export type StepNode = {
   id: string;
   type: string;
   name?: string | null;
+  note?: string | null;
   config: Record<string, any>;
   on_error?: "fail" | "continue";
   max_attempts?: number;
