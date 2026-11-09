@@ -19,8 +19,10 @@ export function SelfServiceCard({ appId }: { appId: number }) {
   }, [appId]);
   async function save(next: Cfg) {
     setMsg(null);
+    const before = cfg;
+    setCfg(next);  // optimistic: the box flips at once, and flips back if the server refuses
     try { setCfg(await http<Cfg>(`/admin/applications/${appId}/self-service`, { method: "PUT", body: next })); setMsg({ ok: true, text: "Saved" }); }
-    catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not save" }); }
+    catch (e) { setCfg(before); setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not save" }); }
   }
   if (!cfg) return msg ? <Alert variant="destructive" className="mb-6"><AlertDescription>{msg.text}</AlertDescription></Alert> : null;
   return (

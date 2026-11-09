@@ -30,6 +30,7 @@ test("a user requests an app, an administrator approves it, and it appears under
 
     // the person asks
     await login(page, email, USER_PASSWORD);
+    await expect(page).toHaveURL(/\/dashboard/);   // wait for sign-in to finish before navigating away
     await page.goto("/apps/request");
     await page.getByRole("button", { name: `Request ${name}` }).click();
     await page.getByTestId("send-request").click();           // reason is required: the browser blocks an empty one
@@ -55,6 +56,7 @@ test("a user requests an app, an administrator approves it, and it appears under
 
     // now the tile is there
     await login(page, email, USER_PASSWORD);
+    await expect(page).toHaveURL(/\/dashboard/);   // wait for sign-in to finish before navigating away
     await page.goto("/apps");
     await expect(page.getByRole("button", { name: `Open ${name}` })).toBeVisible();
     await logout(page);

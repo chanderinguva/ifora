@@ -164,7 +164,7 @@ def approve(request_id: int, body: DecideBody, request: Request, db: Session = D
     a, u = db.get(Application, r.application_id), db.get(User, r.user_id)
     if a is None or a.status != "active":
         raise HTTPException(status_code=409, detail="The application is not active")
-    if u is None or not u.is_active:
+    if u is None or u.status != "active":
         raise HTTPException(status_code=409, detail="The user is not active")
     if not ent.is_entitled(db, a.id, u.id):
         db.add(ApplicationAssignment(application_id=a.id, user_id=u.id, created_by=actor.id))
