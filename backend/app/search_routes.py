@@ -25,15 +25,18 @@ def _like(q: str) -> str:
 
 
 @router.get("/search")
-def search(q: str = Query(..., min_length=2, max_length=100), db: Session = Depends(get_db), _: User = Depends(require_admin)):
+def search(q: str = Query(..., min_length=2, max_length=100), db: Session = Depends(get_db), actor: User = Depends(require_admin)):
     pat = _like(q.strip().lower())
     ci = lambda col: func.lower(col).like(pat, escape="\\")  # noqa: E731
-    users = db.query(User).filter(or_(ci(User.email), ci(User.username), ci(User.first_name), ci(User.last_name),
+    from backend.app.admin_roles.permissions import has_access
+
+    can = lambda area: has_access(db, actor, area)  # noqa: E731  (only search what the role may see)
+    users = [] if not can("users") else db.query(User).filter(or_(ci(User.email), ci(User.username), ci(User.first_name), ci(User.last_name),
                                       ci(func.concat(User.first_name, " ", User.last_name)))).order_by(User.id).limit(PER_KIND).all()
-    groups = db.query(Group).filter(Group.is_system_group.is_(False), ci(Group.name)).order_by(Group.id).limit(PER_KIND).all()
-    apps = db.query(OIDCClient).filter(or_(ci(OIDCClient.name), ci(OIDCClient.client_id))).order_by(OIDCClient.id).limit(PER_KIND).all()
-    recipes = db.query(Recipe).filter(ci(Recipe.name)).order_by(Recipe.id).limit(PER_KIND).all()
-    rules = db.query(GroupRule).filter(ci(GroupRule.name)).order_by(GroupRule.id).limit(PER_KIND).all()
+    groups = [] if not can("groups") else db.query(Group).filter(Group.is_system_group.is_(False), ci(Group.name)).order_by(Group.id).limit(PER_KIND).all()
+    apps = [] if not can("applications") else db.query(OIDCClient).filter(or_(ci(OIDCClient.name), ci(OIDCClient.client_id))).order_by(OIDCClient.id).limit(PER_KIND).all()
+    recipes = [] if not can("automation") else db.query(Recipe).filter(ci(Recipe.name)).order_by(Recipe.id).limit(PER_KIND).all()
+    rules = [] if not can("groups") else db.query(GroupRule).filter(ci(GroupRule.name)).order_by(GroupRule.id).limit(PER_KIND).all()
     return {"results": (
         [{"kind": "user", "id": u.id, "title": f"{u.first_name} {u.last_name}".strip(), "subtitle": u.email, "href": f"/admin/users/{u.id}"} for u in users]
         + [{"kind": "group", "id": g.id, "title": g.name, "subtitle": f"{g.member_count} members", "href": f"/admin/groups/{g.id}"} for g in groups]

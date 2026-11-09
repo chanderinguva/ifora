@@ -26,14 +26,28 @@ class _AppCORS(CORSMiddleware):
 
 def create_app() -> FastAPI:
     """Create and configure FastAPI application."""
+    prod = settings.ENVIRONMENT.lower() == "production"
+    if prod and not settings.SESSION_COOKIE_SECURE:
+        raise RuntimeError("ENVIRONMENT=production requires SESSION_COOKIE_SECURE=true (serve the API over HTTPS)")
     app = FastAPI(
         title="IdentityForge API",
         description="Identity and Access Management Platform",
         version="0.1.0",
-        docs_url="/docs",
-        redoc_url="/redoc",
-        openapi_url="/openapi.json",
+        docs_url=None if prod else "/docs",
+        redoc_url=None if prod else "/redoc",
+        openapi_url=None if prod else "/openapi.json",
     )
+
+    @app.middleware("http")
+    async def security_headers(request, call_next):
+        response = await call_next(request)
+        h = response.headers
+        h.setdefault("X-Content-Type-Options", "nosniff")
+        h.setdefault("Referrer-Policy", "no-referrer")
+        h.setdefault("X-Frame-Options", "DENY")
+        if settings.SESSION_COOKIE_SECURE:
+            h.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        return response
 
     # CORS: explicit origins only (credentials are allowed, so never "*"). The OIDC protocol endpoints are not
     # credentialed and set their own narrow headers (oidc/cors.py), so the cookie-API policy stays out of their way.

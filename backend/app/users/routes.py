@@ -25,6 +25,16 @@ from backend.app.recipes import events as recipe_events
 from backend.app.profiles.schemas import validate_attributes, validate_password
 from backend.app.users.model import User
 
+
+def _least_privilege(db: Session, user: User, actor: User) -> None:
+    """A new administrator starts read-only; a super administrator widens it on the Administrators page.
+
+    (No role rows means a full organization administrator, so without this a promotion would be all-powerful at once.)"""
+    from backend.app.admin_roles.models import AdminRoleAssignment
+
+    if not db.query(AdminRoleAssignment.id).filter(AdminRoleAssignment.user_id == user.id).first():
+        db.add(AdminRoleAssignment(user_id=user.id, role="read_only_admin", granted_by=actor.id))
+
 router = APIRouter(prefix="/admin/users", tags=["users"])
 
 _USERNAME = re.compile(r"^[a-z0-9][a-z0-9._-]{1,49}$")
@@ -208,6 +218,8 @@ def create_user(
         db.rollback()
         raise HTTPException(status_code=409, detail="User already exists")
     record(db, AuditAction.USER_CREATED, request, actor, user.id, "user", {"email": email, "is_admin": body.is_admin})
+    if body.is_admin:
+        _least_privilege(db, user, actor)
     for g in groups:
         db.execute(insert(user_group_association).values(
             user_id=user.id, group_id=g.id, added_by_user_id=actor.id, added_at=datetime.now(timezone.utc)
@@ -317,6 +329,8 @@ def update_user(
             raise HTTPException(status_code=403, detail="Cannot modify a super administrator")
         user.is_admin = body.is_admin
         changed["is_admin"] = body.is_admin
+        if body.is_admin:
+            _least_privilege(db, user, actor)
 
     status_result = None
     if body.status is not None and lifecycle.normalize(body.status) != user.status:
@@ -459,10 +473,13 @@ def user_applications(user_id: int, db: Session = Depends(get_db), _: User = Dep
 
 
 @router.get("/{user_id}/events")
-def user_events(user_id: int, page_size: int = Query(25, ge=1, le=100), db: Session = Depends(get_db), _: User = Depends(require_admin)):
+def user_events(user_id: int, page_size: int = Query(25, ge=1, le=100), db: Session = Depends(get_db), actor: User = Depends(require_admin)):
     """Audit events about this user (as the target) or performed by them (as the actor)."""
+    from backend.app.admin_roles.permissions import has_access
     from backend.app.audit.model import AuditEvent
 
+    if not has_access(db, actor, "reports"):
+        raise HTTPException(status_code=403, detail="Your administrator role does not allow reading the system log")
     _get_or_404(db, user_id)
     rows = (db.query(AuditEvent)
             .filter(or_((AuditEvent.target_type == "user") & (AuditEvent.target_id == str(user_id)), AuditEvent.actor_id == str(user_id)))
