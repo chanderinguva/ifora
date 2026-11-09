@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" fill="none">
+<title>Spark: the dot throws sparks as it is struck</title>
+<path d="M48 14H22V52" stroke="#020817" stroke-width="9" stroke-linejoin="miter" stroke-linecap="butt"/><path d="M22 33H40" stroke="#020817" stroke-width="9" stroke-linecap="butt"/><circle cx="46" cy="47" r="6.5" fill="#F97316"/><path d="M55 38L60 33M57 46H63M55 55L60 60" stroke="#F97316" stroke-width="3" stroke-linecap="round"/>
+</svg>
