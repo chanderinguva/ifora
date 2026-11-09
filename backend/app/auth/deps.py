@@ -115,12 +115,12 @@ def require_admin(request: Request, ctx=Depends(get_session_and_user), db: Sessi
         raise HTTPException(status_code=403, detail="Multi-factor authentication setup required")
     if not user.is_super_admin:
         from backend.app.admin_roles import permissions
-        from backend.app.admin_roles.models import AdminRoleAssignment
+        from backend.app.admin_roles.resolve import roles_of
 
         route = request.scope.get("route")
         template = getattr(route, "path", "") or request.url.path
         template = template[len("/api/v1"):] if template.startswith("/api/v1") else template
-        roles = [r for (r,) in db.query(AdminRoleAssignment.role).filter(AdminRoleAssignment.user_id == user.id)]
+        roles = roles_of(db, user.id)  # direct roles plus those carried by the user's groups
         if not permissions.allowed(roles, request.method, template):
             raise HTTPException(status_code=403, detail="Your administrator role does not allow this")
     return user

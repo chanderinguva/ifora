@@ -11,9 +11,20 @@ def give(super_admin, admin, *roles):
     assert r.status_code == 200, r.text
 
 
-def test_plain_admin_with_no_roles_keeps_full_access(admin):
+def test_admin_with_no_role_has_no_access(db):
+    from tests.conftest import Api
+
+    u = make_user(db, "roleless@example.com", admin=True, roles=None)
+    a = Api()
+    assert a.login(u.email).status_code == 200
+    acc = a.get("/me/admin-access").json()
+    assert acc["roles"] == [] and acc["access"] == {}
+    assert a.get("/admin/users").status_code == 403
+
+
+def test_org_admin_role_is_full_access(admin):
     a = admin.get("/me/admin-access").json()
-    assert a["implicit"] is True and a["roles"] == [] and a["access"]["users"] == "write"
+    assert a["roles"] == ["org_admin"] and a["access"]["users"] == "write"
     assert admin.get("/admin/users").status_code == 200
     assert admin.post("/admin/groups", {"name": "G"}).status_code in (200, 201)
 
@@ -83,7 +94,7 @@ def test_a_role_change_applies_to_the_very_next_request(super_admin, admin):
     assert admin.post("/admin/groups", {"name": "Before"}).status_code in (200, 201)
     give(super_admin, admin, "read_only_admin")
     assert admin.post("/admin/groups", {"name": "After"}).status_code == 403   # same session, no re-login
-    give(super_admin, admin)                                                    # back to the default
+    give(super_admin, admin, "org_admin")                                       # back to full access
     assert admin.post("/admin/groups", {"name": "After"}).status_code in (200, 201)
 
 
@@ -117,6 +128,7 @@ def test_super_admin_is_never_restricted(super_admin):
 def test_unclassified_routes_need_a_super_admin():
     assert permissions.allowed(["org_admin"], "GET", "/admin/something-new") is False
     assert permissions.allowed([], "GET", "/admin/roles") is False
+    assert permissions.allowed([], "GET", "/admin/users") is False   # no role, no access
     assert permissions.area_for("/admin/users/{user_id}/mfa/reset") == "users"
     assert permissions.area_for("/admin/applications/{app_id}/policy") == "applications"
 

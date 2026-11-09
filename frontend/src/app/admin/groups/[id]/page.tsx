@@ -9,6 +9,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge, PageHeader, fieldClass, td, th } from "@/components/bits";
+import { GroupMetadataFields, metaBody, metaFromGroup, type Meta } from "@/components/group-metadata";
+import { GroupRolesCard } from "@/components/group-roles-card";
 import { http, qs, type Page } from "@/lib/http";
 import type { Group, User } from "@/lib/types";
 
@@ -17,6 +19,7 @@ export default function GroupDetail() {
   const router = useRouter();
   const [group, setGroup] = useState<Group | null>(null);
   const [form, setForm] = useState({ name: "", description: "" });
+  const [meta, setMeta] = useState<Meta | null>(null);
   const [candidates, setCandidates] = useState<User[]>([]);
   const [pick, setPick] = useState("");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -24,6 +27,7 @@ export default function GroupDetail() {
   const apply = useCallback((g: Group) => {
     setGroup(g);
     setForm({ name: g.name, description: g.description ?? "" });
+    setMeta(metaFromGroup(g));
   }, []);
 
   useEffect(() => {
@@ -67,11 +71,14 @@ export default function GroupDetail() {
             <Label htmlFor="gdesc">Description</Label>
             <Input id="gdesc" disabled={group.is_system_group} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           </div>
-          <Button disabled={group.is_system_group} onClick={() => run(async () => apply(await http<Group>(`/admin/groups/${id}`, { method: "PATCH", body: form })), "Saved")}>
+          {meta && <GroupMetadataFields value={meta} onChange={setMeta} disabled={group.is_system_group} />}
+          <Button disabled={group.is_system_group} onClick={() => run(async () => apply(await http<Group>(`/admin/groups/${id}`, { method: "PATCH", body: { ...form, ...(meta ? metaBody(meta) : {}) } })), "Saved")}>
             Save changes
           </Button>
         </CardContent>
       </Card>
+
+      {!group.is_system_group && <GroupRolesCard groupId={group.id} groupType={group.type} members={group.members?.length ?? 0} />}
 
       <Card className="mb-6">
         <CardHeader><CardTitle>Members ({group.members?.length ?? 0})</CardTitle></CardHeader>

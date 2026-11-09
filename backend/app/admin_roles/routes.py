@@ -7,7 +7,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.app.admin_roles import permissions
-from backend.app.admin_roles.models import AdminRoleAssignment
+from backend.app.admin_roles import resolve
+from backend.app.admin_roles.models import AdminRoleAssignment, GroupAdminRole
 from backend.app.audit.model import AuditAction
 from backend.app.audit.service import record
 from backend.app.auth.deps import get_current_user, require_admin
@@ -19,7 +20,8 @@ me_router = APIRouter(prefix="/me", tags=["admin-roles"])
 
 
 def roles_of(db: Session, user_id: int) -> List[str]:
-    return sorted(r for (r,) in db.query(AdminRoleAssignment.role).filter(AdminRoleAssignment.user_id == user_id))
+    """Direct roles only (what the user page edits). Effective roles, with group-carried ones, are in resolve.roles_of."""
+    return resolve.direct_roles(db, user_id)
 
 
 @me_router.get("/admin-access")
@@ -29,8 +31,9 @@ def my_access(user: User = Depends(get_current_user), db: Session = Depends(get_
         raise HTTPException(status_code=403, detail="Forbidden")
     if user.is_super_admin:
         return {"super_admin": True, "roles": [], "implicit": False, "access": {a: permissions.WRITE for a in permissions.AREA_NAMES}}
-    roles = roles_of(db, user.id)
-    return {"super_admin": False, "roles": roles, "implicit": not roles, "access": permissions.effective(roles)}
+    sources = resolve.role_sources(db, user.id)
+    roles = sorted(sources)
+    return {"super_admin": False, "roles": roles, "sources": sources, "implicit": False, "access": permissions.effective(roles)}
 
 
 def _super(actor: User) -> None:
@@ -59,8 +62,10 @@ def _target(db: Session, user_id: int) -> User:
 def get_user_roles(user_id: int, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
     _super(actor)
     u = _target(db, user_id)
-    roles = roles_of(db, u.id)
-    return {"user_id": u.id, "roles": roles, "implicit": not roles, "super_admin": u.is_super_admin, "is_admin": u.is_admin}
+    direct = roles_of(db, u.id)
+    sources = resolve.role_sources(db, u.id)
+    return {"user_id": u.id, "roles": direct, "effective_roles": sorted(sources), "sources": sources, "implicit": False,
+            "super_admin": u.is_super_admin, "is_admin": u.is_admin}
 
 
 @router.put("/users/{user_id}")
@@ -77,6 +82,60 @@ def set_user_roles(user_id: int, body: RolesBody, request: Request, db: Session 
         db.query(AdminRoleAssignment).filter(AdminRoleAssignment.user_id == u.id).delete()
         for r in wanted:
             db.add(AdminRoleAssignment(user_id=u.id, role=r, granted_by=actor.id))
-        record(db, AuditAction.ADMIN_ROLES_UPDATED, request, actor, u.id, "user", {"from": before or ["org_admin (default)"], "to": wanted or ["org_admin (default)"]})
+        record(db, AuditAction.ADMIN_ROLES_UPDATED, request, actor, u.id, "user", {"from": before, "to": wanted})
         db.commit()
-    return {"user_id": u.id, "roles": wanted, "implicit": not wanted}
+    return {"user_id": u.id, "roles": wanted, "implicit": False}
+
+
+# ---- roles carried by a group (ADR 019) ------------------------------------------------------------------------
+
+def _group(db: Session, group_id: int):
+    from backend.app.groups.model import Group
+
+    g = db.get(Group, group_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="Group not found")
+    return g
+
+
+def _group_roles(db: Session, group_id: int) -> List[str]:
+    return sorted(r for (r,) in db.query(GroupAdminRole.role).filter(GroupAdminRole.group_id == group_id))
+
+
+@router.get("/groups")
+def groups_with_roles(db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    _super(actor)
+    from backend.app.groups.model import Group
+
+    rows = db.query(Group.id, Group.name, GroupAdminRole.role).join(GroupAdminRole, GroupAdminRole.group_id == Group.id).order_by(Group.name).all()
+    out: dict = {}
+    for gid, name, role in rows:
+        out.setdefault(gid, {"group_id": gid, "name": name, "roles": []})["roles"].append(role)
+    return {"items": list(out.values())}
+
+
+@router.get("/groups/{group_id}")
+def get_group_roles(group_id: int, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    _super(actor)
+    g = _group(db, group_id)
+    return {"group_id": g.id, "type": g.type, "roles": _group_roles(db, g.id), "can_carry_roles": g.type == "team" and not g.is_system_group}
+
+
+@router.put("/groups/{group_id}")
+def set_group_roles(group_id: int, body: RolesBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    """Every member of the group gets these roles. Only team groups may carry roles; changing them takes effect on members' next request."""
+    _super(actor)
+    g = _group(db, group_id)
+    wanted = sorted(set(body.roles))
+    if any(r not in permissions.ROLES for r in wanted):
+        raise HTTPException(status_code=400, detail="Unknown role")
+    if wanted and (g.type != "team" or g.is_system_group):
+        raise HTTPException(status_code=409, detail="Only team groups can carry administrator roles (set the group type to Team first)")
+    before = _group_roles(db, g.id)
+    if wanted != before:
+        db.query(GroupAdminRole).filter(GroupAdminRole.group_id == g.id).delete()
+        for r in wanted:
+            db.add(GroupAdminRole(group_id=g.id, role=r, granted_by=actor.id))
+        record(db, AuditAction.ADMIN_ROLES_UPDATED, request, actor, g.id, "group", {"from": before, "to": wanted, "members": g.member_count})
+        db.commit()
+    return {"group_id": g.id, "roles": wanted}

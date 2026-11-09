@@ -8,7 +8,7 @@ Status: **Done** / **Partial** / **Todo**. Work in order; each phase is one PR.
 |---|---|---|
 | Dashboard | Tasks, usage/health widgets, system log trend, org status | Done (phase 5): Tasks (7 live checks), 7-day sign-in chart, users by status, apps by sign-on method. Todo: org health/status, customisable widgets |
 | Directory > People | Search/filter, bulk actions, statuses, activate/suspend/unlock, reset password/factors, detail tabs | Partial: statuses, status filter, **bulk activate/suspend/unsuspend/unlock/deactivate, Applications and Activity tabs (phase 3)**; Todo: bulk add-to-group, Devices tab |
-| Directory > Groups | Rules, push groups, role assignment | Partial: groups, rules; Todo: group detail tabs (People, Applications, Admin roles) |
+| Directory > Groups | Rules, push groups, role assignment | Partial (ADR 019): groups, rules, **group types and metadata (owner, sensitivity, review date, tags, attributes), admin roles assigned through team groups**, standards and analytics endpoints. Todo: group detail tabs (Applications), push-group sync, access reviews |
 | Directory > Profile Editor | User/app profile, mappings | Partial: user profile; Todo: per-app profile + attribute mapping UI |
 | Directory > Directory Integrations | AD/LDAP agents | Todo (out of scope until a connector is needed) |
 | Applications > Applications | Create App Integration wizard, catalog, tabs (General, Sign On, Assignments, Provisioning, Push Groups, Import) | Done: wizard, tabbed page, 16-entry bookmark catalog. Todo: SSO-capable catalog entries, Push Groups, Import |
@@ -18,7 +18,7 @@ Status: **Done** / **Partial** / **Todo**. Work in order; each phase is one PR.
 | Security > Global session policy | Session lifetime, MFA at sign-in, rules | Partial (phase 6b, ADR 018): configurable lifetime and idle timeout, lockout; applied to open sessions. Todo: MFA-at-sign-in rules, per-group rules |
 | Security > Password policy | Length, complexity, age, history, lockout | Done (phase 6b, ADR 018): length, case/digit/symbol, no name/email, history, max age, lockout. Todo: breached-password check, per-group policies |
 | Security > Network zones | IP allow/block lists | Done (phase 6): CIDR zones, used by app policies. Todo: dynamic zones (geo, proxies) |
-| Security > Administrators | Roles, custom roles, resource sets | Partial (phase 7, ADR 014): six built-in roles (org, read-only, help desk, app, group, report) enforced centrally, assigned by super admins, applied immediately. Todo: resource sets (scope to some groups/apps), custom roles, role-aware buttons |
+| Security > Administrators | Roles, custom roles, resource sets | Partial (phase 7, ADR 014): six built-in roles (org, read-only, help desk, app, group, report) enforced centrally, assigned by super admins to people or to team groups, applied immediately; no role means no access. Todo: resource sets (scope to some groups/apps), custom roles, role-aware buttons |
 | Security > API tokens, Trusted origins | | Todo |
 | Workflow | Workflows, tasks | Partial: Recipes |
 | Reports > System log | Filter, search, export, detail drawer, saved search | Done (phase 4): search, time range, action list from API, target filter, detail drawer, CSV export (audited, formula-safe), saved filters (per browser). Todo: server-side saved filters, scheduled exports, streaming to SIEM |

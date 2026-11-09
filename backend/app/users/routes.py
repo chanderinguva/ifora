@@ -190,6 +190,9 @@ def create_user(
             raise HTTPException(status_code=422, detail="Unknown group")
         if any(g.is_system_group for g in groups):
             raise HTTPException(status_code=422, detail="System groups cannot be assigned here")
+        from backend.app.admin_roles.resolve import guard_role_groups
+
+        guard_role_groups(db, ids, actor)
     from backend.app.security_policy import service as policy
 
     email = body.email.lower()

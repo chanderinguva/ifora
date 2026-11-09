@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.audit.model import AuditAction
 from backend.app.audit.service import record
+from backend.app.admin_roles import resolve as role_resolve
 from backend.app.auth.deps import require_admin
 from backend.app.db import get_db
 from backend.app.groups import rules as svc
@@ -137,6 +138,7 @@ def preview(body: PreviewBody, db: Session = Depends(get_db), _: User = Depends(
 def create_rule(body: RuleBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
     conditions, expression = _clean(db, body)
     ids = _targets(db, body.group_ids)
+    role_resolve.guard_role_groups(db, ids, actor)
     if db.query(func.count(GroupRule.id)).scalar() >= svc.MAX_RULES:
         raise HTTPException(status_code=409, detail=f"At most {svc.MAX_RULES} rules")
     rule = GroupRule(name=body.name.strip(), match=body.match, conditions=conditions, status="inactive",
@@ -266,6 +268,7 @@ def import_rules(body: ImportBody, request: Request, db: Session = Depends(get_d
             errors.append(f"{label}: {e}")
     if errors:
         raise HTTPException(status_code=422, detail={"message": "Import refused; nothing was created", "errors": errors})
+    role_resolve.guard_role_groups(db, [groups[t.lower()].id for *_, ts in planned for t in ts if t.lower() in groups], actor)
     if body.dry_run:
         return {"dry_run": True, "rules": len(planned), "groups_to_create": sorted(new_groups)}
     for gn in sorted(new_groups):
@@ -298,6 +301,7 @@ def update_rule(
     rule = _rule_or_404(db, rule_id)
     if rule.status == "active":
         raise HTTPException(status_code=409, detail="Deactivate the rule before editing it")
+    role_resolve.guard_role_groups(db, rule.target_ids(db) + _targets(db, body.group_ids), actor)
     rule.conditions, rule.expression_text = _clean(db, body)
     rule.kind = body.kind
     rule.match = body.match
@@ -317,6 +321,7 @@ def update_rule(
 @router.post("/{rule_id}/activate")
 def activate(rule_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
     rule = _rule_or_404(db, rule_id)
+    role_resolve.guard_role_groups(db, rule.target_ids(db), actor)
     rule.status = "active"
     result = svc.evaluate_rule(db, rule, request, actor)
     record(db, AuditAction.GROUP_RULE_ACTIVATED, request, actor, rule.id, "group_rule", result)
@@ -327,6 +332,7 @@ def activate(rule_id: int, request: Request, db: Session = Depends(get_db), acto
 @router.post("/{rule_id}/deactivate")
 def deactivate(rule_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
     rule = _rule_or_404(db, rule_id)
+    role_resolve.guard_role_groups(db, rule.target_ids(db), actor)
     rule.status = "inactive"
     removed = svc.strip_rule_memberships(db, rule, request, actor)
     record(db, AuditAction.GROUP_RULE_DEACTIVATED, request, actor, rule.id, "group_rule", {"removed": removed})
@@ -337,6 +343,7 @@ def deactivate(rule_id: int, request: Request, db: Session = Depends(get_db), ac
 @router.delete("/{rule_id}")
 def delete_rule(rule_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
     rule = _rule_or_404(db, rule_id)
+    role_resolve.guard_role_groups(db, rule.target_ids(db), actor)
     removed = svc.strip_rule_memberships(db, rule, request, actor)
     name = rule.name
     db.delete(rule)

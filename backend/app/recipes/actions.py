@@ -92,8 +92,13 @@ def _group(rc: RunCtx, cfg: dict) -> Group:
     return g
 
 
+from backend.app.admin_roles.resolve import role_group_ids  # noqa: E402
+
+
 def _add_to_group(rc: RunCtx, cfg: dict):
     user, group = _user(rc, cfg), _group(rc, cfg)
+    if role_group_ids(rc.db, [group.id]):
+        raise StepError("this group carries administrator roles; recipes cannot change who is in it")
     inp = {"user_id": user.id, "group_id": group.id}
     exists = rc.db.execute(
         select(user_group_association.c.user_id).where(
@@ -112,6 +117,8 @@ def _add_to_group(rc: RunCtx, cfg: dict):
 
 def _remove_from_group(rc: RunCtx, cfg: dict):
     user, group = _user(rc, cfg), _group(rc, cfg)
+    if role_group_ids(rc.db, [group.id]):
+        raise StepError("this group carries administrator roles; recipes cannot change who is in it")
     inp = {"user_id": user.id, "group_id": group.id}
     row = rc.db.execute(
         select(user_group_association.c.rule_id).where(
