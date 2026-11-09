@@ -24,10 +24,10 @@ test("administrator roles are granted through a team group", async ({ page }) =>
     await page.goto("/admin/groups");
     await page.getByRole("button", { name: /New group/ }).click();
     await page.getByLabel("Name", { exact: true }).fill(groupName);
-    await page.getByLabel("Type").selectOption("team");
-    await page.getByLabel("Owner").selectOption({ index: 1 });
-    await page.getByLabel("Sensitivity").selectOption("medium");
-    await page.getByLabel("Tags").fill("support, tier-1");
+    await page.locator("#gm-type").selectOption("team");
+    await page.locator("#gm-owner").selectOption({ index: 1 });
+    await page.locator("#gm-sens").selectOption("medium");
+    await page.locator("#gm-tags").fill("support, tier-1");
     await page.getByRole("button", { name: "Create group" }).click();
     await page.getByLabel("Search groups").fill(`E2E Support ${tag}`);
     await page.getByRole("link", { name: groupName }).click();
