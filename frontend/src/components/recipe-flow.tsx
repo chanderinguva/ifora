@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { isLoop } from "@/components/recipe-editor/tree";
 import type { Definition, RecipeMeta, StepNode } from "@/lib/recipes";
 
 const TONE: Record<string, string> = {
@@ -29,7 +30,7 @@ function Node({ step, meta, onSelect }: { step: StepNode; meta: RecipeMeta; onSe
           <Lane title={step.type === "approval" ? "Denied / no answer" : "Otherwise"} steps={step.else ?? []} meta={meta} onSelect={onSelect} />
         </div>
       )}
-      {step.type === "for_each_member" && <div className="mt-2"><Lane title="For each member" steps={step.then ?? []} meta={meta} onSelect={onSelect} /></div>}
+      {isLoop(step) && <div className="mt-2"><Lane title={step.type === "for_each_item" ? "For each item" : "For each member"} steps={step.then ?? []} meta={meta} onSelect={onSelect} /></div>}
     </div>
   );
 }

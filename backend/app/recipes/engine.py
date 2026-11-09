@@ -262,6 +262,8 @@ def _loop_ctx(db: Session, job: RecipeJob) -> dict:
     from backend.app.recipes.events import user_snapshot
 
     st = loops[active]
+    if "items" in st:   # a loop over a list
+        return {"index": st["index"] + 1, "total": st["total"], "item": st["items"][st["index"]]}
     user = db.get(User, st["members"][st["index"]])
     return {"index": st["index"] + 1, "total": st["total"], "user": user_snapshot(user) if user else {}}
 
@@ -369,6 +371,24 @@ def execute_job(db: Session, job_id: int, now: datetime) -> str:
                     extra["_loops"] = loops
                     inp, out = {"group_id": c["group_id"], "limit": c["limit"]}, {"total": len(ids), "processed": 0}
                     next_pc = job.pc + 1 if ids else instr["end_to"]
+                elif instr["type"] == "for_each_item":
+                    c = instr["config"]
+                    items = rc.render(c["list"])   # the list must pass the taint check like any decision input
+                    if not isinstance(items, list):
+                        raise actions.StepError("the list datapill did not resolve to a list")
+                    if len(items) > c["limit"]:
+                        raise actions.StepError(f"the list has {len(items)} items; this step handles at most {c['limit']}")
+                    try:
+                        if len(json.dumps(items, allow_nan=False)) > MAX_VARIABLES_BYTES:
+                            raise actions.StepError("the list is too large")
+                    except (TypeError, ValueError):
+                        raise actions.StepError("the list is not plain data")
+                    loops = dict((job.step_outputs or {}).get("_loops") or {})
+                    loops[instr["id"]] = {"items": items, "index": 0, "total": len(items)}
+                    loops["active"] = instr["id"] if items else None
+                    extra["_loops"] = loops
+                    inp, out = {"count": len(items)}, {"total": len(items), "processed": 0}
+                    next_pc = job.pc + 1 if items else instr["end_to"]
                 elif instr["type"] == "approval":
                     ap = job.approval if (job.approval or {}).get("step_id") == instr["id"] else None
                     if ap is None and job.mode == "dry_run":

@@ -390,6 +390,71 @@ def _get(obj, key):
     raise FormulaError(f"get() needs a list or an object, got {_kind(obj)}")
 
 
+def _canon(v):
+    return json.dumps(v, sort_keys=True, default=str)
+
+
+def _uniq(l):
+    seen, out = set(), []
+    for x in _list(l):
+        k = _canon(x)
+        if k not in seen:
+            seen.add(k)
+            out.append(x)
+    return out
+
+
+def _flatten(l, depth=0):
+    if depth > 20:
+        raise FormulaError("the list is nested too deeply")
+    out = []
+    for x in _list(l):
+        out.extend(_flatten(x, depth + 1) if isinstance(x, list) else [x])
+        if len(out) > MAX_ITEMS:
+            raise FormulaError("the list is too long")
+    return out
+
+
+def _concat(*lists):
+    out = []
+    for l in lists:
+        out.extend(_list(l))
+        if len(out) > MAX_ITEMS:
+            raise FormulaError("the list is too long")
+    return out
+
+
+def _pluck(l, key):
+    return [_get(x, key) for x in _list(l)]
+
+
+def _reverse(v):
+    return v[::-1] if isinstance(v, list) else _str(v)[::-1]
+
+
+def _index(l, x):
+    for i, y in enumerate(_list(l)):
+        if (_both_num(x, y) and x == y) or (type(x) is type(y) and x == y):
+            return i
+    return None
+
+
+def _numbers(a):
+    """min(a, b, ...) or min(list): the numbers to compare; an empty list has none."""
+    items = a[0] if len(a) == 1 and isinstance(a[0], list) else a
+    return [_num(x) for x in items]
+
+
+def _min(*a):
+    n = _numbers(a)
+    return min(n) if n else None
+
+
+def _max(*a):
+    n = _numbers(a)
+    return max(n) if n else None
+
+
 def _contains(h, x):
     if isinstance(h, list):
         return x in h
@@ -453,8 +518,8 @@ FUNCTIONS: Dict[str, Tuple[int, int, Optional[Callable], str, str, str]] = {
     "floor": (1, 1, lambda x: math.floor(_num(x)), "floor(number)", "Round down", "floor(2.9) → 2"),
     "ceil": (1, 1, lambda x: math.ceil(_num(x)), "ceil(number)", "Round up", "ceil(2.1) → 3"),
     "abs": (1, 1, lambda x: abs(_num(x)), "abs(number)", "Absolute value", "abs(-3) → 3"),
-    "min": (1, _ANY, lambda *a: min(_num(x) for x in a), "min(a, b, ...)", "Smallest number", "min(3, 1) → 1"),
-    "max": (1, _ANY, lambda *a: max(_num(x) for x in a), "max(a, b, ...)", "Largest number", "max(3, 1) → 3"),
+    "min": (1, _ANY, _min, "min(a, b, ...) or min(list)", "Smallest number", "min(3, 1) → 1"),
+    "max": (1, _ANY, _max, "max(a, b, ...) or max(list)", "Largest number", "max(3, 1) → 3"),
     # dates (ISO text: 2030-01-31 or 2030-01-31T12:00:00Z)
     "now": (0, 0, lambda: _iso(_now(), False), "now()", "The current date and time (UTC)", "now()"),
     "today": (0, 0, lambda: _now().date().isoformat(), "today()", "Today's date (UTC)", "today()"),
@@ -466,6 +531,15 @@ FUNCTIONS: Dict[str, Tuple[int, int, Optional[Callable], str, str, str]] = {
     "first": (1, 1, lambda l: (_list(l) or [None])[0], "first(list)", "First item", 'first(["a","b"]) → "a"'),
     "last": (1, 1, lambda l: (_list(l) or [None])[-1], "last(list)", "Last item", 'last(["a","b"]) → "b"'),
     "count": (1, 1, lambda l: len(_list(l)), "count(list)", "Number of items", 'count(["a","b"]) → 2'),
+    "index": (2, 2, _index, "index(list, value)", "Position of the first match (starting at 0), or nothing", 'index(["a","b"], "b") → 1'),
+    "reverse": (1, 1, _reverse, "reverse(list or text)", "Reverse the order", 'reverse([1,2,3]) → [3,2,1]'),
+    "sum": (1, 1, lambda l: _clip(sum(_num(x) for x in _list(l))), "sum(list)", "Add up a list of numbers", "sum([1,2,3]) → 6"),
+    "uniq": (1, 1, _uniq, "uniq(list)", "Remove repeated items, keeping the first", 'uniq(["a","b","a"]) → ["a","b"]'),
+    "flatten": (1, 1, _flatten, "flatten(list)", "Merge nested lists into one", "flatten([[1],[2,[3]]]) → [1,2,3]"),
+    "compact": (1, 1, lambda l: [x for x in _list(l) if x is not None], "compact(list)", "Remove empty (nothing) items", "compact([1, null]) → [1]"),
+    "concat": (1, _ANY, _concat, "concat(list, list, ...)", "Join lists end to end", "concat([1],[2]) → [1,2]"),
+    "pluck": (2, 2, _pluck, "pluck(list of objects, key)", "One value from every object in a list", 'pluck(json_parse("[{\\"a\\":1}]"), "a") → [1]'),
+    "smart_join": (2, 2, lambda l, sep: _str(sep).join(_str(x) for x in _list(l) if not (x is None or x == "")), "smart_join(list, separator)", "Join the items that are not empty", 'smart_join(["a","","b"], "-") → "a-b"'),
     "get": (2, 2, _get, "get(object or list, key or position)", "Read one entry; nothing when it is missing", 'get(trigger.payload, "id")'),
     # logic
     "if": (3, 3, None, "if(condition, then, otherwise)", "Pick a value (only the chosen one is evaluated)", 'if(length(a) > 3, "long", "short")'),

@@ -31,6 +31,7 @@ export function defaultConfig(type: string, ctx: Ctx): Record<string, any> {
     case "send_email": return { to: USER_EMAIL_PILL, subject: "", body: "" };
     case "condition": return { match: "all", conditions: [{ left: "trigger.event.type", operator: "is_set", value: "" }] };
     case "stop": return { outcome: "success", message: "" };
+    case "for_each_item": return { list: "", limit: 50 };
     case "for_each_member": return { group_id: ctx.groups[0]?.id ?? null, limit: 50 };
     case "approval": return { message: "", timeout_hours: 24 };
     case "lookup_row": { const t = ctx.meta.lookup_tables?.[0]; return { table: t?.name ?? "", column: t?.key_column ?? t?.columns[0]?.name ?? "", value: "" }; }
@@ -73,11 +74,25 @@ export function Comparisons({ items, onChange, pills, payload }: { items: Compar
   );
 }
 
+/** The type of the repeat step that contains the step with this id (null if none). */
+function loopKind(steps: StepNode[], id: string, within: string | null = null): string | null {
+  for (const s of steps) {
+    if (s.id === id) return within;
+    const inner = s.type === "for_each_member" || s.type === "for_each_item" ? s.type : within;
+    const r = loopKind(s.then ?? [], id, inner) ?? loopKind(s.else ?? [], id, within);
+    if (r) return r;
+  }
+  return null;
+}
+
 /** The datapills a step may use: the trigger, earlier steps, the current repeat item, and (in the error steps) the error. */
 export function pillsFor(ctx: Ctx, stepId: string): Pill[] {
   const before = stepsBefore(ctx.root, stepId);
   const errorPills: Pill[] = ctx.handler ? [{ path: "error.message", label: "Error message" }, { path: "error.step_id", label: "Failed step" }] : [];
-  const loopPills: Pill[] = ctx.inLoop ? [
+  const kind = ctx.inLoop ? loopKind(ctx.root, stepId) : null;
+  const loopPills: Pill[] = kind === "for_each_item" ? [
+    { path: "loop.item", label: "Current item" }, { path: "loop.index", label: "Loop: position (1-based)" }, { path: "loop.total", label: "Loop: item count" },
+  ] : ctx.inLoop ? [
     { path: "loop.user.id", label: "Current member: id" }, { path: "loop.user.email", label: "Current member: email" },
     { path: "loop.user.username", label: "Current member: username" }, { path: "loop.user.status", label: "Current member: status" },
     { path: "loop.index", label: "Loop: position (1-based)" }, { path: "loop.total", label: "Loop: member count" },
@@ -209,6 +224,16 @@ export function StepForm({ step, ctx, onChange }: { step: StepNode; ctx: Ctx; on
             </Select>
             <p className="text-xs text-muted-foreground">The steps below run once per member. Use “Current member” datapills inside. Loops cannot be nested.</p></div>
           <div className="space-y-1"><Label>Max members (1–100)</Label>
+            <Input aria-label="Loop limit" type="number" min={1} max={100} className="h-10" value={cfg.limit ?? 50} onChange={(e) => set({ limit: Number(e.target.value) })} /></div>
+        </div>
+      );
+    case "for_each_item":
+      return (
+        <div className="grid gap-3 md:grid-cols-[1fr_10rem]">
+          <div className="space-y-1"><Label>List</Label>
+            <PillInput label="Loop list" value={cfg.list ?? ""} onChange={(v) => set({ list: v })} pills={pills} payload={payload} />
+            <p className="text-xs text-muted-foreground">One datapill or formula that gives a list, such as {"{{= split(trigger.payload.ids, \",\") }}"}. The steps below run once per item; use “Current item” inside. Too many items fails the step. Loops cannot be nested.</p></div>
+          <div className="space-y-1"><Label>Max items (1–100)</Label>
             <Input aria-label="Loop limit" type="number" min={1} max={100} className="h-10" value={cfg.limit ?? 50} onChange={(e) => set({ limit: Number(e.target.value) })} /></div>
         </div>
       );
