@@ -105,29 +105,39 @@ function AddMenu({ options, onPick, disabled, label, empty }: { options: StepMen
     </div>
   );
 }
-/** A place a step can be dropped (and where the + button lives). */
-function GapSlot({ gap, active, problem, children }: { gap: Gap; active: boolean; problem: string | null; children: React.ReactNode }) {
+/** A place a step can be dropped (and where the + button lives). Never changes size, so nothing jumps while dragging. */
+function GapSlot({ gap, active, children }: { gap: Gap; active: boolean; children: React.ReactNode }) {
   const { setNodeRef, isOver } = useDroppable({ id: gapKey(gap) });
-  if (!active) return <div ref={setNodeRef}>{children}</div>;
-  const tone = problem ? (isOver ? "border-destructive bg-destructive/10" : "border-transparent opacity-40") : isOver ? "border-primary bg-primary/10" : "border-primary/40";
   return (
-    <div ref={setNodeRef} data-testid="drop-slot" data-gap={gapKey(gap)} data-valid={problem ? "no" : "yes"} aria-hidden="true"
-      className={"flex h-8 items-center justify-center rounded border-2 border-dashed text-xs " + tone}>
-      {isOver ? (problem ?? "Drop here") : ""}
+    <div ref={setNodeRef} data-testid="drop-slot" data-gap={gapKey(gap)} className="relative">
+      <div className={active ? "invisible" : ""}>{children}</div>
+      {active && (
+        <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-1/2 flex -translate-y-1/2 items-center">
+          {isOver
+            ? <><span className="h-3 w-3 rounded-full bg-primary" /><span className="h-[3px] flex-1 rounded bg-primary" /></>
+            : <span className="h-px flex-1 border-t border-dashed border-primary/30" />}
+        </div>
+      )}
     </div>
   );
 }
 
+/** Keyboard handle for a step (the whole header is the mouse/touch grab area). */
 function DragHandle({ id, label, onKeyMove }: { id: string; label: string; onKeyMove: (dir: -1 | 1) => void }) {
-  const { attributes, listeners, setNodeRef } = useDraggable({ id });
   return (
-    <button type="button" ref={setNodeRef} {...attributes} {...listeners} data-testid="drag-handle" data-handle-for={id}
+    <button type="button" data-testid="drag-handle" data-handle-for={id}
       aria-label={`${label}. Drag, or press Alt and the up or down arrow to move it.`}
-      className="flex h-7 w-5 shrink-0 cursor-grab touch-none items-center justify-center rounded text-muted-foreground hover:bg-muted active:cursor-grabbing"
+      className="flex h-7 w-5 shrink-0 touch-none items-center justify-center rounded text-muted-foreground hover:bg-muted"
       onKeyDown={(e) => { if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) { e.preventDefault(); e.stopPropagation(); onKeyMove(e.key === "ArrowUp" ? -1 : 1); } }}>
       <GripVertical className="h-4 w-4" />
     </button>
   );
+}
+
+/** The whole card is what moves (its rectangle is what the drag preview copies); the header is what you grab. */
+function StepShell({ id, enabled, className, children }: { id: string; enabled: boolean; className: string; children: (grab: Record<string, unknown>) => React.ReactNode }) {
+  const { listeners, setNodeRef } = useDraggable({ id, disabled: !enabled });
+  return <div ref={setNodeRef} className={className} data-testid="studio-card" data-step-id={id}>{children(listeners ?? {})}</div>;
 }
 
 type StepMenuItem = { type: string; label: string; kind: "action" | "control" };
@@ -143,11 +153,34 @@ export function Studio(props: Props) {
   }, [props.result]);
   const [dragging, setDragging] = useState<string | null>(null);
   const [dragPill, setDragPill] = useState<string | null>(null);
+  const [dragWidth, setDragWidth] = useState<number | null>(null);
   const registry = useRef<PillRegistry>({ fields: new Map(), active: { current: null } });
   const [note, setNote] = useState<string | null>(null);
   const focusAfter = useRef<string | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
-  const collide: CollisionDetection = (a) => { const hit = pointerWithin(a); return hit.length || String(a.active.id).startsWith("pill:") ? hit : closestCenter(a); };
+  // Steps snap to the nearest *legal* position (by height first, then by how far the pointer is from that lane's column),
+  // so a drop never needs aiming at a small target. Datapills need the pointer to be over a field.
+  const collide: CollisionDetection = ({ active, pointerCoordinates, droppableRects, droppableContainers }) => {
+    if (!pointerCoordinates) return [];
+    if (String(active.id).startsWith("pill:")) {
+      return droppableContainers.filter((c) => String(c.id).startsWith("field:")).flatMap((c) => {
+        const r = droppableRects.get(c.id);
+        return r && pointerCoordinates.x >= r.left && pointerCoordinates.x <= r.right && pointerCoordinates.y >= r.top && pointerCoordinates.y <= r.bottom ? [{ id: c.id }] : [];
+      });
+    }
+    let best: { id: string | number; score: number } | null = null;
+    for (const c of droppableContainers) {
+      const key = String(c.id);
+      if (!parseGap(key) || problems.get(key)) continue;
+      const r = droppableRects.get(c.id);
+      if (!r) continue;
+      const dy = Math.abs(pointerCoordinates.y - (r.top + r.height / 2));
+      const dx = pointerCoordinates.x < r.left ? r.left - pointerCoordinates.x : pointerCoordinates.x > r.right ? pointerCoordinates.x - r.right : 0;
+      const score = dy + dx * 0.6;
+      if (!best || score < best.score) best = { id: c.id, score };
+    }
+    return best ? [{ id: best.id }] : [];
+  };
   const max = meta.limits.max_nesting;
   // why each drop position would be refused for the step being dragged (computed only while dragging)
   const problems = useMemo(() => {
@@ -209,19 +242,19 @@ export function Studio(props: Props) {
     return (
       <div className={depth > 0 ? "ml-3 border-l-2 pl-3" : ""}>
         {steps.length === 0 && (
-          <div className="py-2"><GapSlot gap={{ ref: lane, index: 0 }} active={!!dragging} problem={problems.get(gapKey({ ref: lane, index: 0 })) ?? null}>
+          <div className="py-2"><GapSlot gap={{ ref: lane, index: 0 }} active={!!dragging}>
             {adder(0, true) || <span className="text-sm text-muted-foreground">No steps.</span>}</GapSlot></div>
         )}
         {steps.map((s, i) => (
           <div key={s.id}>
             <div className="flex h-5 items-center justify-center"><div className="h-full w-px bg-border" /></div>
-            <GapSlot gap={{ ref: lane, index: i }} active={!!dragging} problem={problems.get(gapKey({ ref: lane, index: i })) ?? null}>{adder(i)}</GapSlot>
+            <GapSlot gap={{ ref: lane, index: i }} active={!!dragging}>{adder(i)}</GapSlot>
             <div className="flex h-5 items-center justify-center"><div className="h-full w-px bg-border" /></div>
             {renderCard(s, i, depth, inLoop, lane.section)}
           </div>
         ))}
         {steps.length > 0 && (<><div className="flex h-5 justify-center"><div className="h-full w-px bg-border" /></div>
-          <GapSlot gap={{ ref: lane, index: steps.length }} active={!!dragging} problem={problems.get(gapKey({ ref: lane, index: steps.length })) ?? null}>{adder(steps.length)}</GapSlot></>)}
+          <GapSlot gap={{ ref: lane, index: steps.length }} active={!!dragging}>{adder(steps.length)}</GapSlot></>)}
       </div>
     );
   }
@@ -231,8 +264,10 @@ export function Studio(props: Props) {
     const selected = sel === step.id;
     const remove = () => { edit(removeStep(def, step.id)); setSel("trigger"); };
     return (
-      <div className={"rounded-lg border bg-card " + (selected ? "ring-2 ring-primary " : "") + (dragging === step.id ? "opacity-40" : "")} data-testid="studio-card" data-step-id={step.id}>
+      <StepShell id={step.id} enabled={canEdit} className={"rounded-lg border bg-card " + (selected ? "ring-2 ring-primary " : "") + (dragging === step.id ? "opacity-40" : "")}>
+       {(grab) => (<>
         <div className="flex items-center gap-2 p-3">
+         <div className={"flex min-w-0 flex-1 items-center gap-2 " + (canEdit ? "cursor-grab active:cursor-grabbing" : "")} {...grab}>
           {canEdit && <DragHandle id={step.id} label={`Step ${index + 1}, ${info?.label ?? step.type}`} onKeyMove={(d) => keyMove(step.id, d)} />}
           <button type="button" className="flex min-w-0 flex-1 items-center gap-3 text-left" aria-label={`Open step ${index + 1}: ${info?.label ?? step.type}`}
             aria-pressed={selected} onClick={() => setSel(step.id)}
@@ -242,6 +277,7 @@ export function Studio(props: Props) {
               <span className="block truncate text-xs text-muted-foreground">{summary(step, props)}</span>
               {step.note && <span className="block truncate text-xs italic text-muted-foreground" data-testid="step-note">{step.note}</span>}</span>
           </button>
+         </div>
           {props.result && <ResultDot {...outcomeOf(rowsByStep.get(step.id), props.result)} />}
           {canEdit && (
             <div className="flex shrink-0 gap-1">
@@ -264,7 +300,8 @@ export function Studio(props: Props) {
             {renderLane({ section, owner: step.id, branch: "then" }, depth + 1, true)}
           </div>
         )}
-      </div>
+       </>)}
+      </StepShell>
     );
   }
 
@@ -276,7 +313,7 @@ export function Studio(props: Props) {
   const isAction = located ? meta.steps.find((m) => m.type === located.step.type)?.kind === "action" : false;
 
   return (
-    <DndContext sensors={sensors} collisionDetection={collide} onDragStart={(e) => { const id = String(e.active.id); if (id.startsWith("pill:")) { setDragPill(id.slice(5)); return; } setDragging(id); setSel(id); setNote(null); }} onDragEnd={dropOn} onDragCancel={() => { setDragging(null); setDragPill(null); }}>
+    <DndContext sensors={sensors} collisionDetection={collide} autoScroll={{ threshold: { x: 0, y: 0.2 }, acceleration: 18 }} onDragStart={(e) => { const id = String(e.active.id); if (id.startsWith("pill:")) { setDragPill(id.slice(5)); return; } setDragging(id); setSel(id); setNote(null); setDragWidth(e.active.rect.current.initial?.width ?? null); }} onDragEnd={dropOn} onDragCancel={() => { setDragging(null); setDragPill(null); }}>
     <PillFieldsContext.Provider value={registry.current}>
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_26rem]" data-testid="studio"
       onKeyDown={(e) => {
@@ -352,8 +389,18 @@ export function Studio(props: Props) {
         </fieldset>
       </aside>
     </div>
-    <DragOverlay>
-      {dragging ? <div className="rounded-lg border bg-card px-4 py-3 text-sm font-medium shadow-lg">{label(dragging)}</div>
+    <DragOverlay dropAnimation={{ duration: 120, easing: "ease-out" }}>
+      {dragging ? (() => {
+          const l = locate(def, dragging);
+          const info = l ? meta.steps.find((m) => m.type === l.step.type) : null;
+          return (
+            <div className="flex items-center gap-3 rounded-lg border-2 border-primary bg-card/90 p-3 opacity-90 shadow-xl" style={{ width: dragWidth ?? undefined }}>
+              <GripVertical className="h-4 w-4 text-muted-foreground" />
+              <span className="min-w-0"><span className="block truncate text-sm font-medium">{info?.label ?? dragging}</span>
+                <span className="block truncate text-xs text-muted-foreground">{l ? summary(l.step, props) : ""}</span></span>
+            </div>
+          );
+        })()
         : dragPill ? <span className="rounded-full border bg-primary/10 px-2 py-0.5 text-xs shadow-lg">{dragPill}</span> : null}
     </DragOverlay>
     </PillFieldsContext.Provider>

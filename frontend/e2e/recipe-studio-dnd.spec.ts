@@ -1,8 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { loginAsAdmin } from "./helpers";
 
-// tall enough that every card and drop position is on screen at once (dragging does not scroll the page for us)
-test.use({ viewport: { width: 1280, height: 1500 } });
+test.use({ viewport: { width: 1280, height: 800 } });   // a normal window: cards below the fold are reached by scrolling
 
 const recipeName = `E2E studio dnd ${Date.now()}`;
 
@@ -57,24 +56,27 @@ test("reorder and nest steps by dragging, move with the keyboard, and refuse mov
   await expect(cards.nth(1)).toContainText("C");
   await expect(handle(1)).toBeFocused();
 
-  // B reads A's output, so A cannot be moved below B
+  // B reads A's output, so a drop near the end snaps to the nearest position that keeps A before B: C, A, B
   await dragTo(page, handle(0), "steps|||3");
-  await expect(note).toContainText("Can't move it there");
-  await expect(cards.nth(0)).toContainText("A");
+  await expect(cards.nth(0)).toContainText("C");
+  await expect(cards.nth(1)).toContainText("A");
+  await expect(cards.nth(2)).toContainText("steps.s1");
 
-  // undo restores the previous order after a real move
+  // undo puts it back: A, C, B
   await page.waitForTimeout(400);                       // the drop animation briefly covers the toolbar
   await page.getByRole("button", { name: "Undo" }).click();
-  await expect(cards.nth(0)).toContainText("C");
+  await expect(cards.nth(0)).toContainText("A");
 
-  // nest C inside a new if/else, and refuse dropping the if/else into itself
+  // nest C inside a new if/else; dropping the if/else on its own branch is never accepted
   await page.getByTestId("studio-add").nth(3).click();
   await page.getByRole("menuitem", { name: "If / else", exact: true }).click();
   await expect(cards).toHaveCount(4);
-  await dragTo(page, handle(0), "steps|s4|then|0");
-  await expect(page.getByTestId("studio-card").filter({ hasText: "If / else" }).getByTestId("studio-card")).toHaveCount(1);
-  await dragTo(page, page.getByTestId("studio-card").filter({ hasText: "If / else" }).first().getByTestId("drag-handle").first(), "steps|s4|else|0");
-  await expect(note).toContainText("inside itself");
+  await dragTo(page, handle(1), "steps|s4|then|0");
+  const ifElse = page.getByTestId("studio-card").filter({ hasText: "If / else" }).first();
+  await expect(ifElse.getByTestId("studio-card")).toHaveCount(1);
+  await dragTo(page, ifElse.getByTestId("drag-handle").first(), "steps|s4|else|0");
+  await expect(page.getByTestId("studio-card").filter({ hasText: "If / else" }).first().getByTestId("studio-card")).toHaveCount(1);
+  await expect(page.getByTestId("studio-card")).toHaveCount(4);
 
   // clean up (nothing was saved)
   await page.goto("/admin/recipes");
