@@ -247,7 +247,7 @@ def test_signed_requests_post_binding(super_admin, member, anon):
     aid, _ = saml_app(super_admin, sp_cert=cert, require_signed_requests=True)
     assign(super_admin, {"id": aid}, user_id=member.user.id)
     post = lambda xml: anon.c.post("/saml/sso", data={"SAMLRequest": base64.b64encode(xml).decode()}, follow_redirects=False)  # noqa: E731
-    assert error_of(post(authn_xml())) == "This application requires signed requests"
+    assert error_of(post(authn_xml())) == "signature"
     kpem = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
     root = etree.fromstring(authn_xml(rid="_signed1"))
     etree.SubElement(root, "{%s}Signature" % P.NS["ds"], Id="placeholder", nsmap={"ds": P.NS["ds"]})
@@ -307,3 +307,24 @@ def test_expression_can_read_the_users_names(db, super_admin, member):
     got = {a["name"]: a["values"] for a in pv["attributes"]}
     assert got["shout"] == [member.user.first_name.upper()]
     assert got["who"] == [f"{member.user.first_name} {member.user.last_name}"]
+
+
+def test_error_redirects_carry_a_fixed_code_not_free_text(anon):
+    r = anon.c.get("/saml/sso", params={"SAMLRequest": "!!notbase64"}, follow_redirects=False)
+    assert error_of(r) == "invalid_request"
+
+
+def test_a_signed_request_we_cannot_verify_is_refused(super_admin, member, anon):
+    from signxml import XMLSigner, methods
+    from cryptography.hazmat.primitives import serialization
+
+    key, cert = sp_keypair()
+    aid, _ = saml_app(super_admin)                       # no certificate registered, signing not required
+    assign(super_admin, {"id": aid}, user_id=member.user.id)
+    root = etree.fromstring(authn_xml(rid="_nocert"))
+    etree.SubElement(root, "{%s}Signature" % P.NS["ds"], Id="placeholder", nsmap={"ds": P.NS["ds"]})
+    kpem = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
+    signed = XMLSigner(method=methods.enveloped, signature_algorithm="rsa-sha256", digest_algorithm="sha256",
+                       c14n_algorithm="http://www.w3.org/2001/10/xml-exc-c14n#").sign(root, key=kpem, cert=cert.encode(), reference_uri="_nocert")
+    r = anon.c.post("/saml/sso", data={"SAMLRequest": base64.b64encode(etree.tostring(signed)).decode()}, follow_redirects=False)
+    assert error_of(r) == "signature"

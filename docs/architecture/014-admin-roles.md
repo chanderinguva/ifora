@@ -29,3 +29,9 @@ At the single dependency every admin endpoint already uses (`require_admin`), fr
 - Write-capable pages still show their buttons to read-only roles; the server refuses with "Your administrator role does not allow this".
 - Role rows of a user who stops being an administrator stay and apply again if they become one; they are removed with the user.
 - `read_only_admin` can read the system log, which can contain sensitive metadata, and can export it.
+
+## Known behaviour: the help desk role can take over ordinary accounts (by design)
+`help_desk_admin` may set a password for, reset the sign-in factors of, and unlock any non-administrator account. That is
+what a help desk is for, and it also means the role can sign in as those people. Treat it as a privileged role: give it to a
+few people, expect every use in the system log (`USER_PASSWORD_CHANGED`, `MFA_RESET`), and keep administrators out of its
+reach (it can never act on another administrator).

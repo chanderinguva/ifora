@@ -10,7 +10,7 @@
 from datetime import datetime, timedelta, timezone
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from passlib.hash import argon2
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy.orm import Session
@@ -75,8 +75,20 @@ def send_link(user: User, purpose: str, raw: str, db: Session) -> bool:
         return False
 
 
+def _send_reset(user_id: int, raw: str) -> None:
+    from backend.app.tenancy import tenant_session
+
+    db = tenant_session()
+    try:
+        user = db.get(User, user_id)
+        if user is not None:
+            send_link(user, "reset", raw, db)
+    finally:
+        db.close()
+
+
 @router.post("/auth/forgot-password")
-def forgot_password(body: ForgotBody, request: Request, db: Session = Depends(get_db)):
+def forgot_password(body: ForgotBody, request: Request, tasks: BackgroundTasks, db: Session = Depends(get_db)):
     check_origin(request)
     ip = ratelimit.client_ip(request)
     email = body.email.lower()
@@ -89,7 +101,8 @@ def forgot_password(body: ForgotBody, request: Request, db: Session = Depends(ge
         raw = password_tokens.issue(db, user, "reset")
         record(db, AuditAction.PASSWORD_RESET_REQUESTED, request, None, user.id, "user", {})
         db.commit()
-        send_link(user, "reset", raw, db)
+        # After the response: SMTP takes a visible amount of time, which would tell a caller the address exists.
+        tasks.add_task(_send_reset, user.id, raw)
     return _GENERIC
 
 

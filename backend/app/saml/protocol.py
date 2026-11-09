@@ -130,7 +130,10 @@ def verify_post_signature(root: etree._Element, cert_pem: str) -> None:
     except Exception:  # signxml raises several types for malformed signatures; all mean "not verified"
         raise SamlError("The request signature could not be verified")
     signed = res[0] if isinstance(res, list) else res
-    if signed.signed_xml is not root and signed.signed_xml.get("ID") != root.get("ID"):
+    rid = root.get("ID")
+    sig = root.find(q("ds", "Signature"))
+    # The signature must be the request's own enveloped signature and cover exactly this element (no wrapping).
+    if not rid or sig is None or signed.signed_xml.get("ID") != rid or signed.signed_xml.tag != root.tag:
         raise SamlError("The request signature does not cover the request")
 
 

@@ -7,6 +7,15 @@ import { Logo } from "@/components/logo";
 import { ApiError, http } from "@/lib/http";
 import { logout } from "@/lib/auth-client";
 
+// The link carries only a code; the wording is ours, so a crafted link cannot put its own message on this page.
+const SAML_ERRORS: Record<string, string> = {
+  invalid_request: "The application's sign-in request was not valid. Go back to the application and try again.",
+  unknown_sp: "This application is not registered here. Contact your administrator.",
+  unavailable: "This application is not available right now.",
+  acs: "The application's sign-in request does not match how it is registered. Contact your administrator.",
+  signature: "The application's sign-in request could not be verified. Contact your administrator.",
+};
+
 type Out = { acs_url: string; saml_response: string; relay_state: string | null };
 
 /** Finishes a SAML sign-in: signs the user in if needed, asks the server for the signed response and posts it to the application. */
@@ -19,7 +28,7 @@ export default function SamlContinue() {
     const sp = new URLSearchParams(window.location.search);
     const rid = sp.get("request_id");
     const app = sp.get("app");
-    if (sp.get("error")) { setError(sp.get("error")); return; }
+    if (sp.get("error")) { setError(SAML_ERRORS[sp.get("error")!] ?? SAML_ERRORS.invalid_request); return; }
     if (!rid && !app) { setError("This page needs a sign-in request from an application."); return; }
     const back = `/saml/continue?${rid ? `request_id=${encodeURIComponent(rid)}` : `app=${encodeURIComponent(app!)}`}`;
     const toLogin = () => router.replace(`/login?next=${encodeURIComponent(back)}`);

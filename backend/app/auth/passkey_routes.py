@@ -102,6 +102,10 @@ async def login_verify(request: Request, response: Response, body: LoginVerify, 
     if user.status != "active":
         db.rollback()
         raise fail("inactive", user)
+    if user.is_locked_out():  # same lockout as the password path; the passkey itself is not a guessable secret, but an admin lock must hold
+        db.rollback()
+        raise fail("locked", user)
+    # Password age is deliberately not checked: a passkey sign-in does not use the password, and passkey-only accounts may have none to change.
     db.commit()  # persist counter / last_used
     return await complete_login(db, request, response, user, method="passkey")
 

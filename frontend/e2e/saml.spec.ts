@@ -78,7 +78,7 @@ test("SAML application: configure in the UI, then IdP- and SP-initiated sign-in 
   // a request from an unknown SP is refused with a readable message and nothing is posted anywhere
   const bad = req.replace(SP, "https://nobody.example.com/meta");
   await page.goto(`${API}/saml/sso?${new URLSearchParams({ SAMLRequest: deflateRawSync(Buffer.from(bad)).toString("base64") })}`);
-  await expect(page.getByTestId("saml-error")).toContainText("Unknown service provider");
+  await expect(page.getByTestId("saml-error")).toContainText("not registered here");
   expect(posts.length).toBe(2);
 
   await page.goto(`/admin/applications/${appId}`);
