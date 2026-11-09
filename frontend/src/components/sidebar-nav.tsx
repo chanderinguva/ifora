@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export type NavItem = { href: string; label: string; icon: LucideIcon };
+export type NavItem = { href: string; label: string; icon: LucideIcon; area?: string };
 /** A labelled group of related destinations (the label is optional for the first, primary group). */
 export type NavGroup = { label?: string; items: NavItem[] };
 

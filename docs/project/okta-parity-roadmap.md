@@ -18,7 +18,7 @@ Status: **Done** / **Partial** / **Todo**. Work in order; each phase is one PR.
 | Security > Global session policy | Session lifetime, MFA at sign-in, rules | Partial: fixed idle timeout; Todo: configurable policy |
 | Security > Password policy | Length, complexity, age, history, lockout | Partial: fixed rules; Todo: configurable |
 | Security > Network zones | IP allow/block lists | Done (phase 6): CIDR zones, used by app policies. Todo: dynamic zones (geo, proxies) |
-| Security > Administrators | Roles, custom roles, resource sets | Partial: admin / super admin; Todo: scoped roles |
+| Security > Administrators | Roles, custom roles, resource sets | Partial (phase 7, ADR 014): six built-in roles (org, read-only, help desk, app, group, report) enforced centrally, assigned by super admins, applied immediately. Todo: resource sets (scope to some groups/apps), custom roles, role-aware buttons |
 | Security > API tokens, Trusted origins | | Todo |
 | Workflow | Workflows, tasks | Partial: Recipes |
 | Reports > System log | Filter, search, export, detail drawer, saved search | Done (phase 4): search, time range, action list from API, target filter, detail drawer, CSV export (audited, formula-safe), saved filters (per browser). Todo: server-side saved filters, scheduled exports, streaming to SIEM |
