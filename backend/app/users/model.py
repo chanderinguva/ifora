@@ -72,6 +72,7 @@ class User(TenantOwned, Base):
     webauthn_handle = Column(String(64), nullable=True)
     passkey_required = Column(Boolean, default=False, nullable=False, server_default="false")
     lockout_until = Column(DateTime(timezone=True), nullable=True)
+    password_changed_at = Column(DateTime(timezone=True), nullable=True)
     # One-time code an operator/super admin hands to an admin who must enrol a first factor.
     enrollment_code_hash = Column(String(64), nullable=True)
     enrollment_code_expires_at = Column(DateTime(timezone=True), nullable=True)
@@ -99,6 +100,9 @@ class User(TenantOwned, Base):
     def set_password(self, password: str) -> None:
         """Hash and set password using Argon2id."""
         self.password_hash = argon2.hash(password)
+        from datetime import datetime, timezone
+
+        self.password_changed_at = datetime.now(timezone.utc)
 
     def verify_password(self, password: str) -> bool:
         """Verify password against stored hash.

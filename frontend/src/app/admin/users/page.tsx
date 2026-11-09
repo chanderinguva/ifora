@@ -1,5 +1,6 @@
 "use client";
 
+import { PasswordRules } from "@/components/password-rules";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Plus } from "lucide-react";
@@ -298,6 +299,7 @@ function CreateUser({ canMakeAdmin, onDone }: { canMakeAdmin: boolean; onDone: (
               <div className="space-y-1">
                 <Label htmlFor="nu-pw">Initial password</Label>
                 <Input id="nu-pw" type="password" required autoComplete="new-password" value={f.password} onChange={(e) => set("password", e.target.value)} />
+                <PasswordRules />
                 <p className="text-xs text-muted-foreground">12+ characters, mixed case, with a digit.</p>
               </div>
             )}

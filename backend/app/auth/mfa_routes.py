@@ -89,8 +89,11 @@ async def login_mfa(request: Request, response: Response, body: MfaLogin, db: Se
         # Every wrong code counts against the challenge, the IP, and the account lockout.
         ch.attempts += 1
         user.failed_login_attempts += 1
-        if user.failed_login_attempts >= settings.MAX_LOGIN_ATTEMPTS:
-            user.lockout_until = datetime.now(timezone.utc) + timedelta(minutes=settings.LOGIN_LOCKOUT_MINUTES)
+        from backend.app.security_policy import service as sec_policy
+
+        pol = sec_policy.get(db)
+        if user.failed_login_attempts >= pol.max_failed_attempts:
+            user.lockout_until = datetime.now(timezone.utc) + timedelta(minutes=pol.lockout_minutes)
             user.failed_login_attempts = 0
         record(db, AuditAction.MFA_CHALLENGE_FAILED, request, user, user.id, "user")
         db.commit()

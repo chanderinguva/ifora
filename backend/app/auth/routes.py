@@ -112,9 +112,12 @@ async def complete_login(db: Session, request: Request, response: Response, user
     user.lockout_until = None
     user.last_login_at = now
 
+    from backend.app.security_policy import service as sec_policy
+
+    lifetime = sec_policy.get(db).session_lifetime_hours
     session = AuthSession.create(
         user_id=user.id,
-        session_lifetime_hours=settings.SESSION_LIFETIME_HOURS,
+        session_lifetime_hours=lifetime,
         ip_address=request.client.host if request.client else None,
         user_agent=(request.headers.get("user-agent") or "")[:500],
         is_admin_session=user.is_admin,
@@ -123,7 +126,7 @@ async def complete_login(db: Session, request: Request, response: Response, user
     db.add(session)
     db.commit()
 
-    set_session_cookie(response, session.raw_token)
+    set_session_cookie(response, session.raw_token, lifetime)
 
     await log_audit(
         db,
@@ -191,8 +194,11 @@ async def login_endpoint(
         from backend.app.recipes import events as recipe_events
 
         recipe_events.emit_login_failed(db, user, user.failed_login_attempts)  # outbox row commits with the counter
-        if user.failed_login_attempts >= settings.MAX_LOGIN_ATTEMPTS:
-            user.lockout_until = now + timedelta(minutes=settings.LOGIN_LOCKOUT_MINUTES)
+        from backend.app.security_policy import service as sec_policy
+
+        pol = sec_policy.get(db)
+        if user.failed_login_attempts >= pol.max_failed_attempts:
+            user.lockout_until = now + timedelta(minutes=pol.lockout_minutes)
             user.failed_login_attempts = 0
         db.commit()
         await log_audit(
@@ -200,6 +206,14 @@ async def login_endpoint(
         )
         logger.warning("login.attempt_failed", reason="invalid_password", user_id=user.id)
         raise fail()
+
+    if user.status == "active":
+        from backend.app.security_policy import service as sec_policy
+
+        if sec_policy.expired_by_age(sec_policy.get(db), user):
+            user.status = "password_expired"  # the organization's maximum password age has passed
+            db.commit()
+            await log_audit(db, AuditAction.PASSWORD_EXPIRED_BY_POLICY, actor_id=str(user.id), request=request)
 
     if user.status == "password_expired":
         # Only someone who already knows the password learns this; the UI then offers the change-password form.

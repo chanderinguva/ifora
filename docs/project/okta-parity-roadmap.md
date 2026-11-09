@@ -15,8 +15,8 @@ Status: **Done** / **Partial** / **Todo**. Work in order; each phase is one PR.
 | Applications > Self Service | Request/approve | Partial (phase 10, ADR 017): per-app switch, request with reason, approve/deny queue, dashboard task. Todo: email notices, approver groups, expiry |
 | Security > Authenticators | Enrol policy per factor | Partial: TOTP, passkeys; Todo: factor catalogue, email OTP |
 | Security > Authentication policies | Per-app sign-on policy: network, group, device, factor, re-auth frequency | Partial (phase 6, ADR 013): per-app allow/block network zones, require MFA, recent sign-in; enforced at OIDC, SAML and SWA. Todo: group- and device-based rules, rule ordering, policy simulation |
-| Security > Global session policy | Session lifetime, MFA at sign-in, rules | Partial: fixed idle timeout; Todo: configurable policy |
-| Security > Password policy | Length, complexity, age, history, lockout | Partial: fixed rules; Todo: configurable |
+| Security > Global session policy | Session lifetime, MFA at sign-in, rules | Partial (phase 6b, ADR 018): configurable lifetime and idle timeout, lockout; applied to open sessions. Todo: MFA-at-sign-in rules, per-group rules |
+| Security > Password policy | Length, complexity, age, history, lockout | Done (phase 6b, ADR 018): length, case/digit/symbol, no name/email, history, max age, lockout. Todo: breached-password check, per-group policies |
 | Security > Network zones | IP allow/block lists | Done (phase 6): CIDR zones, used by app policies. Todo: dynamic zones (geo, proxies) |
 | Security > Administrators | Roles, custom roles, resource sets | Partial (phase 7, ADR 014): six built-in roles (org, read-only, help desk, app, group, report) enforced centrally, assigned by super admins, applied immediately. Todo: resource sets (scope to some groups/apps), custom roles, role-aware buttons |
 | Security > API tokens, Trusted origins | | Todo |

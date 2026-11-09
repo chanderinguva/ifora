@@ -38,12 +38,11 @@ def validate_attributes(value: Dict[str, Any]) -> Dict[str, AttrValue]:
 
 
 def validate_password(value: str) -> str:
-    if len(value) < 12:
-        raise ValueError("password must be at least 12 characters")
+    """Hard bounds only. The organization's configurable rules are applied by security_policy.service."""
+    if len(value) < 8:
+        raise ValueError("password must be at least 8 characters")
     if len(value) > 128:
         raise ValueError("password must be at most 128 characters")
-    if value.lower() == value or value.upper() == value or not any(c.isdigit() for c in value):
-        raise ValueError("password must mix upper/lower case letters and include a digit")
     return value
 
 

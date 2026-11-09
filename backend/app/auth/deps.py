@@ -16,12 +16,12 @@ from backend.app.users.model import User
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 
-def set_session_cookie(response: Response, raw_token: str) -> None:
+def set_session_cookie(response: Response, raw_token: str, lifetime_hours: Optional[int] = None) -> None:
     """Set the opaque session cookie (HttpOnly, SameSite, Secure per config)."""
     response.set_cookie(
         key=settings.SESSION_COOKIE_NAME,
         value=raw_token,
-        max_age=settings.SESSION_LIFETIME_HOURS * 3600,
+        max_age=(lifetime_hours or settings.SESSION_LIFETIME_HOURS) * 3600,
         path="/",
         httponly=True,
         secure=settings.SESSION_COOKIE_SECURE,
@@ -71,8 +71,12 @@ def get_session_and_user(
             db.commit()
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    idle = timedelta(minutes=settings.SESSION_IDLE_TIMEOUT_MINUTES)
-    if datetime.now(timezone.utc) - session.last_activity_at > idle:
+    from backend.app.security_policy import service as sec_policy
+
+    pol = sec_policy.get(db)  # read at every request, so a tightened policy applies to sessions already open
+    now = datetime.now(timezone.utc)
+    idle = timedelta(minutes=pol.idle_timeout_minutes)
+    if now - session.last_activity_at > idle or now - session.created_at > timedelta(hours=pol.session_lifetime_hours):
         session.status = SessionStatus.EXPIRED.value
         db.commit()
         raise HTTPException(status_code=401, detail="Not authenticated")

@@ -1,8 +1,6 @@
 """Admin user management API (deny-by-default: every route requires an admin)."""
 
 import re
-import secrets
-import string
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -118,15 +116,6 @@ def _clean_attrs(db: Session, values: Dict[str, Any], current: Dict[str, Any]) -
     return {k: v for k, v in cleaned.items() if v is not None}
 
 
-def _generate_password() -> str:
-    """Random 20-char password that satisfies the password policy (mixed case + digit)."""
-    alphabet = string.ascii_letters + string.digits
-    while True:
-        pw = "".join(secrets.choice(alphabet) for _ in range(20))
-        if any(c.islower() for c in pw) and any(c.isupper() for c in pw) and any(c.isdigit() for c in pw):
-            return pw
-
-
 def _unique_username(db: Session, base: str) -> str:
     base = re.sub(r"[^a-z0-9._-]", "", base.lower()) or "user"
     base = (base if len(base) >= 2 else base + "0")[:44]
@@ -191,8 +180,12 @@ def create_user(
             raise HTTPException(status_code=422, detail="Unknown group")
         if any(g.is_system_group for g in groups):
             raise HTTPException(status_code=422, detail="System groups cannot be assigned here")
-    password = body.password if body.password is not None else _generate_password()
+    from backend.app.security_policy import service as policy
+
     email = body.email.lower()
+    if body.password is not None:
+        policy.validate_new(db, body.password, None, email, body.first_name, body.last_name)
+    password = body.password if body.password is not None else policy.generate(db)
     if db.query(User.id).filter(User.email == email).first():
         raise HTTPException(status_code=409, detail="Email already in use")
     username = body.username or _unique_username(db, email.split("@")[0])
@@ -360,7 +353,9 @@ def reset_password(
 ):
     user = _get_or_404(db, user_id)
     _guard_target(actor, user)
-    user.set_password(body.new_password)
+    from backend.app.security_policy import service as policy
+
+    policy.set_checked(db, user, body.new_password)
     user.failed_login_attempts = 0
     user.lockout_until = None
     revoked = revoke_user_sessions(db, user.id)

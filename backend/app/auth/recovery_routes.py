@@ -104,6 +104,9 @@ def reset_password(body: SetPasswordBody, request: Request, db: Session = Depend
     if token is None or user is None or user.status not in RESETTABLE:
         ratelimit.hit("pwtoken_ip", ip, 3600)
         raise HTTPException(status_code=400, detail="This link is invalid or has expired")
+    from backend.app.security_policy import service as policy
+
+    policy.validate_new(db, body.new_password, user)  # before the claim, so a weak password does not burn the link
     now = datetime.now(timezone.utc)
     # claim atomically: of two concurrent requests with the same token only one may win
     claimed = (
@@ -115,7 +118,7 @@ def reset_password(body: SetPasswordBody, request: Request, db: Session = Depend
         db.rollback()
         ratelimit.hit("pwtoken_ip", ip, 3600)
         raise HTTPException(status_code=400, detail="This link is invalid or has expired")
-    user.set_password(body.new_password)
+    policy.apply_new(db, user, body.new_password)
     user.failed_login_attempts = 0
     user.lockout_until = None
     if user.status != "active":
@@ -142,17 +145,20 @@ def change_expired_password(body: ExpiredBody, request: Request, db: Session = D
             pass
         ratelimit.hit("login", ip, settings.RATE_LIMIT_LOGIN_WINDOW_SECONDS)
         raise invalid
+    from backend.app.security_policy import service as policy
+
+    pol = policy.get(db)
     if not user.verify_password(body.current_password):
         user.failed_login_attempts += 1
-        if user.failed_login_attempts >= settings.MAX_LOGIN_ATTEMPTS:
-            user.lockout_until = datetime.now(timezone.utc) + timedelta(minutes=settings.LOGIN_LOCKOUT_MINUTES)
+        if user.failed_login_attempts >= pol.max_failed_attempts:
+            user.lockout_until = datetime.now(timezone.utc) + timedelta(minutes=pol.lockout_minutes)
             user.failed_login_attempts = 0
         db.commit()
         ratelimit.hit("login", ip, settings.RATE_LIMIT_LOGIN_WINDOW_SECONDS)
         raise invalid
     if body.new_password == body.current_password:
         raise HTTPException(status_code=422, detail="Choose a password different from the current one")
-    user.set_password(body.new_password)
+    policy.set_checked(db, user, body.new_password)
     user.status = "active"
     user.failed_login_attempts = 0
     revoke_user_sessions(db, user.id)
