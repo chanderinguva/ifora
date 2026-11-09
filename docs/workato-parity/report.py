@@ -56,12 +56,24 @@ def main():
     for f in feats:
         gaps = "; ".join(f["gaps"][:2]) + (" …" if len(f["gaps"]) > 2 else "")
         lines.append(f"| {f['id']} | {f['name']} | {f['status'].replace('_', ' ')} | {f['research'].replace('_', ' ')} | {f['priority']} | {gaps or '—'} |")
+    cov = [f for f in feats if "documented_items" in f]
+    for f in cov:
+        if not set(f.get("covered_items", {})) <= set(f["documented_items"]):
+            print(f"{f['id']}: covered_items not in documented_items")
+            sys.exit(1)
+    if cov:
+        lines += ["", "## Documented method coverage (our equivalent exists, may differ in behaviour)", "", "| ID | Category | Covered | Documented |", "|---|---|---|---|"]
+        lines += [f"| {f['id']} | {f['name'].split(' (')[0]} | {len(f.get('covered_items', {}))} | {len(f['documented_items'])} |" for f in cov]
+    gaps = data.get("research_gaps", [])
+    if gaps:
+        lines += ["", "## Research gaps (documentation not read; not a decision to omit)", ""]
+        lines += [f"- {g['topic']} (tried {g['tried']}: {g['result']})" for g in gaps]
     ready = [f for f in feats if f["status"] in ("not_implemented", "partial") and f["priority"] == "high"
              and all(next(x for x in feats if x["id"] == d)["status"] in ("verified", "implemented", "partial") for d in f["depends_on"])]
     lines += ["", "## Next candidates (high priority, dependencies in place)", ""] + [f"- {f['id']} {f['name']}: {f['gaps'][0] if f['gaps'] else ''}" for f in ready]
     with open(os.path.join(HERE, "STATUS.md"), "w") as fh:
         fh.write("\n".join(lines) + "\n")
-    print(f"ok: {len(feats)} features; " + ", ".join(f"{k}={v}" for k, v in by.items()))
+    print(f"ok: {len(feats)} features, {len(gaps)} research gaps; " + ", ".join(f"{k}={v}" for k, v in by.items()))
 
 
 main()

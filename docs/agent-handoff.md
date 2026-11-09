@@ -4,10 +4,12 @@
 
 ## State
 - Merged to `main`: formulas (#65), variables/wait/throttle (#66).
-- Open, not merged: **#67 lookup tables** (branch `feature-recipe-lookup-tables`, commit `70342ea`). The docs branch `docs-workato-parity` is stacked on it.
+- Open, not merged (do not merge without approval): **#67 lookup tables** (branch `feature-recipe-lookup-tables`, commit `70342ea`); **#68 docs** (branch `docs-workato-parity`, base is the #67 branch).
+- Registry now 48 features + 15 research gaps (formula method coverage per documented category, trigger mechanisms). Formula coverage is computed in STATUS.md.
 - Parity design: `docs/architecture/022-workato-parity.md`; registry `docs/workato-parity/features.yaml`; report `docs/workato-parity/STATUS.md` (regenerate with `python3 docs/workato-parity/report.py`, needs PyYAML or macOS ruby).
 
 ## Next (high priority, dependencies in place, per STATUS.md)
+Active task after the docs PR: **WP-012 then WP-011**: list values in step outputs, formula list functions (`pluck`, `sum`, `uniq`, `reverse`, `index`, `compact`, `concat`), and a Repeat step over a list.
 1. WP-011/WP-012 list-valued step outputs and a loop over them (unblocks map/filter and callable recipes).
 2. WP-016 callable recipes (ADR 021 section 3).
 3. WP-014 Handle errors block scoped to part of a flow (engine change).

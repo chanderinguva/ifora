@@ -15,6 +15,9 @@ The owner wants recipe authoring and execution that matches what Workato recipes
 ## Decision
 Keep the modular monolith and the existing engine; add Workato-style capabilities as engine features behind the same definition schema, and track them in a machine-readable registry. We do **not** build a second engine, a node-graph canvas, or a Ruby runtime. Compatibility is of *behaviour documented by Workato*, not of its file formats, formula language or SDK.
 
+### How the registry grows
+The 37 first entries are a baseline. Every Workato documentation page that is actually read adds or refines entries: the formula pages list each documented method, and `documented_items` / `covered_items` record which have an equivalent in our evaluator (so "missing" is a computed fact, not an impression); trigger mechanisms, dispatch types and conditions are separate entries. Pages that could not be read are listed under `research_gaps` in `features.yaml` and in `STATUS.md`; they are research tasks, never silent omissions. Before implementing a feature whose research is `not_researched`, read its page first and update the entry.
+
 ## Alternatives considered
 - **Embed or wrap an open-source workflow engine** (n8n-style graph): rejected, different interaction model and a second authorization and audit surface.
 - **Implement Workato's Ruby formula mode and Ruby Connector SDK**: rejected for now. It would need a sandboxed Ruby runtime (ADR 021 section 4 is still undecided) and the formula allow-list is not fully public. Our closed formula language (ADR 021 section 1) gives the same capability with a smaller attack surface; formulas are not portable to Workato.

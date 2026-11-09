@@ -510,7 +510,7 @@ features:
 - id: WP-032
   name: "Scheduling and polling"
   category: triggers
-  doc_ref: "/en/features/scheduler/triggers/new-recurring-event (cron expressions)"
+  doc_ref: "/en/recipes/triggers (Scheduler: custom schedules use cron expressions, minimum interval five minutes)"
   research: partial
   ui: "Every N minutes (5 to 1440)"
   backend: "Slot-based idempotency key per schedule slot"
@@ -598,3 +598,246 @@ features:
   status: not_planned
   gaps:
     - "Documented by Workato; not requested for IdentityForge"
+- id: WP-040
+  name: "String formulas (documented methods vs ours)"
+  category: formulas
+  doc_ref: "/en/formulas/string-formulas (method list read)"
+  research: complete
+  ui: "Function list in the step panel and {{= suggestions list every implemented function with an example"
+  backend: "18 of 49 documented methods have an equivalent in formula.py; regular expressions (match?, scan, sub/gsub patterns) are deliberately absent (no ReDoS); locale helpers (country, currency, phone, state) have no data source yet"
+  depends_on: ["WP-009"]
+  files: ["backend/app/recipes/formula.py"]
+  acceptance: "Every documented method either has an executable equivalent with tests or is listed as missing"
+  tests: ["backend/tests/test_recipe_formulas.py"]
+  priority: medium
+  status: partial
+  documented_items: ["blank?", "is_not_true?", "is_true?", "present?", "presence", "include?", "exclude?", "match?", "ends_with?", "starts_with?", "parameterize", "lstrip", "rstrip", "scrub", "strip", "strip_tags", "ljust", "rjust", "reverse", "gsub", "sub", "length", "slice", "scan", "encode", "transliterate", "capitalize", "titleize", "upcase", "downcase", "quote", "split", "bytes", "bytesize", "byteslice", "to_s", "ordinalize", "to_f", "to_i", "to_country_alpha2", "to_country_alpha3", "to_country_name", "to_currency", "to_currency_code", "to_currency_name", "to_currency_symbol", "to_phone", "to_state_code", "to_state_name"]
+  covered_items:
+    "blank?": "is_blank"
+    "present?": "not is_blank"
+    "presence": "coalesce"
+    "include?": "contains"
+    "exclude?": "not contains"
+    "ends_with?": "ends_with"
+    "starts_with?": "starts_with"
+    "strip": "trim"
+    "length": "length"
+    "upcase": "upper"
+    "downcase": "lower"
+    "slice": "substring"
+    "split": "split"
+    "to_s": "text"
+    "to_f": "number"
+    "to_i": "number then floor"
+    "sub": "replace (literal text only)"
+    "gsub": "replace (literal text only)"
+  gaps:
+    - "Missing: is_not_true?, is_true?, match?, parameterize, lstrip, rstrip, scrub, strip_tags, ljust, rjust, reverse, scan, encode, transliterate, capitalize, titleize, quote, bytes, bytesize, byteslice, ordinalize, to_country_alpha2, to_country_alpha3, to_country_name, to_currency, to_currency_code, to_currency_name, to_currency_symbol, to_phone, to_state_code, to_state_name"
+- id: WP-041
+  name: "Number formulas (documented methods vs ours)"
+  category: formulas
+  doc_ref: "/en/formulas/number-formulas (method list read)"
+  research: complete
+  ui: "Function list in the step panel and {{= suggestions list every implemented function with an example"
+  backend: "15 of 20 documented methods have an equivalent in formula.py; no exponent operator; even?/odd? can be written with %"
+  depends_on: ["WP-009"]
+  files: ["backend/app/recipes/formula.py"]
+  acceptance: "Every documented method either has an executable equivalent with tests or is listed as missing"
+  tests: ["backend/tests/test_recipe_formulas.py"]
+  priority: medium
+  status: partial
+  documented_items: ["+", "-", "*", "/", "**", "%", "abs", "round", "blank?", "even?", "odd?", "present?", "presence", "ceil", "floor", "to_f", "to_i", "to_s", "to_currency", "to_phone"]
+  covered_items:
+    "+": "+"
+    "-": "-"
+    "*": "*"
+    "/": "/"
+    "%": "%"
+    "abs": "abs"
+    "round": "round"
+    "blank?": "is_blank"
+    "present?": "not is_blank"
+    "presence": "coalesce"
+    "ceil": "ceil"
+    "floor": "floor"
+    "to_f": "number"
+    "to_i": "number then floor"
+    "to_s": "text"
+  gaps:
+    - "Missing: **, even?, odd?, to_currency, to_phone"
+- id: WP-042
+  name: "Date and datetime formulas (documented methods vs ours)"
+  category: formulas
+  doc_ref: "/en/formulas/date-formulas (method list read)"
+  research: complete
+  ui: "Function list in the step panel and {{= suggestions list every implemented function with an example"
+  backend: "7 of 19 documented methods have an equivalent in formula.py; dates are UTC ISO text; no time zones, week or month boundaries, or sub-day arithmetic"
+  depends_on: ["WP-009"]
+  files: ["backend/app/recipes/formula.py"]
+  acceptance: "Every documented method either has an executable equivalent with tests or is listed as missing"
+  tests: ["backend/tests/test_recipe_formulas.py"]
+  priority: medium
+  status: partial
+  documented_items: ["now", "today", "from_now", "ago", "wday", "yday", "yweek", "beginning_of_hour", "beginning_of_day", "beginning_of_week", "beginning_of_month", "beginning_of_year", "end_of_month", "strftime", "in_time_zone", "dst?", "to_date", "to_time", "to_i"]
+  covered_items:
+    "now": "now"
+    "today": "today"
+    "strftime": "format_date"
+    "from_now": "add_days (days only)"
+    "ago": "add_days with a negative number (days only)"
+    "to_date": "parse_date"
+    "to_time": "parse_date"
+  gaps:
+    - "Missing: wday, yday, yweek, beginning_of_hour, beginning_of_day, beginning_of_week, beginning_of_month, beginning_of_year, end_of_month, in_time_zone, dst?, to_i"
+- id: WP-043
+  name: "List formulas (documented methods vs ours)"
+  category: formulas
+  doc_ref: "/en/formulas/array-list-formulas (method list read)"
+  research: complete
+  ui: "Function list in the step panel and {{= suggestions list every implemented function with an example"
+  backend: "5 of 19 documented methods have an equivalent in formula.py; no list-valued step outputs yet and no formulas that take a function or condition (where, except, pluck, format_map); min and max exist for numbers, not lists"
+  depends_on: ["WP-009"]
+  files: ["backend/app/recipes/formula.py"]
+  acceptance: "Every documented method either has an executable equivalent with tests or is listed as missing"
+  tests: ["backend/tests/test_recipe_formulas.py"]
+  priority: medium
+  status: partial
+  documented_items: ["first", "last", "index", "count", "where", "except", "pluck", "format_map", "join", "smart_join", "concat", "reverse", "sum", "uniq", "flatten", "length", "max", "min", "compact"]
+  covered_items:
+    "first": "first"
+    "last": "last"
+    "count": "count"
+    "join": "join"
+    "length": "length"
+  gaps:
+    - "Missing: index, where, except, pluck, format_map, smart_join, concat, reverse, sum, uniq, flatten, max, min, compact"
+- id: WP-044
+  name: "Complex data type (hash) formulas (documented methods vs ours)"
+  category: formulas
+  doc_ref: "/en/formulas/complex-data-types (method list read)"
+  research: complete
+  ui: "Function list in the step panel and {{= suggestions list every implemented function with an example"
+  backend: "0 of 1 documented methods have an equivalent in formula.py; the page documents only pluck (linked to the list page); get(object, key) reads one value; hash methods beyond that are not documented there"
+  depends_on: ["WP-009"]
+  files: ["backend/app/recipes/formula.py"]
+  acceptance: "Every documented method either has an executable equivalent with tests or is listed as missing"
+  tests: ["backend/tests/test_recipe_formulas.py"]
+  priority: low
+  status: partial
+  documented_items: ["pluck"]
+  covered_items:
+    {}
+  gaps:
+    - "Missing: pluck"
+- id: WP-045
+  name: "Trigger mechanisms: polling, real-time, scheduled, change data capture"
+  category: triggers
+  doc_ref: "/en/recipes/triggers (read)"
+  research: complete
+  ui: "Trigger picker lists IdentityForge events, schedule, manual and webhook"
+  backend: "Real-time through an outbox (no polling needed: events are ours), interval schedule, manual, signed webhook"
+  depends_on: ["WP-004"]
+  files: ["backend/app/recipes/events.py", "backend/app/recipes/engine.py"]
+  acceptance: "Each documented mechanism either exists or is recorded as not applicable"
+  tests: ["backend/tests/test_recipes_m3.py"]
+  priority: medium
+  status: partial
+  gaps:
+    - "No polling triggers (needs third-party connectors, WP-019)"
+    - "No change data capture"
+    - "Workato webhook triggers have no backup poll and can drop events; ours are transactional for internal events"
+- id: WP-046
+  name: "Trigger dispatch types: single, batch, bulk"
+  category: triggers
+  doc_ref: "/en/recipes/triggers (read)"
+  research: complete
+  ui: "None"
+  backend: "Single only: one job per event"
+  depends_on: ["WP-011"]
+  files: []
+  acceptance: "A batch trigger starts one job with a list of events of a configured size; bulk streams CSV"
+  tests: []
+  priority: medium
+  status: not_implemented
+  gaps:
+    - "Needs list-valued data (WP-012) and loops over lists (WP-011) first"
+    - "Bulk (CSV streaming) is not planned"
+- id: WP-047
+  name: "Trigger conditions (AND/OR filters)"
+  category: triggers
+  doc_ref: "/en/recipes/triggers (read)"
+  research: complete
+  ui: "Trigger filter with comparisons, match all or any"
+  backend: "Filter evaluated before a job is created, taint rule applies"
+  depends_on: ["WP-004"]
+  files: ["backend/app/recipes/engine.py", "backend/app/recipes/conditions.py"]
+  acceptance: "Only matching events start a job; user-editable values cannot filter"
+  tests: ["backend/tests/test_recipes_m3.py", "backend/tests/test_recipes_security.py"]
+  priority: medium
+  status: implemented
+  gaps:
+    - "Not checked against Workato's documented late-evaluation caveat (records updated later to match may be missed); ours filters the event as emitted"
+- id: WP-048
+  name: "Trigger processing order, concurrency and from-date"
+  category: triggers
+  doc_ref: "/en/recipes/triggers (read; concurrency settings are on a page not read)"
+  research: partial
+  ui: "Recipe settings: hourly rate limit"
+  backend: "Outbox rows dispatched in id order, jobs claimed oldest first, at most 5 concurrent jobs per recipe, per-recipe hourly rate limit"
+  depends_on: ["WP-021"]
+  files: ["backend/app/recipes/engine.py"]
+  acceptance: "Events are processed in order by default, concurrency is configurable per recipe, a start date can be chosen where it applies"
+  tests: ["backend/tests/test_recipes_m3.py", "backend/tests/test_recipes_m7.py"]
+  priority: low
+  status: partial
+  gaps:
+    - "Concurrency is a server setting, not per recipe"
+    - "No from-date (our triggers are push events, not polled history)"
+- id: WP-049
+  name: "RecipeOps connector (monitor recipes, jobs and the account from a recipe)"
+  category: monitoring
+  doc_ref: "/en/connectors/recipeops (listed on /en/recipes, not read)"
+  research: not_researched
+  ui: "None"
+  backend: "None (job-failure alerts are audit events and logs)"
+  depends_on: ["WP-016"]
+  files: []
+  acceptance: "To be defined after the page is read"
+  tests: []
+  priority: low
+  status: not_implemented
+  gaps:
+    - "Not researched"
+- id: WP-050
+  name: "Job report: columns, CSV export, rerun rules, paused and pending jobs"
+  category: runtime
+  doc_ref: "/en/recipes/jobs (read)"
+  research: complete
+  ui: "Job list with status filter"
+  backend: "Rerun of failed or cancelled jobs on the job's own definition"
+  depends_on: ["WP-022"]
+  files: ["backend/app/recipes/routes.py"]
+  acceptance: "Report columns up to 10 custom, CSV export of the latest 1,000 matching rows, rerun of completed or failed jobs from the stored trigger event on the latest version"
+  tests: []
+  priority: low
+  status: not_implemented
+  gaps:
+    - "Workato: reruns use the latest recipe version; ours reruns the stored definition"
+    - "No paused state when a recipe is stopped and no 30-day pending expiry"
+research_gaps:
+  # Pages needed for exact parity that could not be read or were not fetched. Each is a research task, not a decision to omit.
+  - {topic: "Recipe editor UI", tried: "/en/recipes/recipe-editor", result: "404"}
+  - {topic: "Error handling (monitor, retry, error types)", tried: "/en/recipes/error-handling", result: "404; only the Handle errors one-liner on /en/recipes/steps was read"}
+  - {topic: "Recipe versioning and version history", tried: "/en/recipes/versioning", result: "404"}
+  - {topic: "Recipe lifecycle management: environments, packages, projects, folders", tried: "/en/recipe-lifecycle-management", result: "404"}
+  - {topic: "Formula syntax: datapill references in formulas, null handling", tried: "/en/formulas/formula-mode", result: "page read; reference syntax and null handling not covered"}
+  - {topic: "Connector SDK structure, authentication types, testing tools", tried: "/en/developing-connectors/sdk", result: "overview only; /en/developing-connectors/sdk quickstart not read"}
+  - {topic: "Connections and authentication types", tried: "/en/connections (linked, not fetched)", result: "not fetched"}
+  - {topic: "Data pills and data tree", tried: "none", result: "not fetched"}
+  - {topic: "Recipe function inputs, outputs, limits and error behaviour", tried: "/en/connectors/recipe-functions", result: "overview only; action pages not read"}
+  - {topic: "Recipe concurrency, change data capture, bulk triggers", tried: "/en/recipes/triggers", result: "named, details on pages not read"}
+  - {topic: "Webhook trigger configuration", tried: "/en/connectors/workato-webhooks/config (linked)", result: "not fetched"}
+  - {topic: "API platform: API recipes, endpoints, collections, authentication, rate limits", tried: "/en/api-mgmt/api-recipes (linked)", result: "not fetched"}
+  - {topic: "Data tables", tried: "none", result: "not fetched"}
+  - {topic: "Workspace administration: roles and privileges, audit log, data retention, quotas", tried: "none", result: "not fetched"}
+  - {topic: "Workbot for Slack, AIRO, community library, data pipeline and genie recipes", tried: "/en/recipes (linked)", result: "listed only; recorded as not planned in WP-037"}
