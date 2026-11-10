@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" fill="none">
-<title>Ember: Fold mark with a hot dot</title>
-<path d="M48 14H22V52" stroke="#020817" stroke-width="9" stroke-linejoin="miter" stroke-linecap="butt"/><path d="M22 33H40" stroke="#020817" stroke-width="9" stroke-linecap="butt"/><circle cx="46" cy="47" r="6.5" fill="#F97316"/>
-</svg>
