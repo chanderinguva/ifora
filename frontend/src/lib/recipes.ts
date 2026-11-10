@@ -66,6 +66,8 @@ export type RecipeMeta = {
   managed_attributes: { key: string; display_name: string; data_type: string; enum_options: string[] | null }[];
   safe_user_fields: string[];
   limits: { max_steps: number; max_nesting: number };
+  callable_recipes?: { id: number; name: string; inputs: { name: string; type: string; required: boolean }[]; outputs: string[] }[];
+  lookup_tables?: { name: string; columns: { name: string; type: string }[]; key_column: string | null; admin_managed: boolean }[];
   functions?: { name: string; signature: string; description: string; example: string }[];
 };
 
@@ -150,6 +152,12 @@ export function stepsBefore(steps: StepNode[], targetId: string | null): StepNod
       if (done) return;
       if (s.id === targetId) { done = true; return; }
       out.push(s);
+      if (s.type === "handle_errors") {   // what a block's steps produce is unknown after it, and its lanes cannot see each other
+        const has = (l: StepNode[]): boolean => l.some((x) => x.id === targetId || has(x.then ?? []) || has(x.else ?? []));
+        if (has(s.then ?? [])) walk(s.then ?? []);
+        else if (has(s.else ?? [])) walk(s.else ?? []);
+        continue;
+      }
       walk(s.then ?? []);
       walk(s.else ?? []);
     }
@@ -158,12 +166,17 @@ export function stepsBefore(steps: StepNode[], targetId: string | null): StepNod
   return out;
 }
 
-export function stepPills(meta: RecipeMeta, before: StepNode[]): Pill[] {
+/** `forDecision`: leave out what a recipe-writable lookup table returns (the server refuses it in decisions and state changes). */
+export function stepPills(meta: RecipeMeta, before: StepNode[], forDecision = false): Pill[] {
   const pills: Pill[] = [];
   for (const s of before) {
     const info = meta.steps.find((m) => m.type === s.type);
     const label = s.name || info?.label || s.type;
+    const lt = s.type === "lookup_row" ? meta.lookup_tables?.find((t) => t.name === s.config?.table) : undefined;
+    if (s.type === "lookup_row" && forDecision && !(lt?.admin_managed)) continue;
     for (const o of info?.outputs ?? []) pills.push({ path: `steps.${s.id}.output.${o}`, label: `${label} (${s.id}): ${o}` });
+    for (const c of lt?.columns ?? []) pills.push({ path: `steps.${s.id}.output.row.${c.name}`, label: `${label} (${s.id}): row ${c.name}` });
+    if (s.type === "call_recipe") for (const o of meta.callable_recipes?.find((r) => r.id === s.config?.recipe_id)?.outputs ?? []) pills.push({ path: `steps.${s.id}.output.result.${o}`, label: `${label} (${s.id}): ${o}` });
     if (s.type === "set_variable" && s.config?.name) pills.push({ path: `vars.${s.config.name}`, label: `Variable: ${s.config.name}` });
     if (info?.kind === "action") pills.push({ path: `steps.${s.id}.output.error`, label: `${label} (${s.id}): error (when set to continue)` });
   }
@@ -180,7 +193,7 @@ export function decisionPills(meta: RecipeMeta, triggerType: string, before: Ste
     if (p.path.startsWith("trigger.user.attributes.")) return managed.has(p.path.slice("trigger.user.attributes.".length));
     return safe.has(p.path);
   });
-  return [...ok, ...stepPills(meta, before)];
+  return [...ok, ...stepPills(meta, before, true)];
 }
 
 export function statusTone(s: string): "good" | "bad" | "info" | "neutral" {

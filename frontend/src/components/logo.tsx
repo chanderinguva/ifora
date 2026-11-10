@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { logoUrl, useBranding } from "@/lib/branding";
@@ -26,11 +29,42 @@ export function LogoMark({ className, title }: { className?: string; title?: str
   );
 }
 
-/** The organization's uploaded logo when there is one, otherwise the IdentityForge mark. */
+/** Average brightness (0-1) of the visible pixels, or null when the browser will not let us read the image. */
+function brightness(img: HTMLImageElement): number | null {
+  try {
+    const c = document.createElement("canvas");
+    c.width = c.height = 24;
+    const g = c.getContext("2d");
+    if (!g) return null;
+    g.drawImage(img, 0, 0, 24, 24);
+    const d = g.getImageData(0, 0, 24, 24).data;
+    let sum = 0, n = 0;
+    for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 128) { sum += (0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]) / 255; n++; }
+    return n ? sum / n : null;
+  } catch { return null; }   // cross-origin image: unreadable
+}
+
+/** The organization's uploaded logo when there is one, otherwise the IdentityForge mark.
+ *  A dark logo disappears on the dark theme, so in dark mode it sits on a light backing; light logos are left alone. */
 function BrandMark({ className }: { className?: string }) {
   const { branding } = useBranding();
-  // eslint-disable-next-line @next/next/no-img-element
-  if (branding.has_logo) return <img src={logoUrl(branding)} alt="" className={cn("h-7 w-7 shrink-0 rounded object-contain", className)} data-testid="logo-image" />;
+  const [needsBacking, setNeedsBacking] = useState(true);   // unknown = safe: show the backing
+  const url = branding.has_logo ? logoUrl(branding) : null;
+  useEffect(() => {   // measure with a separate CORS-mode request so the visible image never depends on CORS
+    if (!url) return;
+    const probe = new Image();
+    probe.crossOrigin = "anonymous";
+    probe.onload = () => { const b = brightness(probe); setNeedsBacking(b === null || b < 0.55); };
+    probe.onerror = () => setNeedsBacking(true);
+    probe.src = url;
+  }, [url]);
+  if (url) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={url} alt="" data-testid="logo-image"
+        className={cn("h-7 w-7 shrink-0 rounded object-contain", needsBacking && "dark:bg-white dark:p-[3px]", className)} />
+    );
+  }
   return <LogoMark className={className} />;
 }
 

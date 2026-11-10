@@ -61,7 +61,9 @@ Include in the roadmap, not in this ADR's first cut: recipe **folders/tags/searc
 1. Editor phases 1-4 (ADR 020).
 2. Formula mode (parser, library, tests incl. a fuzz test for the parser and the taint rule).
 3. **Done**: variables, wait/delay and throttle (see "Implemented: variables, wait, throttle"). Still open: wait-for-event.
-4. Lookup tables (models, admin page, steps, formula function).
+4. **Done** (formula function deferred): lookup tables (models, admin page, steps). See "Implemented: lookup tables".
+4a. **Done**: list functions and repeat for each item (see "Implemented: list functions and For each item in a list").
+4b. **Done**: callable recipes (see "Implemented: callable recipes").
 5. Callable recipes (child jobs, schema, depth/recursion guards).
 6. Custom API call upgrades, then custom connectors (+ OpenAPI import).
 7. Code-runner service and code steps, off by default, with a documented threat model and a hardening checklist; each language image added separately (Python first).
@@ -149,3 +151,51 @@ Include in the roadmap, not in this ADR's first cut: recipe **folders/tags/searc
 **Throttle** (`throttle`, `max_runs` per `per_minutes`, 1 to 1440): counts how many jobs of the recipe passed this step in the window (the history rows of live jobs, so it follows `RECIPES_JOB_RETENTION_DAYS`: keep retention at 1 day or more). One job decides at a time (a Postgres advisory lock held until the step commits), so two jobs cannot take the last slot. When full, `wait` pauses the job until the oldest pass leaves the window (re-checked then; one history row, not one per re-check), `stop` cancels the job with the reason "dropped by the throttle step" (a dropped job is not counted as a pass). Test runs are never limited. Not allowed in the error steps.
 
 Not included: wait for an event or a date, throttling across recipes, per-user throttles, list/map variables with in-place updates (set a new value instead).
+
+
+---
+
+# Implemented: lookup tables
+
+**Tables** (`lookup_tables`, `lookup_rows`, migration 0048): name (`a-z0-9_`, 40 characters, never renamed), up to 20 typed columns (text, number, yes/no, date), an optional **key column** (values unique, recipes can update or delete by it), up to 50 000 rows (a row at most 4 KB, a text cell 500 characters) and 50 tables per tenant. Managed under **Recipes › Lookup tables** (grid editor, search, CSV import and export) and `/admin/lookup-tables`, area `automation` (so the existing role map applies: read-only roles can read, only write roles change anything). Columns can be added later, not removed or retyped. A table that a recipe (draft or published version) uses cannot be deleted. Every change is audited (`LOOKUP_TABLE_*`, `LOOKUP_ROWS_CHANGED` with the key, never the values; recipe writes as `RECIPE_LOOKUP_WRITE`). CSV import is all or nothing (first five problems listed with line numbers, 5 000 rows per import, append or replace); export neutralises spreadsheet formulas.
+
+**Steps.** *Look up a row* (`lookup_row`): table, column, value. Outputs `found`, `count` and the first matching row (`row.<column>`, empty columns read as nothing). Exact, case-sensitive match on the typed value (so `5.0` finds `5`). *Add, update or delete a lookup row* (`lookup_write`): `add`, `upsert` (by key) or `delete` (by key); values are templates converted to the column types; a bad value fails the step. A test run reads for real and writes nothing.
+
+**Trust (the part that matters).** A table is either
+- **administrator-managed** (default): only administrators write it (recipes cannot, refused on save and at run time), so what a recipe reads from it is as trustworthy as the table and can drive decisions and account changes; or
+- **recipe-writable**: recipes may write any text into it, including text users typed themselves, so everything read from it is treated like user-editable text: it is refused in conditions, in state-changing steps and in variables (same rule and same error as a user's first name), and allowed in log, http and email steps.
+
+The *key* of a lookup must never be user-editable text, because it picks which admin-written row comes back (a user who could choose the key could choose the group, for example). The rule is applied on save by following which steps read recipe-writable tables, and again at run time from the table's current setting: if an administrator later switches a table from administrator-managed to recipe-writable, published recipes that used it in a decision or account change fail their step instead of acting on data that is no longer trusted (the switch lists the recipes affected and is audited).
+
+**Not included:** a `lookup(...)` formula function (formulas are deliberately free of I/O; use the step and a variable), per-table permissions, row-level history, bulk updates from a recipe, column removal or retyping.
+
+# Implemented: list functions and "For each item in a list"
+**Formulas** gained `sum`, `index`, `reverse`, `uniq`, `flatten`, `compact`, `concat`, `pluck`, `smart_join`, and `min`/`max` now take either several values or one list (an empty list gives nothing). They are pure functions on data already in the job; nothing new is reachable.
+
+**Step `for_each_item`** repeats the steps inside it once per item of a list given by one datapill or formula (`list`, plus `limit` 1 to 100, default 50). Inside, `loop.item` (and `loop.item.<field>` for objects), `loop.index` (from 1) and `loop.total` are available; `loop.user.*` stays specific to the group-member loop and `loop.item` to this one. Rules:
+- Same placement as the member loop: top level of the main steps only, never nested, never in the error steps.
+- The value must be a list; more items than `limit` **fails the step** rather than silently skipping the rest; the list is stored in the job (at most 64 KB of plain data) so a resumed job iterates the same items.
+- **Taint**: the list expression is checked like a variable or a lookup key, so a list built from user-editable text (first or last name, self-editable attributes, error text, recipe-writable lookup reads) is refused on save and at run time. Items from a trusted list then need no extra marking.
+- Empty list: the body is skipped and the flow continues after the loop.
+
+**Not included:** `while` loops, batches of items, per-iteration error handling, loops over more than 100 items, nested loops.
+
+# Implemented: callable recipes
+**Callee.** A recipe whose trigger is **Called by another recipe** (`call`) declares `inputs` (name, type text/number/boolean/list/object, required) and `outputs` (names). Inputs arrive as `trigger.payload.<name>`. The new step **Return data to the caller** (`return_data`, only in such recipes, never in the error steps) must give exactly the declared outputs and ends the job. A callee can be tested on its own with a sample payload.
+
+**Caller.** The step **Call a recipe** (`call_recipe`) names a published, enabled, callable recipe and maps its inputs (pill, formula or text; text typed into a number or yes/no input is converted). The result is available as `steps.<id>.output.result.<output>`.
+
+**How it runs.** The call creates a **child job** (migration 0049: `parent_job_id`, `call_chain`) from the callee's *published* version, with idempotency key `call:<parent job>:<step>:<seq>`, and parks the parent in `waiting` with the child's id (the same mechanism as Wait, so the wait does not count against the parent's run-time limit). A child that finishes wakes its parent at once; a 30-second poll is the fallback. A failed or cancelled child fails the call step with the child's error, so the parent's error steps apply. If a job fails, is cancelled or is dropped, its unfinished children are cancelled. A **test run** runs the callee's published version too, as a dry-run child in its own session, without side effects and without waiting.
+
+**Guards.** Depth 5; a recipe cannot appear twice in a call chain (checked when the call runs; saving only checks that the callee exists, is callable and gets the right inputs); the caller's inputs and the callee's returned values are **taint-checked** like variables, so user-editable text cannot cross a call boundary; inputs are limited to 16 KB and returned data to 64 KB; types are checked at run time. The child runs under its own recipe, so it uses **its own** connections and recipe settings, never the caller's. `GET /admin/recipes/{id}/callers` lists the recipes (draft or published) that call a recipe, and `/meta` lists `callable_recipes`.
+
+**Differences from the first design.** The 500-step budget is per job, not shared with the parent (depth 5 bounds the total at 5 x 500). Access rules between recipes are not enforced beyond "admin who can edit the caller": there is no per-recipe read permission to check yet. The editor shows callers only through the API for now.
+
+**Not included:** asynchronous (fire-and-forget) calls, a "wait for async result" step, recursion, calling from the error steps, callable recipes with per-call connections, a callers panel in the editor.
+
+## Implemented: scoped "Handle errors" block (WP-014)
+A `handle_errors` step wraps part of the flow: `then` holds the **monitored steps**, `else` the **on-error steps**.
+- **Engine.** `compile_program` emits `head, body…, jump→end, catch…`; the head carries `catch_to`. When a step fails for good (retries used up, per-step "continue" not chosen), the engine finds the innermost block whose monitored range contains the failing step (`_enclosing_block`), stores `_error {message, step_id}`, drops state of loops opened inside the block, and jumps to `catch_to`. After the on-error steps the job carries on after the block and is **not** failed. A failure in the on-error steps is outside the block's range, so it reaches the next outer block, then the recipe-level handler. Errors outside any block behave as before (recipe-level handler, job ends failed). A deliberate Stop step is not an error.
+- **Rules.** `error.message` / `error.step_id` only in on-error steps (still untrusted text: the ADR 008 taint rule applies). On-error steps follow the recipe-level handler restrictions (no approvals, loops, waits, throttles, calls). Outputs and variables of the monitored steps are not visible after the block or in the on-error steps (they may not have run); what ran before the block stays visible. Blocks nest within the existing nesting limit; publishing needs at least one monitored step.
+- **UI.** Studio only (add menu "Handle errors"; the classic editor does not offer it). Flow diagram shows "Monitored" / "On error".
+- Tests: `backend/tests/test_recipe_scoped_errors.py` (7), `frontend/e2e/recipe-studio-scoped-errors.spec.ts`.

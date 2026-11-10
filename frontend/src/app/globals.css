@@ -65,3 +65,24 @@
 * {
   @apply border-border;
 }
+/* Dropdowns: one modern look everywhere (native select, so keyboard, mobile and screen readers keep working). */
+select {
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+  border-radius: 0.5rem;
+  padding-right: 2.25rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 1rem;
+  text-overflow: ellipsis;
+  transition: border-color 0.15s, box-shadow 0.15s, background-color 0.15s;
+}
+select:hover:not(:disabled) { border-color: hsl(var(--ring)); }
+select:focus-visible { outline: none; border-color: hsl(var(--ring)); box-shadow: 0 0 0 3px hsl(var(--ring) / 0.25); }
+select:disabled { cursor: not-allowed; opacity: 0.55; }
+select[multiple] { background-image: none; padding-right: 0.75rem; }
+select option, select optgroup { background-color: hsl(var(--background)); color: hsl(var(--foreground)); }
+select optgroup { font-weight: 600; }
+select option { padding: 0.375rem 0.5rem; }

@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 
 from backend.app.db import Base
@@ -102,6 +102,8 @@ class RecipeJob(TenantOwned, Base):
     in_handler = Column(Boolean, nullable=False, default=False, server_default="false")  # running the definition's on_error steps
     cancel_requested = Column(Boolean, nullable=False, default=False, server_default="false")
     rerun_of = Column(Integer, nullable=True)  # the job this one re-runs
+    parent_job_id = Column(Integer, nullable=True, index=True)  # the job whose Call recipe step started this one
+    call_chain = Column(JSONB, nullable=True)  # ids of the recipes above this job in the call chain (recursion guard)
     approval = Column(JSONB, nullable=True)  # {step_id, message, requested_at, expires_at, decision, decided_by} while/after waiting
     paused_seconds = Column(Integer, nullable=False, default=0, server_default="0")  # time spent waiting; not counted against the runtime cap
     executed_steps = Column(Integer, nullable=False, default=0)
@@ -132,3 +134,32 @@ class RecipeJobStep(TenantOwned, Base):
     error = Column(Text, nullable=True)
     started_at = Column(DateTime(timezone=True), nullable=False, default=_now)
     finished_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class LookupTable(TenantOwned, Base):
+    """A small admin-owned table recipes can read (and, unless admin-managed, write). ADR 021 section 2."""
+
+    __tablename__ = "lookup_tables"
+    __table_args__ = (UniqueConstraint("tenant_id", "name", name="uq_lookup_tables_tenant_name"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(40), nullable=False)  # how recipes refer to it; never renamed
+    description = Column(String(300), nullable=True)
+    columns = Column(JSONB, nullable=False)  # [{"name": "department", "type": "text|number|boolean|date"}]
+    key_column = Column(String(40), nullable=True)  # values are unique and recipes can upsert / delete by it
+    admin_managed = Column(Boolean, nullable=False, default=True, server_default="true")  # True: only administrators write rows, reads are trusted
+    row_count = Column(Integer, nullable=False, default=0, server_default="0")
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=_now)
+
+
+class LookupRow(TenantOwned, Base):
+    __tablename__ = "lookup_rows"
+    __table_args__ = (Index("uq_lookup_rows_key", "table_id", "key_value", unique=True, postgresql_where=text("key_value IS NOT NULL")),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    table_id = Column(Integer, ForeignKey("lookup_tables.id", ondelete="CASCADE"), nullable=False, index=True)
+    data = Column(JSONB, nullable=False)
+    key_value = Column(String(500), nullable=True)  # the key column's value as text (null for tables without a key)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=_now)
