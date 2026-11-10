@@ -178,8 +178,8 @@ npm run dev
 The backend source, including tests, is baked into the Docker image, so rebuild `backend-api` before running them:
 ```bash
 docker compose -f docker/docker-compose.yml up -d --build backend-api
-docker exec identityforge-api pip install -q -r /app/backend/requirements-dev.txt
-docker exec -w /app/backend identityforge-api python -m pytest -q
+docker exec ifora-api pip install -q -r /app/backend/requirements-dev.txt
+docker exec -w /app/backend ifora-api python -m pytest -q
 ```
 Tests use a separate `identityforge_test` database.
 

@@ -1,7 +1,7 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: identityforge-postgres
+    container_name: ifora-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: identityforge
@@ -19,7 +19,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: identityforge-redis
+    container_name: ifora-redis
     restart: unless-stopped
     ports:
       - "127.0.0.1:6379:6379"
@@ -35,7 +35,7 @@ services:
     build:
       context: ..
       dockerfile: docker/backend/Dockerfile
-    container_name: identityforge-api
+    container_name: ifora-api
     restart: unless-stopped
     depends_on:
       postgres:
@@ -83,7 +83,7 @@ services:
       target: ${FRONTEND_TARGET:-dev}   # dev (default) or prod: see docker/.env.example
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
-    container_name: identityforge-frontend
+    container_name: ifora-frontend
     restart: unless-stopped
     depends_on:
       backend-api:
@@ -99,7 +99,7 @@ services:
     build:
       context: ..
       dockerfile: docker/backend/Dockerfile
-    container_name: identityforge-recipes-worker
+    container_name: ifora-recipes-worker
     restart: unless-stopped
     depends_on:
       backend-api:
@@ -135,7 +135,7 @@ services:
     profiles: ["demo"]
     build:
       context: ../demo/oidc-rp
-    container_name: identityforge-demo-app
+    container_name: ifora-demo-app
     restart: unless-stopped
     depends_on:
       backend-api:
