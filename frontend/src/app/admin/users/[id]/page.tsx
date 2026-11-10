@@ -24,10 +24,12 @@ export default function UserDetail() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [issuedCode, setIssuedCode] = useState<string | null>(null);
+  const [canWrite, setCanWrite] = useState<boolean | null>(null); // does this administrator's role allow changing users?
   const [form, setForm] = useState({ first_name: "", last_name: "", email: "" });
   const [schema, setSchema] = useState<ProfileAttribute[]>([]);
   const [attrs, setAttrs] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  useEffect(() => { http<{ access: Record<string, string> }>("/me/admin-access").then((r) => setCanWrite(r.access.users === "write")).catch(() => setCanWrite(false)); }, []);
   const [tab, setTab] = useState<"profile" | "applications" | "activity">("profile");
   const [newPw, setNewPw] = useState("");
   const [requireChange, setRequireChange] = useState(false);
@@ -55,7 +57,8 @@ export default function UserDetail() {
 
   if (!user) return <div className="text-sm text-muted-foreground">{msg ? msg.text : "Loading…"}</div>;
 
-  const protectedTarget = user.is_super_admin || (user.is_admin && !me.is_super_admin);
+  const roleReadOnly = !me.is_super_admin && canWrite === false;
+  const protectedTarget = user.is_super_admin || (user.is_admin && !me.is_super_admin) || roleReadOnly;
   const isSelf = user.id === me.id;
 
   const resetPw = () =>
@@ -103,7 +106,7 @@ export default function UserDetail() {
       {protectedTarget && !isSelf && (
         <Alert className="mb-4">
           <AlertDescription>
-            {user.is_super_admin ? "Super administrators cannot be modified by others." : "Only a super administrator can modify administrators."}
+            {user.is_super_admin ? "Super administrators cannot be modified by others." : roleReadOnly && !user.is_admin ? "Your administrator role can view users but not change them (no resets, no edits)." : "Only a super administrator can modify administrators."}
           </AlertDescription>
         </Alert>
       )}
@@ -129,7 +132,12 @@ export default function UserDetail() {
             <Label htmlFor="last">Last name</Label>
             <Input id="last" value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} />
           </div>
-          <div className="space-y-2 sm:col-span-2">
+          <div className="space-y-2">
+            <Label htmlFor="username">Username</Label>
+            <Input id="username" value={user.username} readOnly disabled data-testid="username-readonly" />
+            <p className="text-xs text-muted-foreground">Fixed when the account was created. Names and email can change without affecting it or the apps this person already has.</p>
+          </div>
+          <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
             <Input id="email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
           </div>
@@ -191,7 +199,7 @@ export default function UserDetail() {
               }, "Sign-in factors reset; the user's sessions were ended");
             }}
           >
-            Reset MFA &amp; passkeys
+            Reset authenticators
           </Button>
         )}
         {me.is_super_admin && user.is_admin && !user.is_super_admin && user.mfa_setup_required && (

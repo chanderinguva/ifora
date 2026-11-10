@@ -185,7 +185,7 @@ def test_username_required_when_user_types_it(db, super_admin):
 def test_idp_password_cannot_be_stored(db, super_admin):
     app_id, u, m = member_with_app(db, super_admin)
     r = store(m, app_id, STRONG)
-    assert r.status_code == 422 and "IdentityForge password" in r.json()["detail"]
+    assert r.status_code == 422 and "Ifora password" in r.json()["detail"]
     assert db.query(SwaCredential).count() == 0
 
 

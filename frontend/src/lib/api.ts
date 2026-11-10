@@ -1,4 +1,4 @@
-/** API client for IdentityForge backend communication. */
+/** API client for Ifora backend communication. */
 
 import axios, { AxiosError, AxiosInstance } from "axios";
 

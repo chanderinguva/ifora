@@ -303,7 +303,7 @@ def test_custom_mapping_templates(admin, super_admin, remote):
     assign_user(admin, app, u["id"])
     run()
     rec = remote.users["r1"]
-    assert rec["displayName"] == "Person, New" and rec["nickName"] == "jo" and rec["userName"] == "jo"
+    assert rec["displayName"] == "Person, New" and rec["nickName"] == "new.person" and rec["userName"] == "new.person"
 
 
 def test_patch_update_style(admin, super_admin, remote):

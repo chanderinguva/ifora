@@ -4,48 +4,55 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Ifora tokens (docs/branding/brand-guidelines.md): navy #0B1220, indigo #4F46E5, blue #2563EB, violet #8B5CF6, cloud #F8FAFC */
+    --background: 210 40% 98%;
+    --foreground: 220 57% 7%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 220 57% 7%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 84% 4.9%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.3% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214 32.1% 91.2%;
-    --input: 214 32.1% 91.2%;
-    --ring: 214 32.1% 91.2%;
+    --popover-foreground: 220 57% 7%;
+    --primary: 243 75% 59%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 214 32% 94%;
+    --secondary-foreground: 220 47% 14%;
+    --muted: 214 32% 94%;
+    --muted-foreground: 215 19% 38%;
+    --accent: 243 80% 96%;
+    --accent-foreground: 243 60% 40%;
+    --destructive: 0 72% 46%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 32% 89%;
+    --input: 214 32% 85%;
+    --ring: 243 75% 59%;
     --radius: 0.5rem;
+    --ifora-1: #4F46E5;
+    --ifora-2: #2563EB;
+    --ifora-3: #8B5CF6;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
+    --background: 220 57% 7%;
     --foreground: 210 40% 98%;
-    --card: 222.2 70% 7%;
+    --card: 220 50% 10%;
     --card-foreground: 210 40% 98%;
-    --popover: 222.2 70% 7%;
+    --popover: 220 50% 10%;
     --popover-foreground: 210 40% 98%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 215 28% 17%;
+    --primary: 234 89% 74%;
+    --primary-foreground: 220 57% 7%;
+    --secondary: 217 33% 17%;
     --secondary-foreground: 210 40% 98%;
-    --muted: 215 28% 17%;
-    --muted-foreground: 215 16.3% 56.7%;
-    --accent: 215 28% 17%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 215 25% 22%;
-    --input: 215 25% 22%;
-    --ring: 212 90% 70%;
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 243 40% 20%;
+    --accent-foreground: 234 89% 85%;
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 217 28% 20%;
+    --input: 217 28% 24%;
+    --ring: 234 89% 74%;
+    --ifora-1: #818CF8;
+    --ifora-2: #60A5FA;
+    --ifora-3: #A78BFA;
   }
 
   :root {
@@ -58,7 +65,7 @@
   body {
     color: hsl(var(--foreground));
     background-color: hsl(var(--background));
-    font-family: var(--font-lora), Georgia, serif;
+    font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   }
 }
 

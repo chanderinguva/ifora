@@ -7,9 +7,9 @@ export default {
   theme: {
   extend: {
     fontFamily: {
-      sans: ["var(--font-lora)", "Georgia", "serif"],
-      serif: ["var(--font-lora)", "Georgia", "serif"],
-      mono: ["var(--font-lora)", "Georgia", "serif"],
+      sans: ["var(--font-inter)", "ui-sans-serif", "system-ui", "sans-serif"],
+      brand: ["var(--font-lora)", "Georgia", "serif"],
+      mono: ["ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
     },
     colors: {
       border: "hsl(var(--border))",

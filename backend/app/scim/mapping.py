@@ -1,4 +1,4 @@
-"""SCIM <-> IdentityForge attribute mapping (ADR 007 D3).
+"""SCIM <-> Ifora attribute mapping (ADR 007 D3).
 
 Reading from a payload goes through a fixed list of attributes: nothing outside it (is_admin, is_super_admin,
 password, tenant_id, status other than via `active`) can reach the User model.

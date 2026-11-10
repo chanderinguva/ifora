@@ -1,4 +1,4 @@
-"""IdentityForge user/group -> canonical SCIM 2.0 resource, with per-app overrides (ADR 009 D4).
+"""Ifora user/group -> canonical SCIM 2.0 resource, with per-app overrides (ADR 009 D4).
 
 The canonical resource is what a SCIM app receives as-is and what the REST gateway maps into the app's own JSON.
 Sources are an allow-list of user fields and profile attributes: password hashes, MFA data, tokens, roles and
@@ -21,7 +21,7 @@ _TARGET = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,40}(\.[A-Za-z][A-Za-z0-9_]{0,40})
 _URN_TARGET = re.compile(r"^urn:[A-Za-z0-9:._-]{3,150}:[A-Za-z][A-Za-z0-9_]{0,40}(\.[A-Za-z][A-Za-z0-9_]{0,40}){0,2}$")
 _URN_SPLIT = re.compile(r"^(urn:.+:[A-Za-z0-9_-]+)\.([A-Za-z][A-Za-z0-9_.]*)$")  # extension URN, then the attribute path
 _PLACEHOLDER = re.compile(r"\{\{\s*([a-z][a-z0-9_]{0,60})\s*\}\}")
-RESERVED_TARGETS = {"schemas", "id", "meta", "groups", "password", "userName", "active", "externalId"}  # set by IdentityForge only
+RESERVED_TARGETS = {"schemas", "id", "meta", "groups", "password", "userName", "active", "externalId"}  # set by Ifora only
 
 
 class MappingError(ValueError):
@@ -47,7 +47,7 @@ def validate_rules(rules: Any, profile_keys: List[str]) -> List[Dict[str, str]]:
         if not (_TARGET.match(target) or _URN_TARGET.match(target)):
             raise MappingError(f"invalid target '{target[:40]}'")
         if target.split(".")[0] in RESERVED_TARGETS or target in RESERVED_TARGETS:
-            raise MappingError(f"'{target}' is set by IdentityForge and cannot be mapped")
+            raise MappingError(f"'{target}' is set by Ifora and cannot be mapped")
         if target in seen:
             raise MappingError(f"target '{target}' is mapped twice")
         if not source or len(source) > 300:

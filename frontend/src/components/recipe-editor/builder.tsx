@@ -184,7 +184,7 @@ export function RecipeBuilder({ studio = false }: { studio?: boolean }) {
       {secret && (
         <Alert variant="warning" className="mb-4" data-testid="webhook-secret"><AlertDescription>
           Webhook signing secret (shown only once, copy it now): <code className="break-all">{secret}</code>
-          <div className="mt-1 text-xs">POST JSON to <code>{recipe.webhook_path}</code> with headers <code>X-IdentityForge-Timestamp</code> (unix seconds) and <code>X-IdentityForge-Signature: v1=HMAC_SHA256(secret, timestamp + "." + body)</code> in hex. Requests older than 5 minutes are refused.</div>
+          <div className="mt-1 text-xs">POST JSON to <code>{recipe.webhook_path}</code> with headers <code>X-Ifora-Timestamp</code> (unix seconds) and <code>X-Ifora-Signature: v1=HMAC_SHA256(secret, timestamp + "." + body)</code> in hex. Requests older than 5 minutes are refused. The earlier <code>X-IdentityForge-*</code> header names still work.</div>
           <Button size="sm" variant="outline" className="mt-2" onClick={() => setSecret(null)}>I have copied it</Button>
         </AlertDescription></Alert>
       )}

@@ -13,7 +13,7 @@ def _now():
 
 
 class OrgBranding(TenantOwned, Base):
-    """At most one row per tenant. Every field is optional; empty means the IdentityForge default."""
+    """At most one row per tenant. Every field is optional; empty means the Ifora default."""
 
     __tablename__ = "org_branding"
     __table_args__ = (UniqueConstraint("tenant_id", name="uq_org_branding_tenant"),)

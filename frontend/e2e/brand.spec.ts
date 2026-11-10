@@ -3,31 +3,33 @@ import { expect, test } from "@playwright/test";
 const color = (loc: import("@playwright/test").Locator) => loc.evaluate((el) => getComputedStyle(el).color);
 const rgb = (s: string) => s.match(/\d+/g)!.slice(0, 3).map(Number);
 
-test("brand: forge-fold mark follows the theme, wordmark stays Lora, favicon and manifest are served", async ({ page, request }) => {
+test("brand: Ifora gateway mark follows the theme, wordmark stays Lora, UI text is Inter, favicon and manifest are served", async ({ page, request }) => {
+  // The product default brand, whatever this tenant has uploaded: serve the default branding to the page.
+  await page.route("**/api/v1/branding", (route) =>
+    route.fulfill({ json: { display_name: "Ifora", custom_name: false, primary_color: null, tagline: null, has_logo: false, logo_rev: null } }),
+  );
   await page.emulateMedia({ colorScheme: "light" });
   await page.goto("/login");
   const mark = page.getByTestId("logo-mark").first();
   const wordmark = page.getByTestId("logo-wordmark");
   await expect(mark).toBeVisible();
-  await expect(wordmark).toHaveText("IdentityForge");
+  await expect(wordmark).toHaveText("Ifora");
 
-  // theme: near-black on light, near-white on dark, for both mark and wordmark
+  // theme: the mark uses the Ifora tokens (indigo/blue/violet on light, lighter tints on dark); wordmark is navy / cloud
+  const fills = (svg: import("@playwright/test").Locator) => svg.evaluate((el) => [...el.querySelectorAll("path,circle")].map((n) => getComputedStyle(n).fill));
   await page.getByTestId("theme-toggle").getByRole("radio", { name: "Light theme" }).click();
-  const [lr] = rgb(await color(mark));
-  expect(lr).toBeLessThan(40);
+  expect(await fills(mark)).toEqual(["rgb(79, 70, 229)", "rgb(37, 99, 235)", "rgb(139, 92, 246)"]);
+  expect(rgb(await color(wordmark))[0]).toBeLessThan(40);
   await page.getByTestId("theme-toggle").getByRole("radio", { name: "Dark theme" }).click();
   await expect(page.locator("html")).toHaveClass(/dark/);
-  const [dr] = rgb(await color(mark));
-  expect(dr).toBeGreaterThan(215);
+  expect(await fills(mark)).toEqual(["rgb(129, 140, 248)", "rgb(96, 165, 250)", "rgb(167, 139, 250)"]);
   expect(rgb(await color(wordmark))[0]).toBeGreaterThan(215);
-
-  // the paint really is currentColor (no hard-coded fills that would break in one theme)
-  const paints = await mark.evaluate((svg) => [...svg.querySelectorAll("path,circle")].map((n) => n.getAttribute("stroke") ?? n.getAttribute("fill")));
-  expect(paints).toEqual(["currentColor", "currentColor", "currentColor"]);
 
   // typography: the wordmark is live Lora text, not an image or a fallback font
   const family = await wordmark.evaluate((el) => getComputedStyle(el).fontFamily);
   expect(family).toMatch(/lora/i);
+  const bodyFamily = await page.evaluate(() => getComputedStyle(document.body).fontFamily);
+  expect(bodyFamily).toMatch(/inter/i);
   await page.evaluate(() => document.fonts.ready);
   expect(await page.evaluate(() => document.fonts.check("600 18px Lora"))).toBe(true);
 

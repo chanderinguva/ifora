@@ -55,7 +55,11 @@ def check_origin(request: Request) -> None:
 def get_session_and_user(
     request: Request, db: Session = Depends(get_db)
 ) -> Tuple[AuthSession, User, str]:
-    """Resolve the session cookie to (session, user, raw_token) or raise 401."""
+    """Resolve the session cookie to (session, user, raw_token) or raise 401. An admin API token (Bearer idf_api_...) is accepted on /admin/** only."""
+    from backend.app.api_tokens import service as api_tokens
+
+    if api_tokens.is_api_token_request(request):
+        return api_tokens.authenticate(request, db)
     raw_token: Optional[str] = request.cookies.get(settings.SESSION_COOKIE_NAME)
     if not raw_token or len(raw_token) > 128:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -113,6 +117,9 @@ def require_admin(request: Request, ctx=Depends(get_session_and_user), db: Sessi
     if user.needs_mfa_setup:
         # Still signed in (so they can reach Account settings and enrol), but no admin power yet.
         raise HTTPException(status_code=403, detail="Multi-factor authentication setup required")
+    token = getattr(session, "api_token", None)
+    if token is not None and token.read_only and request.method not in SAFE_METHODS:
+        raise HTTPException(status_code=403, detail="This API token is read-only")
     if not user.is_super_admin:
         from backend.app.admin_roles import permissions
         from backend.app.admin_roles.resolve import roles_of
@@ -123,4 +130,12 @@ def require_admin(request: Request, ctx=Depends(get_session_and_user), db: Sessi
         roles = roles_of(db, user.id)  # direct roles plus those carried by the user's groups
         if not permissions.allowed(roles, request.method, template):
             raise HTTPException(status_code=403, detail="Your administrator role does not allow this")
+    return user
+
+
+def require_admin_session(ctx=Depends(get_session_and_user)) -> User:
+    """An administrator signed in with a browser session (never an API token): used to manage API tokens themselves."""
+    session, user, _ = ctx
+    if getattr(session, "api_token", None) is not None or not user.is_admin or session.acting_as_user or user.needs_mfa_setup:
+        raise HTTPException(status_code=403, detail="Forbidden")
     return user

@@ -63,7 +63,7 @@ def schemas() -> List[Dict[str, Any]]:
     meta = lambda sid: {"resourceType": "Schema", "location": f"{base_url()}/Schemas/{sid}"}  # noqa: E731
     return [
         {
-            "schemas": [SCHEMA_URN], "id": USER_URN, "name": "User", "description": "IdentityForge user", "meta": meta(USER_URN),
+            "schemas": [SCHEMA_URN], "id": USER_URN, "name": "User", "description": "Ifora user", "meta": meta(USER_URN),
             "attributes": [
                 _a("userName", required=True, unique="server", desc="Stored lower-case in users.username"),
                 _a("externalId", desc="The IdP's identifier for this user"),
@@ -91,7 +91,7 @@ def schemas() -> List[Dict[str, Any]]:
             "meta": meta(PROFILE_URN), "attributes": [],
         },
         {
-            "schemas": [SCHEMA_URN], "id": GROUP_URN, "name": "Group", "description": "IdentityForge group", "meta": meta(GROUP_URN),
+            "schemas": [SCHEMA_URN], "id": GROUP_URN, "name": "Group", "description": "Ifora group", "meta": meta(GROUP_URN),
             "attributes": [
                 _a("displayName", required=True, unique="server"), _a("externalId"),
                 _a("members", "complex", multi=True, subs=[_a("value", desc="User id"), _a("display", mutability="readOnly"), _a("$ref", "reference", mutability="readOnly")],

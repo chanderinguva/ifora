@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.branding.models import EmailTemplate, OrgBranding
 
-DEFAULT_ORG_NAME = "IdentityForge"
+DEFAULT_ORG_NAME = "Ifora"
 VARIABLES = {
     "first_name": "The recipient's first name",
     "org_name": "Your organization's display name",

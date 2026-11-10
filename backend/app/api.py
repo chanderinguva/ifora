@@ -30,7 +30,7 @@ def create_app() -> FastAPI:
     if prod and not settings.SESSION_COOKIE_SECURE:
         raise RuntimeError("ENVIRONMENT=production requires SESSION_COOKIE_SECURE=true (serve the API over HTTPS)")
     app = FastAPI(
-        title="IdentityForge API",
+        title="Ifora API",
         description="Identity and Access Management Platform",
         version="0.1.0",
         docs_url=None if prod else "/docs",
@@ -123,6 +123,7 @@ def create_app() -> FastAPI:
     from backend.app.auth.role_routes import router as role_router
     from backend.app.groups.routes import router as groups_router
     from backend.app.profiles.routes import router as profiles_router
+    from backend.app.users.csv_routes import router as users_csv_router
     from backend.app.users.routes import router as users_router
 
     from backend.app.oidc.routes import admin_router as oidc_admin_router, public_router as oidc_public_router
@@ -205,12 +206,17 @@ def create_app() -> FastAPI:
     from backend.app.scim.app import create_scim_app
 
     app.include_router(scim_admin_router, prefix="/api/v1")
+    from backend.app.api_tokens.administrators import router as administrators_router
+    from backend.app.api_tokens.routes import router as api_tokens_router
+
+    app.include_router(api_tokens_router, prefix="/api/v1")
+    app.include_router(administrators_router, prefix="/api/v1")
     app.mount("/scim/v2", create_scim_app())  # SCIM 2.0 server (ADR 007): own error format, bearer-token auth
 
     from backend.app.search_routes import router as search_router
 
     app.include_router(search_router, prefix="/api/v1")
-    for r in (users_router, groups_router, profiles_router, audit_router, dashboard_router, mfa_router, passkey_router, role_router):
+    for r in (users_csv_router, users_router, groups_router, profiles_router, audit_router, dashboard_router, mfa_router, passkey_router, role_router):
         app.include_router(r, prefix="/api/v1")
 
     return app

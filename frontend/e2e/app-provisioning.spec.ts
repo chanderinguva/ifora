@@ -40,7 +40,7 @@ test("add a SCIM application, assign a group, see the failed connection test, re
   await page.getByLabel("Target attribute").fill("userName");
   await page.getByLabel("Source").fill("email");
   await page.getByTestId("save-mapping").click();
-  await expect(page.getByRole("status")).toContainText("set by IdentityForge");
+  await expect(page.getByRole("status")).toContainText("set by Ifora");
 
   await page.getByRole("button", { name: "Delete" }).click();
   await expect(page).toHaveURL(/\/admin\/app-provisioning$/);

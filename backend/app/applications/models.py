@@ -2,7 +2,8 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Index, Integer, LargeBinary, String, UniqueConstraint, text
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import Boolean, Date, CheckConstraint, Column, DateTime, ForeignKey, Index, Integer, LargeBinary, String, UniqueConstraint, text
 
 from backend.app.db import Base
 from backend.app.tenancy import TenantOwned
@@ -20,6 +21,7 @@ class Application(TenantOwned, Base):
         UniqueConstraint("tenant_id", "name", name="uq_applications_tenant_name"),
         CheckConstraint("sign_on_mode IN ('none','bookmark','oidc','saml','swa')", name="ck_applications_sign_on_mode"),
         CheckConstraint("status IN ('active','inactive')", name="ck_applications_status"),
+        CheckConstraint("sensitivity IS NULL OR sensitivity IN ('low','medium','high')", name="ck_applications_sensitivity"),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -31,6 +33,12 @@ class Application(TenantOwned, Base):
     status = Column(String(10), nullable=False, default="active")
     visible = Column(Boolean, nullable=False, default=True, server_default="true")  # show a tile in My apps
     require_assignment = Column(Boolean, nullable=False, default=True, server_default="true")  # OIDC: unassigned users are refused
+    # Governance metadata, same vocabulary as groups (ADR 019)
+    owner_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    sensitivity = Column(String(8), nullable=True)  # low | medium | high
+    review_by = Column(Date, nullable=True)
+    tags = Column(JSONB, nullable=False, default=list, server_default="[]")
+    attributes = Column(JSONB, nullable=False, default=dict, server_default="{}")
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=_now)

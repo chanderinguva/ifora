@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge, PageHeader, fieldClass } from "@/components/bits";
+import { AppMetadataFields } from "@/components/app-metadata";
 import { AppIcon } from "@/components/app-icon";
 import { SamlCard } from "@/components/saml-card";
 import { SwaCard } from "@/components/swa-card";
@@ -103,6 +104,7 @@ export default function ApplicationDetail() {
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.status === "active"} onChange={(e) => set({ status: e.target.checked ? "active" : "inactive" })} /> Active (an inactive application cannot be used to sign in or launched)</label>
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.visible} onChange={(e) => set({ visible: e.target.checked })} /> Show on users' My apps page</label>
           <label className="flex items-center gap-2 text-sm sm:col-span-2"><input type="checkbox" checked={form.require_assignment} onChange={(e) => set({ require_assignment: e.target.checked })} /> Only assigned users may sign in with this application</label>
+          <div className="sm:col-span-2"><h3 className="mb-2 text-sm font-medium">Governance</h3><AppMetadataFields value={form} onChange={(m) => set(m)} /></div>
           <div className="flex gap-2 sm:col-span-2">
             <Button onClick={() => run(() => http(`/admin/applications/${id}`, { method: "PUT", body: appBody(form) }), "Saved")}>Save</Button>
             <Button variant="destructive" onClick={() => { if (confirm(`Delete ${app.name}?`)) run(async () => { await http(`/admin/applications/${id}`, { method: "DELETE" }); router.push("/admin/applications"); }); }}>Delete</Button>

@@ -1,4 +1,4 @@
-"""Main entry point for the IdentityForge backend application."""
+"""Main entry point for the Ifora backend application."""
 
 import logging
 

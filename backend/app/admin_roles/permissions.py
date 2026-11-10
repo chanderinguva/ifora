@@ -27,6 +27,7 @@ _AREAS = [
     ("/admin/features", "overview"),
     ("/admin/network-zones", "security"),
     ("/admin/security-policy", "security"),
+    ("/admin/administrators", "security"),
     ("/admin/profile-attributes", "directory_settings"),
     ("/admin/recipes", "automation"),
     ("/admin/recipe-connections", "automation"),
@@ -57,6 +58,7 @@ ROLE_IDS = tuple(ROLES)
 _NEVER = {
     ("help_desk_admin", "POST", "/admin/users"),
     ("help_desk_admin", "DELETE", "/admin/users/{user_id}"),
+    ("help_desk_admin", "POST", "/admin/users/import"),
 }
 
 

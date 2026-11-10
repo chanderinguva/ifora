@@ -125,7 +125,7 @@ def test_scim_cannot_change_role_group_membership(db, super_admin):
 
 def test_standards_document_lists_the_types(admin):
     d = admin.get("/admin/groups/standards").json()
-    assert [t["id"] for t in d["types"]] == ["team", "project", "app_access", "push", "app", "other"]
+    assert [t["id"] for t in d["types"]] == ["team", "project", "app_access", "role", "push", "app", "other"]
     assert d["sensitivity"] == ["low", "medium", "high"]
 
 
@@ -178,3 +178,14 @@ def test_list_filters_and_analytics(super_admin, db):
 def test_group_analytics_follow_the_groups_area(db, super_admin):
     a, _ = login(db, "nogroups@example.com")
     assert a.get("/admin/groups/analytics").status_code == 403
+
+
+def test_role_based_group_needs_an_owner_and_cannot_carry_admin_roles(super_admin, db):
+    r = super_admin.post("/admin/groups", {"name": "Role - CRM - Manager", "type": "role"})
+    assert r.status_code == 422 and "owner" in r.text
+    owner = make_user(db, "role.owner@example.com")
+    r = super_admin.post("/admin/groups", {"name": "Role - CRM - Manager", "type": "role", "owner_user_id": owner.id, "attributes": {"application": "CRM", "role": "Manager"}})
+    assert r.status_code in (200, 201), r.text
+    assert r.json()["type"] == "role"
+    assert [g["name"] for g in super_admin.get("/admin/groups?type=role").json()["items"]] == ["Role - CRM - Manager"]
+    assert next(t for t in super_admin.get("/admin/groups/standards").json()["types"] if t["id"] == "role")["can_carry_admin_roles"] is False

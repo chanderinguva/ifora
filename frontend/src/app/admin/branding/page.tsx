@@ -49,12 +49,12 @@ export default function BrandingPage() {
   return (
     <div className="max-w-3xl">
       <PageHeader title="Branding" />
-      <p className="mb-4 text-sm text-muted-foreground">Your name, logo and colour appear on the sign-in page, the sidebar and in emails. Leave a field empty to use the IdentityForge default.</p>
+      <p className="mb-4 text-sm text-muted-foreground">Your name, logo and colour appear on the sign-in page, the sidebar and in emails. Leave a field empty to use the Ifora default.</p>
       {msg && <Alert variant={msg.ok ? "default" : "destructive"} className="mb-4" role="status"><AlertDescription>{msg.text}</AlertDescription></Alert>}
 
       {!b ? <p className="mb-6 text-sm text-muted-foreground">Loading…</p> : (<>
       <Card className="mb-6"><CardContent className="grid gap-4 pt-6" data-testid="branding-form">
-        <div className="space-y-1"><Label htmlFor="b-name">Organization name</Label><Input id="b-name" maxLength={60} placeholder="IdentityForge" value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} /></div>
+        <div className="space-y-1"><Label htmlFor="b-name">Organization name</Label><Input id="b-name" maxLength={60} placeholder="Ifora" value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} /></div>
         <div className="space-y-1"><Label htmlFor="b-tag">Sign-in page message</Label><Input id="b-tag" maxLength={160} placeholder="Shown above the sign-in form" value={form.tagline} onChange={(e) => setForm({ ...form, tagline: e.target.value })} /></div>
         <div className="space-y-1"><Label htmlFor="b-color">Primary colour</Label>
           <div className="flex items-center gap-2">

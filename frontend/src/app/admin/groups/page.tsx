@@ -94,7 +94,7 @@ export default function GroupsPage() {
         <Input aria-label="Search groups" placeholder="Search groups" className="max-w-xs" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
         <select aria-label="Filter by type" className={fieldClass + " w-48"} value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); setPage(1); }}>
           <option value="">All types</option>
-          {["team", "project", "app_access", "push", "app", "other"].map((t) => <option key={t} value={t}>{t.replace("_", " ")}</option>)}
+          {["team", "project", "app_access", "role", "push", "app", "other"].map((t) => <option key={t} value={t}>{t.replace("_", " ")}</option>)}
         </select>
       </div>
 

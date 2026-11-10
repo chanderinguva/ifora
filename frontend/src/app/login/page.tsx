@@ -1,4 +1,4 @@
-/** Login page for IdentityForge. */
+/** Login page for Ifora. */
 
 "use client";
 
@@ -244,7 +244,7 @@ export default function LoginPage() {
 
         <CardFooter className="flex justify-center">
           <p className="text-xs text-muted-foreground">
-            IdentityForge v0.1.0
+            Ifora v0.1.0
           </p>
         </CardFooter>
       </Card>

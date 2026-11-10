@@ -12,6 +12,8 @@ export type StepNode = {
   max_attempts?: number;
   then?: StepNode[];
   else?: StepNode[];
+  /** On a condition that is the only step in another condition's "Otherwise" lane: an "else if" link of that condition. */
+  else_if?: boolean;
 };
 
 export type Definition = {

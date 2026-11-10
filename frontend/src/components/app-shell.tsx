@@ -13,7 +13,8 @@ import { UserMenu } from "./user-menu";
 
 export type { NavGroup, NavItem } from "./sidebar-nav";
 
-const COLLAPSE_KEY = "identityforge.sidebar";
+const COLLAPSE_KEY = "ifora.sidebar";
+const LEGACY_COLLAPSE_KEY = "identityforge.sidebar"; // read once so a collapsed rail stays collapsed after the rebrand
 const iconButton =
   "inline-flex h-9 w-9 items-center justify-center rounded-md border text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
 
@@ -70,7 +71,7 @@ export function AppShell({ title, nav, children }: { title: string; nav: NavGrou
 
   useEffect(() => {
     try {
-      setCollapsed(localStorage.getItem(COLLAPSE_KEY) === "1");
+      setCollapsed((localStorage.getItem(COLLAPSE_KEY) ?? localStorage.getItem(LEGACY_COLLAPSE_KEY)) === "1");
     } catch {
       /* storage unavailable: stay expanded */
     }
