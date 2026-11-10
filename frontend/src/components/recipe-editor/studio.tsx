@@ -337,6 +337,41 @@ export function Studio(props: Props) {
     );
   }
 
+  /** A condition's lanes. An else-if link renders flat under its parent (same depth), so long chains stay readable. */
+  function renderCondBody(step: StepNode, depth: number, inLoop: boolean, section: "steps" | "on_error", label: string, links: number): JSX.Element {
+    const link = (step.else ?? []).length === 1 && step.else![0].else_if ? step.else![0] : null;
+    const elseRef: LaneRef = { section, owner: step.id, branch: "else" };
+    const addElseIf = () => {
+      const n: StepNode = { id: newId(allIds(def)), type: "condition", config: defaultConfig("condition", ctxFor(section, inLoop, laneInCatch(def, elseRef))), on_error: "fail", max_attempts: 3, then: [], else: [], else_if: true };
+      edit(insertAt(def, elseRef, 0, n));
+      setSel(n.id);
+    };
+    return (<>
+      <div className="text-xs font-medium uppercase text-muted-foreground">{label}</div>
+      {renderLane({ section, owner: step.id, branch: "then" }, depth + 1, inLoop)}
+      {link ? (
+        <div className="space-y-2 border-t pt-2" data-testid="else-if">
+          <div className={"flex items-center gap-2 rounded-md " + (sel === link.id ? "ring-2 ring-primary" : "")}>
+            <button type="button" className="flex min-w-0 flex-1 items-baseline gap-2 text-left" aria-pressed={sel === link.id} aria-label="Open else-if condition" onClick={() => setSel(link.id)}>
+              <span className="text-xs font-medium uppercase text-muted-foreground">Else if</span>
+              <span className="min-w-0 truncate text-xs">{summary(link, props)}</span>
+            </button>
+            {canEdit && <Button type="button" size="sm" variant="ghost" aria-label="Delete else-if" onClick={() => { edit(removeStep(def, link.id)); setSel("trigger"); }}><Trash2 className="h-4 w-4" /></Button>}
+          </div>
+          {renderCondBody(link, depth, inLoop, section, "Then", links + 1)}
+        </div>
+      ) : (<>
+        <div className="flex items-center justify-between">
+          <div className="text-xs font-medium uppercase text-muted-foreground">Otherwise</div>
+          {canEdit && (step.else ?? []).length === 0 && links < 10 && (
+            <Button type="button" size="sm" variant="ghost" data-testid="add-else-if" onClick={addElseIf}>+ Else if</Button>
+          )}
+        </div>
+        {renderLane(elseRef, depth + 1, inLoop)}
+      </>)}
+    </>);
+  }
+
   function renderCard(step: StepNode, index: number, depth: number, inLoop: boolean, section: "steps" | "on_error"): JSX.Element {
     const info = meta.steps.find((m) => m.type === step.type);
     const selected = sel === step.id;
@@ -366,10 +401,12 @@ export function Studio(props: Props) {
         </div>
         {(step.type === "condition" || step.type === "approval" || step.type === "handle_errors") && (
           <div className="space-y-2 border-t p-3">
-            <div className="text-xs font-medium uppercase text-muted-foreground">{step.type === "approval" ? "If approved" : step.type === "handle_errors" ? "Monitored steps" : "If yes"}</div>
-            {renderLane({ section, owner: step.id, branch: "then" }, depth + 1, inLoop)}
-            <div className="text-xs font-medium uppercase text-muted-foreground">{step.type === "approval" ? "If denied or no answer" : step.type === "handle_errors" ? "If any of them fails" : "Otherwise"}</div>
-            {renderLane({ section, owner: step.id, branch: "else" }, depth + 1, inLoop)}
+            {step.type === "condition" ? renderCondBody(step, depth, inLoop, section, "If yes", 0) : (<>
+              <div className="text-xs font-medium uppercase text-muted-foreground">{step.type === "approval" ? "If approved" : "Monitored steps"}</div>
+              {renderLane({ section, owner: step.id, branch: "then" }, depth + 1, inLoop)}
+              <div className="text-xs font-medium uppercase text-muted-foreground">{step.type === "approval" ? "If denied or no answer" : "If any of them fails"}</div>
+              {renderLane({ section, owner: step.id, branch: "else" }, depth + 1, inLoop)}
+            </>)}
           </div>
         )}
         {isLoop(step) && (
