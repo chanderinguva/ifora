@@ -14,6 +14,11 @@ export type AppSummary = {
   saml: { sp_entity_id: string; acs_url: string } | null;
   swa: { login_url: string } | null;
   provisioning: { id: number; kind: string; enabled: boolean } | null;
+  owner_user_id: number | null;
+  sensitivity: "low" | "medium" | "high" | null;
+  review_by: string | null;
+  tags: string[];
+  attributes: Record<string, string>;
   has_icon: boolean;
   assigned_users: number;
   assigned_groups: number;
@@ -25,8 +30,10 @@ export type MyApp = { id: number; name: string; description: string | null; sign
 
 export const SIGN_ON_LABEL: Record<string, string> = { none: "None (provisioning only)", bookmark: "Bookmark", oidc: "OpenID Connect", saml: "SAML 2.0", swa: "Secure Web Authentication (stored password)" };
 
-export function appBody(a: Pick<AppSummary, "name" | "description" | "sign_on_mode" | "launch_url" | "status" | "visible" | "require_assignment">) {
+export function appBody(a: Pick<AppSummary, "name" | "description" | "sign_on_mode" | "launch_url" | "status" | "visible" | "require_assignment"> & Partial<Pick<AppSummary, "owner_user_id" | "sensitivity" | "review_by" | "tags" | "attributes">>) {
+  const meta = "tags" in a ? { owner_user_id: a.owner_user_id ?? null, sensitivity: a.sensitivity || null, review_by: a.review_by || null, tags: a.tags ?? [], attributes: a.attributes ?? {} } : {};
   return {
+    ...meta,
     name: a.name, description: a.description || null, sign_on_mode: a.sign_on_mode,
     launch_url: a.sign_on_mode === "none" || a.sign_on_mode === "saml" || a.sign_on_mode === "swa" ? null : a.launch_url || null, status: a.status, visible: a.visible, require_assignment: a.require_assignment,
   };
