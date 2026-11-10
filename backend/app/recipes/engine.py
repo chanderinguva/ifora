@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.audit.model import AuditAction, AuditEvent
 from backend.app.config import settings
-from backend.app.recipes import actions, conditions as cond, lookup
+from backend.app.recipes import actions, calls, conditions as cond, lookup
 from backend.app.recipes import templates as tpl
 from backend.app.recipes.definition import ACTION_TYPES, WAIT_UNIT_MINUTES, compile_program, taint_checker
 from backend.app.recipes.models import Recipe, RecipeJob, RecipeJobStep, RecipeOutbox, RecipeVersion
@@ -231,6 +231,8 @@ def schedule_due(db: Session, now: datetime) -> int:
 
 def _audit_job(db: Session, job: RecipeJob, action: AuditAction, extra: Optional[dict] = None) -> None:
     meta = {"recipe_id": job.recipe_id, "job_id": job.id, "version": job.version, "trigger": job.trigger_type}
+    if job.parent_job_id:
+        meta["parent_job"] = job.parent_job_id
     meta.update(extra or {})
     db.add(AuditEvent(action=action, actor_id=f"recipe:{job.recipe_id}", actor_type="recipe",
                       target_id=str(job.recipe_id), target_type="recipe", metadata=meta))
@@ -243,6 +245,13 @@ def _finish(db: Session, job: RecipeJob, status: str, now: datetime, error: Opti
         action = {"succeeded": AuditAction.RECIPE_JOB_SUCCEEDED, "failed": AuditAction.RECIPE_JOB_FAILED,
                   "cancelled": AuditAction.RECIPE_JOB_CANCELLED}[status]
         _audit_job(db, job, action, {"error": job.error} if job.error else None)
+    if job.parent_job_id:   # wake the caller now instead of at its next poll
+        parent = db.get(RecipeJob, job.parent_job_id)
+        if parent is not None and parent.status == "waiting":
+            parent.next_run_at = now
+    if status != "succeeded":   # a stopped caller must not leave its children running
+        db.query(RecipeJob).filter(RecipeJob.parent_job_id == job.id, RecipeJob.status.in_(("queued", "running", "waiting"))) \
+            .update({"cancel_requested": True}, synchronize_session=False)
     db.commit()
 
 
@@ -274,6 +283,22 @@ def _step_row(job: RecipeJob, seq: int, instr: dict, status: str, attempt: int, 
         input=redact(inp) if inp is not None else None, output=redact(out) if out is not None else None,
         error=(err or None) and err[:500], started_at=started, finished_at=finished,
     )
+
+
+def _run_child_dry(job: RecipeJob, recipe_id: int, definition: dict, trigger: dict, chain: list, key: str, now: datetime):
+    """Run a callee's published version for a test run, without side effects. A step runs inside a savepoint, which
+    cannot contain the child's own commits, so the child gets its own session (the parent job is already committed)."""
+    s = tenant_session(job.tenant_id)
+    try:
+        r = s.get(Recipe, recipe_id)
+        child = create_job(s, r, definition, r.published_version, trigger, key, depth=job.depth + 1, mode="dry_run", now=now)
+        child.parent_job_id, child.call_chain = job.id, chain
+        s.commit()
+        execute_job(s, child.id, now)
+        done = s.get(RecipeJob, child.id)
+        return done.status, done.error, dict(done.step_outputs or {}), done.id
+    finally:
+        s.close()
 
 
 def execute_job(db: Session, job_id: int, now: datetime) -> str:
@@ -421,12 +446,77 @@ def execute_job(db: Session, job_id: int, now: datetime) -> str:
                         raise actions.StepError("the variable's value is too large")
                     extra["_vars"] = variables
                     inp, out = {"name": c["name"]}, {"value": value}
-                elif instr["type"] in ("wait", "throttle"):
+                elif instr["type"] == "return_data":
+                    vals = {k: rc.render(v) for k, v in instr["config"]["values"].items()}   # tainted values are refused
+                    try:
+                        if len(json.dumps(vals, allow_nan=False)) > MAX_VARIABLES_BYTES:
+                            raise actions.StepError("the returned data is too large")
+                    except (TypeError, ValueError):
+                        raise actions.StepError("the returned data is not plain data")
+                    extra["_result"] = vals
+                    inp, out = {"names": sorted(vals)}, dict(vals)
+                    stop = ("success", "")
+                elif instr["type"] in ("wait", "throttle", "call_recipe"):
                     c = instr["config"]
                     w = (job.step_outputs or {}).get("_wait")
                     w = w if (w or {}).get("step_id") == instr["id"] else None
                     until: Optional[datetime] = None
-                    if instr["type"] == "wait":
+                    call_rec: Optional[dict] = None
+                    if instr["type"] == "call_recipe":
+                        inp = {"recipe_id": c["recipe_id"]}
+                        found = calls.callee(db, c["recipe_id"])
+                        if found is None:
+                            raise actions.StepError("the called recipe is not available (unpublished, disabled or no longer callable)")
+                        callee_recipe, callee_def, sig = found
+                        values = calls.coerce(sig, {k: rc.render(v) for k, v in c["inputs"].items()})   # tainted values are refused
+                        try:
+                            calls.check_inputs(sig, values)
+                            calls.check_values(sig, values)
+                            if len(json.dumps(values, allow_nan=False)) > 16384:
+                                raise ValueError("the inputs are too large")
+                        except (TypeError, ValueError) as e:
+                            raise actions.StepError(str(e))
+                        inp["inputs"] = values
+                        chain = list(job.call_chain or []) + [job.recipe_id]
+                        if callee_recipe.id in chain:
+                            raise actions.StepError("recursive call: a recipe cannot be called from inside itself")
+                        if job.depth + 1 > calls.MAX_CALL_DEPTH:
+                            raise actions.StepError(f"recipes can be called at most {calls.MAX_CALL_DEPTH} levels deep")
+                        child_trigger = {"event": {"id": 0, "type": "call", "occurred_at": now.isoformat()},
+                                         "actor": {"type": "recipe", "id": str(job.recipe_id)},
+                                         "payload": values, "call": {"parent_job": job.id}}
+                        if job.mode == "dry_run":   # a test run runs the callee's published version too, without side effects
+                            cstatus, cerror, couts, cid = _run_child_dry(job, callee_recipe.id, callee_def, child_trigger, chain,
+                                                                         f"dry-call:{job.id}:{instr['id']}:{seq}", now)
+                            if cstatus != "succeeded":
+                                raise actions.StepError(f"the called recipe failed: {cerror or cstatus}")
+                            out = {"result": couts.get("_result", {}), "job_id": cid}
+                        elif w is None:
+                            child = create_job(db, callee_recipe, callee_def, callee_recipe.published_version, child_trigger,
+                                               f"call:{job.id}:{instr['id']}:{seq}", depth=job.depth + 1, now=now, enforce_rate=False)
+                            if child is None:
+                                raise actions.StepError("this call was already made")
+                            child.parent_job_id, child.call_chain = job.id, chain
+                            until = now + timedelta(seconds=calls.POLL_SECONDS)
+                            call_rec = {"step_id": instr["id"], "started_at": now.isoformat(), "until": until.isoformat(), "child_job_id": child.id}
+                        else:
+                            child = db.get(RecipeJob, w["child_job_id"])
+                            if child is not None and child.status in ("queued", "running", "waiting"):
+                                until = now + timedelta(seconds=calls.POLL_SECONDS)
+                            else:
+                                waited = max(int((now - datetime.fromisoformat(w["started_at"])).total_seconds()), 0)
+                                if child is not None and child.status == "succeeded":
+                                    res = (child.step_outputs or {}).get("_result", {})
+                                    if set(res) != set(sig["outputs"]):
+                                        raise actions.StepError("the called recipe did not return its declared outputs")
+                                    out = {"result": res, "job_id": child.id}
+                                else:   # failed or cancelled: this step fails; stop counting the wait
+                                    o2 = dict(job.step_outputs or {})
+                                    o2.pop("_wait", None)
+                                    job.step_outputs = o2
+                                    job.paused_seconds = (job.paused_seconds or 0) + waited
+                                    raise actions.StepError(f"the called recipe failed: {(child.error if child else None) or 'it did not finish'}")
+                    elif instr["type"] == "wait":
                         total = timedelta(minutes=c["amount"] * WAIT_UNIT_MINUTES[c["unit"]])
                         inp = {"wait": f"{c['amount']} {c['unit']}"}
                         if job.mode == "dry_run":   # a test run never pauses
@@ -460,7 +550,7 @@ def execute_job(db: Session, job_id: int, now: datetime) -> str:
                                 until = passes[len(passes) - c["max_runs"]] + window
                     if out is None:   # not through yet: pause the job until `until`
                         outputs = dict(job.step_outputs or {})
-                        outputs["_wait"] = w or {"step_id": instr["id"], "started_at": now.isoformat(),
+                        outputs["_wait"] = w or call_rec or {"step_id": instr["id"], "started_at": now.isoformat(),
                                                  "until": (until or now).isoformat()}
                         job.step_outputs = outputs
                         job.status, job.locked_until, job.next_run_at = "waiting", None, until

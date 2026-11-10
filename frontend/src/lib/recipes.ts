@@ -66,6 +66,7 @@ export type RecipeMeta = {
   managed_attributes: { key: string; display_name: string; data_type: string; enum_options: string[] | null }[];
   safe_user_fields: string[];
   limits: { max_steps: number; max_nesting: number };
+  callable_recipes?: { id: number; name: string; inputs: { name: string; type: string; required: boolean }[]; outputs: string[] }[];
   lookup_tables?: { name: string; columns: { name: string; type: string }[]; key_column: string | null; admin_managed: boolean }[];
   functions?: { name: string; signature: string; description: string; example: string }[];
 };
@@ -169,6 +170,7 @@ export function stepPills(meta: RecipeMeta, before: StepNode[], forDecision = fa
     if (s.type === "lookup_row" && forDecision && !(lt?.admin_managed)) continue;
     for (const o of info?.outputs ?? []) pills.push({ path: `steps.${s.id}.output.${o}`, label: `${label} (${s.id}): ${o}` });
     for (const c of lt?.columns ?? []) pills.push({ path: `steps.${s.id}.output.row.${c.name}`, label: `${label} (${s.id}): row ${c.name}` });
+    if (s.type === "call_recipe") for (const o of meta.callable_recipes?.find((r) => r.id === s.config?.recipe_id)?.outputs ?? []) pills.push({ path: `steps.${s.id}.output.result.${o}`, label: `${label} (${s.id}): ${o}` });
     if (s.type === "set_variable" && s.config?.name) pills.push({ path: `vars.${s.config.name}`, label: `Variable: ${s.config.name}` });
     if (info?.kind === "action") pills.push({ path: `steps.${s.id}.output.error`, label: `${label} (${s.id}): error (when set to continue)` });
   }

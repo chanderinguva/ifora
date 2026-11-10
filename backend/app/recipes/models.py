@@ -102,6 +102,8 @@ class RecipeJob(TenantOwned, Base):
     in_handler = Column(Boolean, nullable=False, default=False, server_default="false")  # running the definition's on_error steps
     cancel_requested = Column(Boolean, nullable=False, default=False, server_default="false")
     rerun_of = Column(Integer, nullable=True)  # the job this one re-runs
+    parent_job_id = Column(Integer, nullable=True, index=True)  # the job whose Call recipe step started this one
+    call_chain = Column(JSONB, nullable=True)  # ids of the recipes above this job in the call chain (recursion guard)
     approval = Column(JSONB, nullable=True)  # {step_id, message, requested_at, expires_at, decision, decided_by} while/after waiting
     paused_seconds = Column(Integer, nullable=False, default=0, server_default="0")  # time spent waiting; not counted against the runtime cap
     executed_steps = Column(Integer, nullable=False, default=0)

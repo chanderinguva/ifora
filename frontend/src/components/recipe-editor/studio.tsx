@@ -81,6 +81,8 @@ function summary(s: StepNode, props: Props): string {
     case "lookup_row": return c.table ? `Look up ${c.table} where ${c.column}` : "Choose a table";
     case "lookup_write": return c.table ? `${c.action === "delete" ? "Delete from" : c.action === "add" ? "Add to" : "Upsert into"} ${c.table}` : "Choose a table";
     case "set_variable": return c.name ? `Set ${c.name}` : "Name the variable";
+    case "call_recipe": return c.recipe_id ? `Call ${props.ctx.meta.callable_recipes?.find((r) => r.id === c.recipe_id)?.name ?? "a recipe"}` : "Choose a recipe to call";
+    case "return_data": return `Return ${Object.keys(c.values ?? {}).join(", ") || "data"}`;
     case "wait": return `Wait ${c.amount ?? "?"} ${c.unit ?? "minutes"}`;
     case "throttle": return `${c.max_runs ?? "?"} per ${c.per_minutes ?? "?"} min, then ${c.when_full === "stop" ? "drop" : "wait"}`;
     default: return "";
@@ -262,11 +264,13 @@ export function Studio(props: Props) {
 
   const ctxFor = (section: "steps" | "on_error", inLoop = false): Ctx => ({
     ...props.ctx, root: section === "steps" ? def.steps : def.on_error ?? [], other: section === "steps" ? def.on_error ?? [] : def.steps,
-    handler: section === "on_error", inLoop,
+    handler: section === "on_error", inLoop, callOutputs: def.trigger.config?.outputs ?? [],
   });
 
   const optionsFor = (ref: LaneRef, depth: number): StepMenuItem[] =>
     meta.steps.filter((s) => (s.type !== "condition" && s.type !== "approval") || depth < meta.limits.max_nesting)
+      .filter((s) => s.type !== "return_data" || (def.trigger.type === "call" && ref.section === "steps"))
+      .filter((s) => !(s.type === "call_recipe" && ref.section === "on_error"))
       .filter((s) => !(isLoopType(s.type) && (depth > 0 || ref.section === "on_error")) && !((s.type === "approval" || s.type === "wait" || s.type === "throttle") && ref.section === "on_error"));
 
   function add(ref: LaneRef, index: number, type: string, inLoop: boolean) {

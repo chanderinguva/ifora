@@ -63,6 +63,7 @@ Include in the roadmap, not in this ADR's first cut: recipe **folders/tags/searc
 3. **Done**: variables, wait/delay and throttle (see "Implemented: variables, wait, throttle"). Still open: wait-for-event.
 4. **Done** (formula function deferred): lookup tables (models, admin page, steps). See "Implemented: lookup tables".
 4a. **Done**: list functions and repeat for each item (see "Implemented: list functions and For each item in a list").
+4b. **Done**: callable recipes (see "Implemented: callable recipes").
 5. Callable recipes (child jobs, schema, depth/recursion guards).
 6. Custom API call upgrades, then custom connectors (+ OpenAPI import).
 7. Code-runner service and code steps, off by default, with a documented threat model and a hardening checklist; each language image added separately (Python first).
@@ -178,3 +179,16 @@ The *key* of a lookup must never be user-editable text, because it picks which a
 - Empty list: the body is skipped and the flow continues after the loop.
 
 **Not included:** `while` loops, batches of items, per-iteration error handling, loops over more than 100 items, nested loops.
+
+# Implemented: callable recipes
+**Callee.** A recipe whose trigger is **Called by another recipe** (`call`) declares `inputs` (name, type text/number/boolean/list/object, required) and `outputs` (names). Inputs arrive as `trigger.payload.<name>`. The new step **Return data to the caller** (`return_data`, only in such recipes, never in the error steps) must give exactly the declared outputs and ends the job. A callee can be tested on its own with a sample payload.
+
+**Caller.** The step **Call a recipe** (`call_recipe`) names a published, enabled, callable recipe and maps its inputs (pill, formula or text; text typed into a number or yes/no input is converted). The result is available as `steps.<id>.output.result.<output>`.
+
+**How it runs.** The call creates a **child job** (migration 0049: `parent_job_id`, `call_chain`) from the callee's *published* version, with idempotency key `call:<parent job>:<step>:<seq>`, and parks the parent in `waiting` with the child's id (the same mechanism as Wait, so the wait does not count against the parent's run-time limit). A child that finishes wakes its parent at once; a 30-second poll is the fallback. A failed or cancelled child fails the call step with the child's error, so the parent's error steps apply. If a job fails, is cancelled or is dropped, its unfinished children are cancelled. A **test run** runs the callee's published version too, as a dry-run child in its own session, without side effects and without waiting.
+
+**Guards.** Depth 5; a recipe cannot appear twice in a call chain (checked when the call runs; saving only checks that the callee exists, is callable and gets the right inputs); the caller's inputs and the callee's returned values are **taint-checked** like variables, so user-editable text cannot cross a call boundary; inputs are limited to 16 KB and returned data to 64 KB; types are checked at run time. The child runs under its own recipe, so it uses **its own** connections and recipe settings, never the caller's. `GET /admin/recipes/{id}/callers` lists the recipes (draft or published) that call a recipe, and `/meta` lists `callable_recipes`.
+
+**Differences from the first design.** The 500-step budget is per job, not shared with the parent (depth 5 bounds the total at 5 x 500). Access rules between recipes are not enforced beyond "admin who can edit the caller": there is no per-recipe read permission to check yet. The editor shows callers only through the API for now.
+
+**Not included:** asynchronous (fire-and-forget) calls, a "wait for async result" step, recursion, calling from the error steps, callable recipes with per-call connections, a callers panel in the editor.
