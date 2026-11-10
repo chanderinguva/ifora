@@ -960,8 +960,9 @@ async def webhook(public_id: str, request: Request, db: Session = Depends(get_db
         ratelimit.hit("recipe_hook", ip, 300)
         return HTTPException(status_code=401, detail="Invalid signature")
 
-    ts = request.headers.get("x-identityforge-timestamp", "")
-    sig = request.headers.get("x-identityforge-signature", "")
+    # X-Ifora-* is the current name; the X-IdentityForge-* names from before the rebrand keep working (existing senders).
+    ts = request.headers.get("x-ifora-timestamp", "") or request.headers.get("x-identityforge-timestamp", "")
+    sig = request.headers.get("x-ifora-signature", "") or request.headers.get("x-identityforge-signature", "")
     if not ts.isdigit() or len(ts) > 12 or not sig.startswith("v1="):
         raise reject()
     if abs(time.time() - int(ts)) > settings.RECIPES_WEBHOOK_REPLAY_SECONDS:

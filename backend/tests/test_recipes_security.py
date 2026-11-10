@@ -372,6 +372,19 @@ def post_hook(anon, path, secret, payload, ts=None, sig=None, raw=None):
     return anon.c.post(path, content=body, headers={"X-IdentityForge-Timestamp": ts, "X-IdentityForge-Signature": sig, "Content-Type": "application/json"})
 
 
+def test_webhook_accepts_the_new_ifora_headers_and_the_legacy_ones(db, admin, anon, rkey):
+    rid, secret, path = hook_recipe(admin, rkey)
+    body = json.dumps({"x": 1}).encode()
+    ts = str(int(time.time()))
+    sig = "v1=" + sign_webhook(secret, ts, body)
+    new = anon.c.post(path, content=body, headers={"X-Ifora-Timestamp": ts, "X-Ifora-Signature": sig, "Content-Type": "application/json"})
+    assert new.status_code in (200, 202), new.text
+    old = anon.c.post(path, content=body, headers={"X-IdentityForge-Timestamp": ts, "X-IdentityForge-Signature": sig, "Content-Type": "application/json"})
+    assert old.status_code in (200, 202), old.text
+    bad = anon.c.post(path, content=body, headers={"X-Ifora-Timestamp": ts, "X-Ifora-Signature": "v1=" + "0" * 64, "Content-Type": "application/json"})
+    assert bad.status_code == 401
+
+
 def test_webhook_happy_path_and_secret_shown_once(db, admin, anon, rkey):
     rid, secret, path = hook_recipe(admin, rkey)
     assert secret not in admin.get(f"/admin/recipes/{rid}").text and secret not in admin.get("/admin/recipes").text
