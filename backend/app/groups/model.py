@@ -52,7 +52,7 @@ class Group(TenantOwned, Base):
 
     # Group type
     is_system_group = Column(Boolean, default=False, nullable=False)
-    # team | project | app_access | push | app | other (ADR 019); "other" is the unclassified default
+    # team | project | app_access | role | push | app | other (ADR 019); "other" is the unclassified default
     type = Column(String(50), default="other", server_default="other", nullable=False)
 
     # Governance metadata (ADR 019), readable by reports, analytics and provisioning tools
