@@ -75,7 +75,6 @@ test("the editor offers the connector action step and its outputs become datapil
   await page.getByRole("button", { name: "New recipe" }).click();
   await page.locator("#rc-name").fill(recipeName);
   await page.getByRole("button", { name: "Create and open builder" }).click();
-  await page.getByTestId("try-studio").click();
   await page.getByRole("button", { name: "Add a step", exact: true }).first().click();
 
   // the menu lists each connection's actions directly, grouped under the connection (the generic step is not offered while a connection exists)

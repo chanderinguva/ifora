@@ -3,111 +3,22 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge, PageHeader, fieldClass } from "@/components/bits";
-import { isLoop, isLoopType } from "@/components/recipe-editor/tree";
 import { JobView, RecipeTabs } from "@/components/recipe-bits";
 import { Studio } from "@/components/recipe-editor/studio";
 import { FunctionsContext } from "@/components/recipe-editor/pill-context";
-import { Select, Comparisons, StepForm, TriggerCard, defaultConfig, type Ctx } from "@/components/recipe-editor/forms";
-import { FlowDiagram } from "@/components/recipe-flow";
+import { Select, type Ctx } from "@/components/recipe-editor/forms";
 import { http, qs, type Page } from "@/lib/http";
-import {
-  OPERATOR_LABELS, allSteps, decisionPills, nextStepId, stepPills, stepsBefore,
-  type Comparison, type Connection, type Definition, type Job, type Pill, type RecipeMeta, type RecipeSummary, type StepNode,
-} from "@/lib/recipes";
+import type { Connection, Definition, Job, RecipeMeta, RecipeSummary } from "@/lib/recipes";
 import type { Group, User } from "@/lib/types";
 
 
-function mapSteps(steps: StepNode[], id: string, fn: (s: StepNode) => StepNode | null): StepNode[] {
-  return steps.flatMap((s) => {
-    if (s.id === id) { const r = fn(s); return r ? [r] : []; }
-    return [{ ...s, then: s.then ? mapSteps(s.then, id, fn) : s.then, else: s.else ? mapSteps(s.else, id, fn) : s.else }];
-  });
-}
-function moveIn(steps: StepNode[], id: string, dir: -1 | 1): StepNode[] {
-  const i = steps.findIndex((s) => s.id === id);
-  if (i >= 0) {
-    const j = i + dir;
-    if (j < 0 || j >= steps.length) return steps;
-    const copy = [...steps];
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-    return copy;
-  }
-  return steps.map((s) => ({ ...s, then: s.then ? moveIn(s.then, id, dir) : s.then, else: s.else ? moveIn(s.else, id, dir) : s.else }));
-}
-
-function StepList({ steps, ctx, onChange, depth }: { steps: StepNode[]; ctx: Ctx; onChange: (s: StepNode[]) => void; depth: number }) {
-  const addable = ctx.meta.steps.filter((s) => (s.type !== "condition" && s.type !== "approval") || depth < ctx.meta.limits.max_nesting)
-    .filter((s) => s.type !== "handle_errors") // blocks are built in the studio editor
-    .filter((s) => s.type !== "return_data" || (ctx.trigger === "call" && !ctx.handler))
-    .filter((s) => !(s.type === "call_recipe" && ctx.handler))
-    .filter((s) => !(isLoopType(s.type) && (depth > 0 || ctx.handler)) && !((s.type === "approval" || s.type === "wait" || s.type === "throttle") && ctx.handler));
-  const [type, setType] = useState("log");
-  const root = ctx.root;
-  return (
-    <div className={depth > 0 ? "ml-4 space-y-3 border-l-2 pl-4" : "space-y-3"}>
-      {steps.map((s, i) => {
-        const info = ctx.meta.steps.find((m) => m.type === s.type);
-        const isAction = info?.kind === "action";
-        const replace = (n: StepNode) => onChange(steps.map((x) => (x.id === s.id ? n : x)));
-        return (
-          <Card key={s.id} id={`step-${s.id}`} data-testid="step-card">
-            <CardHeader className="flex-row items-center justify-between space-y-0 py-3">
-              <CardTitle className="text-base">{i + 1}. {info?.label ?? s.type} <code className="ml-1 text-xs font-normal text-muted-foreground">{s.id}</code></CardTitle>
-              <div className="flex gap-1">
-                <Button type="button" size="sm" variant="ghost" aria-label="Move up" disabled={i === 0} onClick={() => onChange(moveIn(steps, s.id, -1))}><ArrowUp className="h-4 w-4" /></Button>
-                <Button type="button" size="sm" variant="ghost" aria-label="Move down" disabled={i === steps.length - 1} onClick={() => onChange(moveIn(steps, s.id, 1))}><ArrowDown className="h-4 w-4" /></Button>
-                <Button type="button" size="sm" variant="ghost" aria-label="Delete step" onClick={() => onChange(steps.filter((x) => x.id !== s.id))}><Trash2 className="h-4 w-4" /></Button>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <StepForm step={s} ctx={ctx} onChange={replace} />
-              {isAction && (
-                <details className="text-sm">
-                  <summary className="cursor-pointer text-muted-foreground">Error handling</summary>
-                  <div className="mt-2 grid gap-3 md:grid-cols-2">
-                    <div className="space-y-1"><Label>If this step fails</Label>
-                      <Select label="On error" value={s.on_error ?? "fail"} onChange={(v) => replace({ ...s, on_error: v as "fail" | "continue" })}><option value="fail">Fail the job</option><option value="continue">Continue with the next step</option></Select></div>
-                    <div className="space-y-1"><Label>Attempts (retries use exponential back-off)</Label>
-                      <Select label="Attempts" value={s.max_attempts ?? 3} onChange={(v) => replace({ ...s, max_attempts: Number(v) })}>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}</Select></div>
-                  </div>
-                </details>
-              )}
-              {(s.type === "condition" || s.type === "approval") && (
-                <div className="space-y-3">
-                  <div><div className="mb-1 text-sm font-medium">{s.type === "approval" ? "If approved" : "Then"}</div><StepList steps={s.then ?? []} ctx={ctx} depth={depth + 1} onChange={(n) => replace({ ...s, then: n })} /></div>
-                  <div><div className="mb-1 text-sm font-medium">{s.type === "approval" ? "If denied or no answer in time" : "Otherwise"}</div><StepList steps={s.else ?? []} ctx={ctx} depth={depth + 1} onChange={(n) => replace({ ...s, else: n })} /></div>
-                </div>
-              )}
-              {isLoop(s) && (
-                <div><div className="mb-1 text-sm font-medium">{s.type === "for_each_item" ? "For each item" : "For each member"}</div>
-                  <StepList steps={s.then ?? []} ctx={{ ...ctx, inLoop: true }} depth={depth + 1} onChange={(n) => replace({ ...s, then: n })} /></div>
-              )}
-            </CardContent>
-          </Card>
-        );
-      })}
-      <div className="flex items-center gap-2">
-        <Select label={depth === 0 ? "New step type" : "New branch step type"} className="!w-60" value={type} onChange={setType}>
-          <optgroup label="Actions">{addable.filter((m) => m.kind === "action").map((m) => <option key={m.type} value={m.type}>{m.label}</option>)}</optgroup>
-          <optgroup label="Control">{addable.filter((m) => m.kind === "control").map((m) => <option key={m.type} value={m.type}>{m.label}</option>)}</optgroup>
-        </Select>
-        <Button type="button" variant="secondary" size="sm" disabled={allSteps(root).length >= ctx.meta.limits.max_steps}
-          onClick={() => { const n: StepNode = { id: nextStepId([...root, ...(ctx.other ?? [])]), type, config: defaultConfig(type, ctx), on_error: "fail", max_attempts: 3 }; if (type === "condition" || type === "approval") { n.then = []; n.else = []; } if (isLoopType(type)) n.then = []; onChange([...steps, n]); }}>
-          <Plus className="mr-1 h-4 w-4" /> Add step
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-export function RecipeBuilder({ studio = false }: { studio?: boolean }) {
+export function RecipeBuilder() {
   const { id } = useParams<{ id: string }>();
   const [recipe, setRecipe] = useState<RecipeSummary | null>(null);
   const [def, setDef] = useState<Definition | null>(null);
@@ -118,7 +29,6 @@ export function RecipeBuilder({ studio = false }: { studio?: boolean }) {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [connAvail, setConnAvail] = useState(false);
   const [dirty, setDirty] = useState(false);
-  const [view, setView] = useState<"steps" | "flow">("steps");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [secret, setSecret] = useState<string | null>(null);
   const [test, setTest] = useState({ user_id: "", group_id: "", payload: "{}" });
@@ -156,11 +66,8 @@ export function RecipeBuilder({ studio = false }: { studio?: boolean }) {
   const undo = () => { const p = hist.past.pop(); if (p) { hist.future.push(def); hist.last = 0; hist.rev += 1; setDef(p); setDirty(true); } };
   const redo = () => { const n = hist.future.pop(); if (n) { hist.past.push(def); hist.last = 0; hist.rev += 1; setDef(n); setDirty(true); } };
   const setTrigger = (patch: Partial<Definition["trigger"]>) => edit({ ...def, trigger: { ...def.trigger, ...patch } }, true);
-  const tcfg = (patch: Record<string, any>) => setTrigger({ config: { ...def.trigger.config, ...patch } });
   const canEdit = recipe.can_edit !== false;
   const canManage = recipe.can_manage !== false;
-  const triggerPills = trig.fields;
-  const filterPills = decisionPills(meta, def.trigger.type, []);
   const needsUser = !["schedule", "webhook"].includes(def.trigger.type);
   const isGroupTrig = def.trigger.type.startsWith("group.member_");
 
@@ -178,8 +85,7 @@ export function RecipeBuilder({ studio = false }: { studio?: boolean }) {
         <Badge tone="info">{recipe.published_version ? `published v${recipe.published_version}` : "not published"}</Badge>
       </PageHeader>
       <RecipeTabs />
-      <p className="mb-4 flex gap-4 text-sm"><Link className="underline underline-offset-4" href="/admin/recipes">← All recipes</Link>
-        {studio ? <Link className="underline underline-offset-4" href={`/admin/recipes/${id}`}>Use the classic editor</Link> : <Link className="underline underline-offset-4" data-testid="try-studio" href={`/admin/recipes/${id}/studio`}>Try the new editor</Link>}</p>
+      <p className="mb-4 text-sm"><Link className="underline underline-offset-4" href="/admin/recipes">← All recipes</Link></p>
       {msg && <Alert variant={msg.ok ? "default" : "destructive"} className="mb-4" role="status" data-testid="builder-msg"><AlertDescription>{msg.text}</AlertDescription></Alert>}
       {secret && (
         <Alert variant="warning" className="mb-4" data-testid="webhook-secret"><AlertDescription>
@@ -211,34 +117,10 @@ export function RecipeBuilder({ studio = false }: { studio?: boolean }) {
       {!canEdit && <Alert className="mb-4" data-testid="read-only-note"><AlertDescription>Read-only: only the owner ({recipe.owner?.email ?? "unassigned"}), listed editors and super admins can change this recipe.</AlertDescription></Alert>}
       <AccessCard recipe={recipe} admins={users.filter((u) => u.is_admin)} onSaved={(r) => { adopt(r); load(); }} setMsg={setMsg} />
 
-      {studio ? (
-        <div className="mb-6">
-          <Studio def={def} meta={meta} ctx={ctx} groups={groups} canEdit={canEdit} edit={edit} setTrigger={setTrigger}
-            result={result} stale={resultRev !== hist.rev} previewFormulas={async (templates) => (await http<{ items: { template: string; ok: boolean; value?: unknown; error?: string }[] }>(`/admin/recipes/${id}/formula-preview`, { method: "POST", body: { templates, user_id: test.user_id ? Number(test.user_id) : null, group_id: test.group_id ? Number(test.group_id) : null, payload: safeJson(test.payload) } })).items} undo={undo} redo={redo} canUndo={hist.past.length > 0} canRedo={hist.future.length > 0} />
-        </div>
-      ) : (<>
-      <div className="mb-3 flex gap-1" role="tablist" aria-label="Builder view">
-        {(["steps", "flow"] as const).map((v) => (
-          <button key={v} type="button" role="tab" aria-selected={view === v} onClick={() => setView(v)}
-            className={"rounded-md border px-3 py-1 text-sm " + (view === v ? "bg-muted font-medium" : "text-muted-foreground")}>{v === "steps" ? "Steps" : "Flow diagram"}</button>
-        ))}
+      <div className="mb-6">
+        <Studio def={def} meta={meta} ctx={ctx} groups={groups} canEdit={canEdit} edit={edit} setTrigger={setTrigger}
+          result={result} stale={resultRev !== hist.rev} previewFormulas={async (templates) => (await http<{ items: { template: string; ok: boolean; value?: unknown; error?: string }[] }>(`/admin/recipes/${id}/formula-preview`, { method: "POST", body: { templates, user_id: test.user_id ? Number(test.user_id) : null, group_id: test.group_id ? Number(test.group_id) : null, payload: safeJson(test.payload) } })).items} undo={undo} redo={redo} canUndo={hist.past.length > 0} canRedo={hist.future.length > 0} />
       </div>
-      {view === "flow" && (
-        <div className="mb-6"><FlowDiagram def={def} meta={meta} onSelect={(sid) => { setView("steps"); setTimeout(() => document.getElementById(`step-${sid}`)?.scrollIntoView({ block: "center" }), 50); }} /></div>
-      )}
-      <fieldset disabled={!canEdit} className={"min-w-0 border-0 p-0 " + (view === "flow" ? "hidden" : "")}>
-      <TriggerCard def={def} meta={meta} groups={groups} setTrigger={setTrigger} />
-
-      <h2 className="mb-2 text-lg font-semibold">Then do these steps</h2>
-      <StepList steps={def.steps} ctx={{ ...ctx, other: def.on_error ?? [] }} depth={0} onChange={(s) => edit({ ...def, steps: s })} />
-
-      <h2 className="mb-1 mt-6 text-lg font-semibold">If a step fails</h2>
-      <p className="mb-2 text-sm text-muted-foreground">Optional. These steps run after a step fails for good (after its retries), with the error message and failed step as datapills. The job is still recorded as failed.</p>
-      <div data-testid="error-handler">
-        <StepList steps={def.on_error ?? []} ctx={{ ...ctx, root: def.on_error ?? [], other: def.steps, handler: true }} depth={0} onChange={(s) => edit({ ...def, on_error: s })} />
-      </div>
-      </fieldset>
-      </>)}
 
       <Card className="mt-6" id="test-card" data-testid="test-card">
         <CardHeader className="py-3"><CardTitle className="text-base">Test (dry run of the draft)</CardTitle></CardHeader>

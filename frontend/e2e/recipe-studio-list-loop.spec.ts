@@ -11,7 +11,6 @@ test("repeat a step for each item of a list and see every item in the test run",
   await page.getByRole("button", { name: "New recipe" }).click();
   await page.locator("#rc-name").fill(recipeName);
   await page.getByRole("button", { name: "Create and open builder" }).click();
-  await page.getByTestId("try-studio").click();
 
   await page.getByTestId("studio-add").first().click();
   await page.getByRole("menuitem", { name: "For each item in a list", exact: true }).click();

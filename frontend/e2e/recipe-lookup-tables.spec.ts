@@ -45,7 +45,6 @@ test("create a lookup table, edit rows, import CSV, and read a row from a recipe
   await page.getByRole("button", { name: "New recipe" }).click();
   await page.locator("#rc-name").fill(recipeName);
   await page.getByRole("button", { name: "Create and open builder" }).click();
-  await page.getByTestId("try-studio").click();
   const add = async (label: string) => {
     await page.getByTestId("studio-add").first().click();
     await page.getByRole("menuitem", { name: label, exact: true }).click();
