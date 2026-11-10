@@ -15,12 +15,10 @@ export const ADMIN_NAV: NavGroup[] = [
     items: [
       { href: "/admin/users", area: "users", label: "Users", icon: Users },
       { href: "/admin/groups", area: "groups", label: "Groups", icon: Shield },
-      { href: "/admin/roles", area: "roles", label: "Roles", icon: UserCog },   // the "roles" area is only ever held by super administrators
-      { href: "/admin/profile-editor", area: "directory_settings", label: "Profile editor", icon: SlidersHorizontal },
       { href: "/admin/group-rules", area: "groups", label: "Group rules", icon: Workflow },
+      { href: "/admin/profile-editor", area: "directory_settings", label: "Profile editor", icon: SlidersHorizontal },
     ],
   },
-  { label: "Automation", items: [{ href: "/admin/recipes", area: "automation", label: "Recipes", icon: Zap }] },
   {
     label: "Applications",
     items: [
@@ -31,8 +29,18 @@ export const ADMIN_NAV: NavGroup[] = [
       { href: "/admin/provisioning", area: "applications", label: "Inbound SCIM", icon: RefreshCw },
     ],
   },
+  { label: "Automation", items: [{ href: "/admin/recipes", area: "automation", label: "Recipes", icon: Zap }] },
+  {
+    label: "Security",
+    items: [
+      { href: "/admin/administrators", area: "security", label: "Administrators & API tokens", icon: ShieldCheck },
+      { href: "/admin/roles", area: "roles", label: "Roles", icon: UserCog },   // the "roles" area is only ever held by super administrators
+      { href: "/admin/security-policy", area: "security", label: "Password & sessions", icon: KeyRound },
+      { href: "/admin/network-zones", area: "security", label: "Network zones", icon: Globe },
+    ],
+  },
+  { label: "Reports", items: [{ href: "/admin/audit", area: "reports", label: "System log", icon: ScrollText }] },
   { label: "Customization", items: [{ href: "/admin/branding", label: "Branding", icon: Palette, area: "branding" }, { href: "/admin/email-templates", label: "Email templates", icon: Mail, area: "branding" }] },
-  { label: "Security", items: [{ href: "/admin/security-policy", area: "security", label: "Password & sessions", icon: KeyRound }, { href: "/admin/administrators", area: "security", label: "Administrators & API tokens", icon: ShieldCheck }, { href: "/admin/network-zones", area: "security", label: "Network zones", icon: Globe }, { href: "/admin/audit", area: "reports", label: "System log", icon: ScrollText }] },
   { label: "Account", items: [{ href: "/settings", label: "Account settings", icon: Settings }] },
 ];
 

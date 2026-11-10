@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, LogOut, Settings, ShieldCheck, UserRound } from "lucide-react";
+import { LogOut, Settings, ShieldCheck, UserRound } from "lucide-react";
 import { logout } from "@/lib/auth-client";
 import { http } from "@/lib/http";
 import { useCurrentUser } from "./auth-guard";
@@ -65,6 +65,8 @@ export function UserMenu({
   }
 
   const roleLabel = user.acting_as_user ? "user view" : user.is_super_admin ? "super admin" : user.is_admin ? "admin" : "";
+  const fullName = [user.first_name, user.last_name].filter(Boolean).join(" ");
+  const initials = (((user.first_name?.[0] ?? "") + (user.last_name?.[0] ?? "")) || (user.email?.[0] ?? "?")).toUpperCase();
 
   return (
     <div className="relative text-sm" ref={menuRef}>
@@ -72,15 +74,23 @@ export function UserMenu({
         data-testid="user-menu"
         aria-haspopup="menu"
         aria-expanded={open}
-        className="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+        title={roleLabel ? `${user.email} · ${roleLabel}` : user.email}
+        className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground outline-none ring-offset-background hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         onClick={() => onOpenChange(!open)}
       >
-        <span data-testid="current-user" className="max-w-[5.5rem] truncate min-[480px]:max-w-[9rem] sm:max-w-[16rem]">{user.email}</span>
-        {roleLabel && <span className="hidden text-xs text-muted-foreground sm:inline">{roleLabel}</span>}
-        <ChevronDown className="h-4 w-4" aria-hidden="true" />
+        <span aria-hidden="true">{initials}</span>
+        {/* the account stays in the accessible name (and the DOM) even though only the initials are drawn */}
+        <span className="sr-only">
+          <span data-testid="current-user">{user.email}</span>{roleLabel ? ` ${roleLabel}` : ""}
+        </span>
       </button>
       {open && (
-        <div role="menu" className="absolute right-0 z-20 mt-2 w-60 rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
+        <div role="menu" className="absolute right-0 z-20 mt-2 w-64 rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
+          <div className="mb-1 border-b px-3 py-2" data-testid="user-menu-header">
+            {fullName && <div className="truncate font-medium">{fullName}</div>}
+            <div className="truncate text-xs text-muted-foreground">{user.email}</div>
+            {roleLabel && <div className="mt-0.5 text-xs capitalize text-muted-foreground">{roleLabel}</div>}
+          </div>
           <Link role="menuitem" href="/settings" className="flex items-center gap-2 rounded px-3 py-2 hover:bg-accent" onClick={() => onOpenChange(false)}>
             <Settings className="h-4 w-4" aria-hidden="true" /> Account settings
           </Link>

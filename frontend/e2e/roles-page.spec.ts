@@ -29,7 +29,7 @@ test("the Roles page: pick a team group for a role, see it listed, remove it; ro
     expect(roleGroup?.id, "role based group created").toBeTruthy();
     groupIds.push(team.id, plain.id, roleGroup.id);
 
-    // in the sidebar, next to Users and Groups
+    // in the sidebar, under Security
     await page.goto("/admin/dashboard");
     await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Roles", exact: true })).toBeVisible();
     await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Roles", exact: true }).click();
