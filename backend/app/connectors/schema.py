@@ -105,6 +105,7 @@ class Connector(_Strict):
     auth: Auth
     test: Test
     reply: Optional[Reply] = None
+    config_headers: Dict[str, str] = Field(default_factory=dict, max_length=3)  # headers filled from non-secret connection fields (PagerDuty's From)
     actions: List[Action] = Field(..., min_length=1, max_length=MAX_ACTIONS)
 
     @field_validator("hosts")
@@ -201,6 +202,13 @@ def validate_connector(raw: Any) -> Connector:
     for k, v in c.headers.items():
         if not _HEADER_NAME.match(k) or k.lower() in _FORBIDDEN_HEADERS or "\r" in v or "\n" in v or placeholders(v):
             raise DefinitionInvalid(f"headers: invalid static header {k!r}")
+
+    for k, v in c.config_headers.items():
+        if not _HEADER_NAME.match(k) or k.lower() in _FORBIDDEN_HEADERS or k in c.headers:
+            raise DefinitionInvalid(f"config_headers: invalid header {k!r}")
+        names = placeholders(v)
+        if not names or any(n not in config_keys for n in names) or "\r" in v or "\n" in v:
+            raise DefinitionInvalid(f"config_headers: {k!r} may only use non-secret auth fields")
 
     # test + actions -----------------------------------------------------------------------------------------------------------
     if c.reply is not None:

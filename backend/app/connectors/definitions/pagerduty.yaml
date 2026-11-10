@@ -1,0 +1,146 @@
+id: pagerduty
+version: 1
+name: PagerDuty
+category: incident
+description: Find users, manage team membership, and create, update and annotate incidents in PagerDuty (US service region).
+hosts: ["api.pagerduty.com"]
+headers:
+  Accept: "application/vnd.pagerduty+json;version=2"
+  User-Agent: Ifora
+config_headers:
+  From: "{from_email}"
+auth:
+  scheme: header
+  header_name: Authorization
+  header_prefix: "Token token="
+  fields:
+    - {key: value, label: REST API key, secret: true}
+    - {key: from_email, label: "Email of a PagerDuty user (recorded as the author of changes)", pattern: '^[^\s@]{1,100}@[^\s@]{1,100}$', max_length: 201}
+test:
+  path: /abilities
+actions:
+  - id: find_user
+    label: Find user by email
+    description: PagerDuty searches names and emails loosely, so check the returned emails before acting on user_id.
+    method: GET
+    path: /users
+    query: {query: "{email}", limit: "10"}
+    inputs:
+      - {key: email, label: Email address, type: string, required: true, pattern: '^[^\s@]{1,100}@[^\s@]{1,100}$', max_length: 201}
+    outputs:
+      - {key: user_id, from: "$.users[0].id"}
+      - {key: user_ids, from: "$.users[*].id"}
+      - {key: emails, from: "$.users[*].email"}
+    errors:
+      401: The REST API key was refused.
+      403: The key cannot read users.
+
+  - id: add_user_to_team
+    label: Add user to team
+    method: PUT
+    path: /teams/{team_id}/users/{user_id}
+    inputs:
+      - {key: team_id, label: Team id, type: string, required: true, pattern: '^[A-Z0-9]{5,20}$', max_length: 20}
+      - {key: user_id, label: User id, type: string, required: true, pattern: '^[A-Z0-9]{5,20}$', max_length: 20}
+      - {key: role, label: Role in the team, type: select, options: [responder, manager, observer], default: responder}
+    body: {role: "{role}"}
+    errors:
+      400: PagerDuty refused the change (check the role and that the user exists).
+      403: The key cannot manage teams.
+      404: Team or user not found.
+    idempotent: true
+
+  - id: remove_user_from_team
+    label: Remove user from team
+    method: DELETE
+    path: /teams/{team_id}/users/{user_id}
+    inputs:
+      - {key: team_id, label: Team id, type: string, required: true, pattern: '^[A-Z0-9]{5,20}$', max_length: 20}
+      - {key: user_id, label: User id, type: string, required: true, pattern: '^[A-Z0-9]{5,20}$', max_length: 20}
+    errors:
+      403: The key cannot manage teams.
+      404: Team or user not found.
+    idempotent: true
+
+  - id: get_incident
+    label: Get incident
+    method: GET
+    path: /incidents/{incident_id}
+    inputs:
+      - {key: incident_id, label: Incident id, type: string, required: true, pattern: '^[A-Z0-9]{5,20}$', max_length: 20}
+    outputs:
+      - {key: status, from: "$.incident.status"}
+      - {key: title, from: "$.incident.title"}
+      - {key: urgency, from: "$.incident.urgency"}
+      - {key: html_url, from: "$.incident.html_url"}
+    errors:
+      404: Incident not found.
+
+  - id: create_incident
+    label: Create incident
+    description: Give an incident key to avoid duplicates; PagerDuty then reuses the open incident with that key.
+    method: POST
+    path: /incidents
+    inputs:
+      - {key: service_id, label: Service id, type: string, required: true, pattern: '^[A-Z0-9]{5,20}$', max_length: 20}
+      - {key: title, label: Title, type: string, required: true, pattern: '^[^\r\n]{1,255}$', max_length: 255}
+      - {key: details, label: Details, type: string, required: true, pattern: '^[\s\S]{1,2000}$', max_length: 2000, multiline: true}
+      - {key: urgency, label: Urgency, type: select, options: [high, low]}
+      - {key: incident_key, label: Incident key (de-duplication), type: string, pattern: '^[A-Za-z0-9_.:-]{1,255}$', max_length: 255}
+    body:
+      incident:
+        type: incident
+        title: "{title}"
+        service: {id: "{service_id}", type: service_reference}
+        urgency: "{urgency}"
+        incident_key: "{incident_key}"
+        body: {type: incident_body, details: "{details}"}
+    outputs:
+      - {key: incident_id, from: "$.incident.id"}
+      - {key: incident_number, from: "$.incident.incident_number"}
+      - {key: html_url, from: "$.incident.html_url"}
+    errors:
+      400: PagerDuty rejected the incident (check the service id and the connection's From email).
+      403: The key cannot create incidents.
+
+  - id: acknowledge_incident
+    label: Acknowledge incident
+    method: PUT
+    path: /incidents/{incident_id}
+    inputs:
+      - {key: incident_id, label: Incident id, type: string, required: true, pattern: '^[A-Z0-9]{5,20}$', max_length: 20}
+    body: {incident: {type: incident_reference, status: acknowledged}}
+    outputs:
+      - {key: status, from: "$.incident.status"}
+    errors:
+      400: PagerDuty refused the change (check the connection's From email).
+      404: Incident not found.
+    idempotent: true
+
+  - id: resolve_incident
+    label: Resolve incident
+    method: PUT
+    path: /incidents/{incident_id}
+    inputs:
+      - {key: incident_id, label: Incident id, type: string, required: true, pattern: '^[A-Z0-9]{5,20}$', max_length: 20}
+    body: {incident: {type: incident_reference, status: resolved}}
+    outputs:
+      - {key: status, from: "$.incident.status"}
+    errors:
+      400: PagerDuty refused the change (check the connection's From email).
+      404: Incident not found.
+    idempotent: true
+
+  - id: add_note
+    label: Add note to incident
+    method: POST
+    path: /incidents/{incident_id}/notes
+    inputs:
+      - {key: incident_id, label: Incident id, type: string, required: true, pattern: '^[A-Z0-9]{5,20}$', max_length: 20}
+      - {key: note, label: Note, type: string, required: true, pattern: '^[\s\S]{1,2000}$', max_length: 2000, multiline: true}
+    body: {note: {content: "{note}"}}
+    outputs:
+      - {key: note_id, from: "$.note.id"}
+    errors:
+      400: PagerDuty refused the note (check the connection's From email).
+      404: Incident not found.

@@ -209,6 +209,14 @@ def _auth_headers(c: Connector, config: Dict[str, Any], secrets: Dict[str, Any])
         raise ConnectorError("the connection is missing a credential; edit it and enter the secret again")
 
 
+def _base_headers(c: Connector, config: Dict[str, Any]) -> Dict[str, str]:
+    """Static headers plus those filled from the connection's non-secret fields (already checked for control characters)."""
+    h = dict(c.headers)
+    for k, tmpl in c.config_headers.items():
+        h[k] = _subst(tmpl, config, lambda x: x)
+    return h
+
+
 def _scope(path_template: str) -> str:
     return "/" + path_template.split("/")[1]
 
@@ -225,7 +233,7 @@ def build(c: Connector, a: Action, config: Dict[str, Any], inputs: Dict[str, Any
             continue
         query_parts.append(f"{quote(k, safe='')}={_subst(tmpl, values, lambda s: quote(s, safe=''))}")
     pq = path + ("?" + "&".join(query_parts) if query_parts else "")
-    headers = dict(c.headers)
+    headers = _base_headers(c, config)
     body = None
     if a.body is not None:
         body = json.dumps(_body(a.body, values)).encode()
@@ -357,7 +365,7 @@ def check_connection(c: Connector, config: Dict[str, Any], secrets: Dict[str, An
     """The definition's test request. Never raises for remote problems: returns (ok, status, message)."""
     path = _subst(c.test.path, config, _seg)
     try:
-        p = Prepared("GET", resolve_host(c, config), path, {**c.headers, **_auth_headers(c, config, secrets)}, None, _scope(c.test.path))
+        p = Prepared("GET", resolve_host(c, config), path, {**_base_headers(c, config), **_auth_headers(c, config, secrets)}, None, _scope(c.test.path))
         status, _ = _send(c, True, {401: "The credentials were refused.", 403: "The credentials were accepted but may not use this resource.",
                                     404: "Not found: check the organisation or account name."}, p, list(secrets.values()), policy, resolver, transport)
         return True, status, "Connected."
