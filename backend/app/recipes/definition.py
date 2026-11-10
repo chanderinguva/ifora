@@ -39,8 +39,9 @@ EVENT_TRIGGERS = (
 TRIGGER_TYPES = EVENT_TRIGGERS + ("schedule", "manual", "webhook", "call")
 ACTION_TYPES = (
     "add_to_group", "remove_from_group", "set_attribute", "activate_user", "deactivate_user", "http_request", "log",
-    "send_slack", "send_email", "lookup_row", "lookup_write",
+    "send_slack", "send_email", "lookup_row", "lookup_write", "connector_action",
 )
+PALETTE_HIDDEN = ("connector_action",)  # valid in definitions (API) but not offered in the editor until its form exists (ADR 026 phase 2)
 STEP_TYPES = ACTION_TYPES + ("condition", "stop", "for_each_member", "for_each_item", "approval", "set_variable", "wait", "throttle", "call_recipe", "return_data", "handle_errors")
 BRANCHING = ("condition", "approval")  # then/else steps
 MAX_LOOP_MEMBERS = 100
@@ -150,6 +151,13 @@ class _Slack(_Cfg):
     message: str = Field(..., min_length=1, max_length=3000)
 
 
+class _ConnectorAction(_Cfg):
+    connector: str = Field(..., pattern=r"^[a-z][a-z0-9_]{1,31}$")
+    connection_id: int
+    action: str = Field(..., pattern=r"^[a-z][a-z0-9_]{0,31}$")
+    inputs: Dict[str, str] = Field(default_factory=dict, max_length=15)   # input key -> datapill, formula or text (checked against the connector's declaration)
+
+
 class _Email(_Cfg):
     to: str = Field(..., min_length=3, max_length=320)
     subject: str = Field(..., min_length=1, max_length=200)
@@ -235,7 +243,7 @@ STEP_CFG = {
     "set_variable": _SetVar, "wait": _Wait, "throttle": _Throttle, "call_recipe": _CallRecipe, "return_data": _ReturnData,
     "add_to_group": _AddRemove, "remove_from_group": _AddRemove, "set_attribute": _SetAttr,
     "activate_user": _UserOnly, "deactivate_user": _UserOnly, "http_request": _Http, "log": _Log,
-    "send_slack": _Slack, "send_email": _Email,
+    "send_slack": _Slack, "send_email": _Email, "connector_action": _ConnectorAction,
     "condition": _Condition, "handle_errors": _Try, "stop": _Stop, "for_each_member": _Loop, "for_each_item": _ItemLoop, "approval": _Approval,
 }
 
@@ -277,7 +285,8 @@ STEP_OUTPUTS = {
     "set_attribute": ["user_id", "attribute", "value", "changed"],
     "activate_user": ["user_id", "changed"], "deactivate_user": ["user_id", "changed"],
     "http_request": ["status_code", "ok", "body", "json"], "log": ["message"],
-    "send_slack": ["ok"], "send_email": ["to", "sent"], "condition": ["result"], "handle_errors": [], "stop": [],
+    "send_slack": ["ok"], "send_email": ["to", "sent"], "connector_action": ["status_code", "ok"],  # plus the action's own outputs (see $outs: in validate_definition)
+    "condition": ["result"], "handle_errors": [], "stop": [],
     "for_each_member": ["total", "processed"], "for_each_item": ["total", "processed"], "approval": ["decision", "decided_by"],
     "lookup_row": ["found", "count", "row"], "lookup_write": ["action", "changed"],
     "set_variable": ["value"], "wait": ["waited_seconds"], "throttle": ["waited_seconds"], "call_recipe": ["result"], "return_data": [],
@@ -360,6 +369,8 @@ def _pill_allowed(path: str, trigger_type: str, earlier_steps: Dict[str, str], d
         if len(segs) < 3 or segs[2] != "output" or segs[1] not in earlier_steps:
             raise tpl.TemplateError(f"datapill '{path}' must be steps.<earlier step id>.output.<field>")
         known = STEP_OUTPUTS.get(earlier_steps[segs[1]], []) + (["error"] if earlier_steps[segs[1]] in ACTION_TYPES else [])
+        if ("$outs:" + segs[1]) in earlier_steps:   # a connector step: its declared outputs
+            known = known + [o for o in earlier_steps["$outs:" + segs[1]].split(",") if o]
         if len(segs) >= 4 and known and segs[3] not in known:
             raise tpl.TemplateError(f"step '{segs[1]}' has no output '{segs[3]}'")
         return
@@ -459,6 +470,12 @@ def validate_definition(db: Session, definition: Any, *, for_publish: bool = Fal
                 node["note"] = note.strip()   # display only: never resolved, never sent anywhere
             seen[sid] = stype
             used.add(sid)
+            if stype == "connector_action":
+                from backend.app.connectors import registry as _creg
+
+                _c = _creg.get(cfg["connector"])
+                _a = _creg.action_of(_c, cfg["action"]) if _c else None
+                seen["$outs:" + sid] = ",".join(o.key for o in _a.outputs) if _a else ""
             if stype == "lookup_row" and not lookup.get_table(db, cfg["table"]).admin_managed:
                 seen["$taint:" + sid] = "lookup"   # everything it returns is treated as user-editable
             if stype == "set_variable":
@@ -607,13 +624,44 @@ def _check_connection_use(db, cfg, actor) -> None:
         raise tpl.TemplateError(f"you are not allowed to use the connection '{c.name}'")
 
 
+def _check_connector_action(db, cfg) -> None:
+    """The connector, action and connection exist and match; inputs are declared, required ones are present, and literal values are valid now
+    (values made of datapills are validated again, after rendering, when the step runs)."""
+    from backend.app.connectors import engine as ce
+    from backend.app.connectors import registry as creg
+
+    c = creg.get(cfg["connector"])
+    if c is None:
+        raise tpl.TemplateError(f"unknown connector '{cfg['connector']}'")
+    a = creg.action_of(c, cfg["action"])
+    if a is None:
+        raise tpl.TemplateError(f"{c.name} has no action '{cfg['action']}'")
+    conn = db.get(RecipeConnection, cfg["connection_id"])
+    if conn is None:
+        raise tpl.TemplateError("unknown connection")
+    if conn.kind != "connector" or conn.connector_id != c.id:
+        raise tpl.TemplateError(f"choose a {c.name} connection")
+    declared = {i.key: i for i in a.inputs}
+    for k in cfg["inputs"]:
+        if k not in declared:
+            raise tpl.TemplateError(f"{c.name} '{a.label}' has no input '{k}'")
+    for i in a.inputs:
+        if i.required and i.default is None and not (cfg["inputs"].get(i.key) or "").strip():
+            raise tpl.TemplateError(f"'{i.label}' is required")
+    static = {k: v for k, v in cfg["inputs"].items() if v != "" and "{{" not in v}
+    try:
+        ce.validate_inputs(a, static, partial=True)
+    except ce.ConnectorError as e:
+        raise tpl.TemplateError(e.message)
+
+
 def _check_step(db, stype, cfg, ttype, earlier, managed, taint, where, handler=False, in_loop=False, actor=None) -> None:
     _check_connection_use(db, cfg, actor)
     if stype in ("condition",):
         return
     for p in tpl.all_pills({k: v for k, v in cfg.items() if k not in ("connection_id", "name", "unit", "when_full")}):
         _pill_allowed(p, ttype, earlier, managed, handler, in_loop)
-        if stype in STATE_CHANGING or stype in ("set_variable", "lookup_row", "for_each_item", "call_recipe", "return_data"):   # a variable must not carry user-editable text onward; a lookup key picks what is read
+        if stype in STATE_CHANGING or stype in ("set_variable", "lookup_row", "for_each_item", "call_recipe", "return_data", "connector_action"):   # a variable must not carry user-editable text onward; a lookup key picks what is read
             taint(p)
     if stype in ("add_to_group", "remove_from_group"):
         g = db.get(Group, cfg["group_id"])
@@ -636,11 +684,15 @@ def _check_step(db, stype, cfg, ttype, earlier, managed, taint, where, handler=F
         c = db.get(RecipeConnection, cfg["connection_id"])
         if c is None or c.kind != "slack_webhook":
             raise tpl.TemplateError("choose a Slack webhook connection")
+    elif stype == "connector_action":
+        _check_connector_action(db, cfg)
     elif stype == "http_request":
         if cfg.get("connection_id") is not None:
             c = db.get(RecipeConnection, cfg["connection_id"])
             if c is not None and c.kind == "slack_webhook":
                 raise tpl.TemplateError("Slack connections can only be used by the Slack step")
+            if c is not None and c.kind == "connector":
+                raise tpl.TemplateError("Connector connections can only be used by connector steps")
         for k in cfg["headers"]:
             if len(cfg["headers"]) > 10:
                 raise tpl.TemplateError("at most 10 headers")

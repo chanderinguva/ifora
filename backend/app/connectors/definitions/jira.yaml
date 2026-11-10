@@ -1,0 +1,149 @@
+id: jira
+version: 1
+name: Jira Cloud
+category: ticketing
+description: Look up users, manage group membership, and create, comment on, assign and transition issues in Jira Cloud.
+hosts: ["{site}.atlassian.net"]
+headers:
+  Accept: application/json
+  User-Agent: Ifora
+auth:
+  scheme: basic
+  fields:
+    - {key: site, label: "Site name (the part before .atlassian.net)", pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$', max_length: 63}
+    - {key: username, label: Account email, pattern: '^[^\s@:]{1,100}@[^\s@:]{1,100}$', max_length: 201}
+    - {key: password, label: API token, secret: true}
+test:
+  path: /rest/api/3/myself
+actions:
+  - id: find_user
+    label: Find user by email
+    description: Looks up an Atlassian account id by email address (needs the user's email to be visible to the API account).
+    method: GET
+    path: /rest/api/3/user/search
+    query: {query: "{email}"}
+    inputs:
+      - {key: email, label: Email address, type: string, required: true, pattern: '^[^\s@]{1,100}@[^\s@]{1,100}$', max_length: 201}
+    outputs:
+      - {key: account_id, from: "$[0].accountId"}
+      - {key: display_name, from: "$[0].displayName"}
+      - {key: active, from: "$[0].active"}
+    errors:
+      403: The API account is not allowed to search for users.
+
+  - id: add_user_to_group
+    label: Add user to group
+    method: POST
+    path: /rest/api/3/group/user
+    query: {groupname: "{group}"}
+    inputs:
+      - {key: group, label: Group name, type: string, required: true, pattern: '^[A-Za-z0-9][A-Za-z0-9 _.@-]{0,254}$', max_length: 255}
+      - {key: account_id, label: Atlassian account id, type: string, required: true, pattern: '^[A-Za-z0-9:_-]{1,128}$', max_length: 128}
+    body: {accountId: "{account_id}"}
+    outputs:
+      - {key: group_name, from: "$.name"}
+    errors:
+      400: Jira refused the change (does the group exist, and is the user already a member?).
+      403: The API account cannot manage groups.
+      404: Group or user not found.
+
+  - id: remove_user_from_group
+    label: Remove user from group
+    method: DELETE
+    path: /rest/api/3/group/user
+    query: {groupname: "{group}", accountId: "{account_id}"}
+    inputs:
+      - {key: group, label: Group name, type: string, required: true, pattern: '^[A-Za-z0-9][A-Za-z0-9 _.@-]{0,254}$', max_length: 255}
+      - {key: account_id, label: Atlassian account id, type: string, required: true, pattern: '^[A-Za-z0-9:_-]{1,128}$', max_length: 128}
+    errors:
+      403: The API account cannot manage groups.
+      404: Group or user not found.
+    idempotent: true
+
+  - id: get_issue
+    label: Get issue
+    method: GET
+    path: /rest/api/2/issue/{issue_key}
+    query: {fields: "summary,status,assignee"}
+    inputs:
+      - {key: issue_key, label: Issue key, type: string, required: true, pattern: '^[A-Z][A-Z0-9_]{1,9}-[0-9]{1,9}$', max_length: 20}
+    outputs:
+      - {key: key, from: "$.key"}
+      - {key: summary, from: "$.fields.summary"}
+      - {key: status, from: "$.fields.status.name"}
+      - {key: assignee_account_id, from: "$.fields.assignee.accountId"}
+    errors:
+      404: Issue not found, or the API account cannot see it.
+
+  - id: create_issue
+    label: Create issue
+    method: POST
+    path: /rest/api/2/issue
+    inputs:
+      - {key: project_key, label: Project key, type: string, required: true, pattern: '^[A-Z][A-Z0-9_]{1,9}$', max_length: 10}
+      - {key: issue_type, label: Issue type, type: string, required: true, pattern: '^[A-Za-z0-9][A-Za-z0-9 _-]{0,59}$', max_length: 60}
+      - {key: summary, label: Summary, type: string, required: true, pattern: '^[^\r\n]{1,255}$', max_length: 255}
+      - {key: description, label: Description, type: string, pattern: '^[\s\S]{1,2000}$', max_length: 2000, multiline: true}
+    body:
+      fields:
+        project: {key: "{project_key}"}
+        issuetype: {name: "{issue_type}"}
+        summary: "{summary}"
+        description: "{description}"
+    outputs:
+      - {key: issue_key, from: "$.key"}
+      - {key: issue_id, from: "$.id"}
+    errors:
+      400: Jira rejected the issue (check the project key, issue type and required fields).
+      403: The API account cannot create issues in that project.
+
+  - id: add_comment
+    label: Comment on issue
+    method: POST
+    path: /rest/api/2/issue/{issue_key}/comment
+    inputs:
+      - {key: issue_key, label: Issue key, type: string, required: true, pattern: '^[A-Z][A-Z0-9_]{1,9}-[0-9]{1,9}$', max_length: 20}
+      - {key: comment, label: Comment, type: string, required: true, pattern: '^[\s\S]{1,2000}$', max_length: 2000, multiline: true}
+    body: {body: "{comment}"}
+    outputs:
+      - {key: comment_id, from: "$.id"}
+    errors:
+      403: The API account cannot comment on this issue.
+      404: Issue not found.
+
+  - id: assign_issue
+    label: Assign issue
+    method: PUT
+    path: /rest/api/2/issue/{issue_key}/assignee
+    inputs:
+      - {key: issue_key, label: Issue key, type: string, required: true, pattern: '^[A-Z][A-Z0-9_]{1,9}-[0-9]{1,9}$', max_length: 20}
+      - {key: account_id, label: Atlassian account id, type: string, required: true, pattern: '^[A-Za-z0-9:_-]{1,128}$', max_length: 128}
+    body: {accountId: "{account_id}"}
+    errors:
+      400: Jira refused the assignment (can this user be assigned in the project?).
+      404: Issue or user not found.
+    idempotent: true
+
+  - id: list_transitions
+    label: List issue transitions
+    method: GET
+    path: /rest/api/2/issue/{issue_key}/transitions
+    inputs:
+      - {key: issue_key, label: Issue key, type: string, required: true, pattern: '^[A-Z][A-Z0-9_]{1,9}-[0-9]{1,9}$', max_length: 20}
+    outputs:
+      - {key: transition_ids, from: "$.transitions[*].id"}
+      - {key: transition_names, from: "$.transitions[*].name"}
+    errors:
+      404: Issue not found.
+
+  - id: transition_issue
+    label: Move issue to a new status
+    method: POST
+    path: /rest/api/2/issue/{issue_key}/transitions
+    inputs:
+      - {key: issue_key, label: Issue key, type: string, required: true, pattern: '^[A-Z][A-Z0-9_]{1,9}-[0-9]{1,9}$', max_length: 20}
+      - {key: transition_id, label: Transition id, type: string, required: true, pattern: '^[0-9]{1,6}$', max_length: 6}
+    body: {transition: {id: "{transition_id}"}}
+    errors:
+      400: That transition is not available for the issue's current status.
+      404: Issue not found.

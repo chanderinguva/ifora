@@ -1,0 +1,94 @@
+id: slack
+version: 1
+name: Slack
+category: messaging
+description: Look up people by email, post messages, and manage channel membership through a Slack app's bot token.
+hosts: ["slack.com"]
+headers:
+  Accept: application/json
+  User-Agent: Ifora
+auth:
+  scheme: bearer
+  fields:
+    - {key: token, label: Bot token (starts with xoxb-), secret: true}
+test:
+  path: /api/auth.test
+reply:
+  ok: "$.ok"
+  error: "$.error"
+  retry_codes: [ratelimited, internal_error, service_unavailable, fatal_error, request_timeout]
+actions:
+  - id: lookup_user_by_email
+    label: Find user by email
+    description: Needs the users:read.email scope.
+    method: GET
+    path: /api/users.lookupByEmail
+    query: {email: "{email}"}
+    inputs:
+      - {key: email, label: Email address, type: string, required: true, pattern: '^[^\s@]{1,100}@[^\s@]{1,100}$', max_length: 201}
+    outputs:
+      - {key: user_id, from: "$.user.id"}
+      - {key: display_name, from: "$.user.real_name"}
+      - {key: deactivated, from: "$.user.deleted"}
+    body_errors:
+      users_not_found: No Slack user has that email address.
+      missing_scope: The app needs the users:read.email scope.
+      invalid_auth: The bot token was refused.
+
+  - id: post_message
+    label: Post a message
+    description: Posts to a channel the bot is in, or to a person's user id (a direct message).
+    method: POST
+    path: /api/chat.postMessage
+    inputs:
+      - {key: channel, label: Channel or user id, type: string, required: true, pattern: '^[CGDUW][A-Z0-9]{2,20}$', max_length: 21}
+      - {key: text, label: Message, type: string, required: true, pattern: '^[\s\S]{1,2000}$', max_length: 2000, multiline: true}
+      - {key: thread_ts, label: Reply in thread (timestamp), type: string, pattern: '^[0-9]{10}\.[0-9]{6}$', max_length: 17}
+    body: {channel: "{channel}", text: "{text}", thread_ts: "{thread_ts}"}
+    outputs:
+      - {key: ts, from: "$.ts"}
+      - {key: channel_id, from: "$.channel"}
+    body_errors:
+      channel_not_found: Channel or user not found.
+      not_in_channel: The bot is not a member of that channel.
+      is_archived: That channel is archived.
+      msg_too_long: The message is too long for Slack.
+      missing_scope: The app needs the chat:write scope.
+      invalid_auth: The bot token was refused.
+
+  - id: invite_to_channel
+    label: Add user to channel
+    method: POST
+    path: /api/conversations.invite
+    inputs:
+      - {key: channel, label: Channel id, type: string, required: true, pattern: '^[CG][A-Z0-9]{2,20}$', max_length: 21}
+      - {key: user_id, label: Slack user id, type: string, required: true, pattern: '^[UW][A-Z0-9]{2,20}$', max_length: 21}
+    body: {channel: "{channel}", users: "{user_id}"}
+    body_errors:
+      already_in_channel: The user is already in the channel.
+      channel_not_found: Channel not found.
+      user_not_found: User not found.
+      users_not_found: User not found.
+      not_in_channel: The bot must be in the channel to add people.
+      is_archived: That channel is archived.
+      cant_invite: Slack does not allow inviting that user.
+      missing_scope: The app needs the channels:manage or groups:write scope.
+      invalid_auth: The bot token was refused.
+
+  - id: remove_from_channel
+    label: Remove user from channel
+    method: POST
+    path: /api/conversations.kick
+    inputs:
+      - {key: channel, label: Channel id, type: string, required: true, pattern: '^[CG][A-Z0-9]{2,20}$', max_length: 21}
+      - {key: user_id, label: Slack user id, type: string, required: true, pattern: '^[UW][A-Z0-9]{2,20}$', max_length: 21}
+    body: {channel: "{channel}", user: "{user_id}"}
+    body_errors:
+      not_in_channel: The bot must be in the channel to remove people.
+      channel_not_found: Channel not found.
+      user_not_in_channel: The user is not in that channel.
+      cant_kick_self: The bot cannot remove itself.
+      cant_kick_from_general: People cannot be removed from the general channel.
+      missing_scope: The app needs the channels:manage or groups:write scope.
+      invalid_auth: The bot token was refused.
+    idempotent: true

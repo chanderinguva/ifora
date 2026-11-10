@@ -270,6 +270,8 @@ def _http(rc: RunCtx, cfg: dict):
             conn_name = conn.name
             if conn.kind == "slack_webhook":
                 raise StepError("Slack connections can only be used by the Slack step")
+            if conn.kind == "connector":
+                raise StepError("Connector connections can only be used by connector steps")
             _, host, _, path = validate_url(url, policy)
             if host != conn.allowed_host.lower():
                 raise StepError("this connection may only be used for " + conn.allowed_host)
@@ -456,8 +458,44 @@ def _lookup_write(rc: RunCtx, cfg: dict):
     return inp, {"action": result, "changed": result != "not_found"}
 
 
+def _connector_action(rc: RunCtx, cfg: dict):
+    """A pre-built connector action (ADR 026). Inputs are rendered here (tainted datapills are refused) and validated against the definition."""
+    from backend.app.connectors import engine as ce
+    from backend.app.connectors import registry
+
+    c = registry.get(cfg["connector"])
+    a = registry.action_of(c, cfg["action"]) if c else None
+    if c is None or a is None:
+        raise StepError("this connector action no longer exists")
+    conn = rc.db.get(RecipeConnection, cfg["connection_id"])
+    if conn is None or conn.kind != "connector" or conn.connector_id != c.id:
+        raise StepError(f"choose a {c.name} connection")
+    raw = {k: rc.render(v) for k, v in cfg["inputs"].items()}
+    secrets: dict = {}
+    try:
+        config, _ = ce.validate_config(c, conn.config or {}, {}, partial_secrets=True)   # the stored settings still match the definition
+        if not rc.dry:
+            secrets = json.loads(crypto.decrypt(conn.secret_enc))
+            rc.secrets.extend(v for v in secrets.values() if isinstance(v, str))
+    except crypto.RecipeKeyError as e:
+        raise StepError(str(e))
+    except (ValueError, TypeError):
+        raise StepError("the connection is damaged; edit it and enter the secret again")
+    except ce.ConnectorError as e:
+        raise StepError(e.message)
+    try:
+        res = ce.run_action(c, a, conn.name, config, secrets, raw, dry=rc.dry, policy=http_overrides.get("policy") or EgressPolicy.from_settings(),
+                            resolver=http_overrides.get("resolver"), transport=http_overrides.get("transport"))
+    except ce.ConnectorError as e:
+        raise StepError(e.message, retryable=e.retryable)
+    if not rc.dry:
+        audit_as_recipe(rc, AuditAction.CONNECTOR_ACTION_CALLED, conn.id, "recipe_connection",
+                        {"connector": c.id, "action": a.id, "status": res.status, "connection": conn.name})
+    return res.request, res.outputs
+
+
 EXECUTORS: Dict[str, Callable[[RunCtx, dict], Tuple[dict, dict]]] = {
     "add_to_group": _add_to_group, "remove_from_group": _remove_from_group, "set_attribute": _set_attribute,
     "activate_user": _activate, "deactivate_user": _deactivate, "http_request": _http, "log": _log,
-    "send_slack": _slack, "send_email": _email, "lookup_row": _lookup_row, "lookup_write": _lookup_write,
+    "send_slack": _slack, "send_email": _email, "lookup_row": _lookup_row, "lookup_write": _lookup_write, "connector_action": _connector_action,
 }

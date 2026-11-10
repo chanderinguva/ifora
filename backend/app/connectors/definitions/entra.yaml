@@ -1,0 +1,130 @@
+id: entra
+version: 1
+name: Microsoft Entra ID
+category: directory
+description: Look up users and groups, manage group membership, disable accounts and revoke sign-in sessions through a Microsoft Graph app registration (client credentials).
+hosts: ["graph.microsoft.com"]
+headers:
+  Accept: application/json
+  User-Agent: Ifora
+auth:
+  scheme: oauth2_client_credentials
+  token_host: login.microsoftonline.com
+  token_path: /{tenant}/oauth2/v2.0/token
+  scope: https://graph.microsoft.com/.default
+  fields:
+    - {key: tenant, label: Tenant id or domain, pattern: '^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z0-9][A-Za-z0-9.-]{1,252})$', max_length: 253}
+    - {key: client_id, label: Application (client) id, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$', max_length: 36}
+    - {key: client_secret, label: Client secret value, secret: true}
+test:
+  path: /v1.0/organization
+  token_only: true
+actions:
+  - id: get_user
+    label: Get user
+    description: By object id or user principal name.
+    method: GET
+    path: /v1.0/users/{user}
+    query: {"$select": "id,displayName,userPrincipalName,mail,accountEnabled"}
+    inputs:
+      - {key: user, label: User object id or principal name, type: string, required: true, pattern: '^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z0-9._+-]{1,64}@[A-Za-z0-9][A-Za-z0-9.-]{0,200})$', max_length: 270}
+    outputs:
+      - {key: user_id, from: "$.id"}
+      - {key: display_name, from: "$.displayName"}
+      - {key: user_principal_name, from: "$.userPrincipalName"}
+      - {key: mail, from: "$.mail"}
+      - {key: account_enabled, from: "$.accountEnabled"}
+    errors:
+      403: The app registration lacks permission to read users (User.Read.All).
+      404: No such user.
+
+  - id: find_user_by_email
+    label: Find user by email
+    method: GET
+    path: /v1.0/users
+    query: {"$filter": "mail eq '{email}'", "$select": "id,displayName,userPrincipalName,mail", "$top": "5"}
+    inputs:
+      - {key: email, label: Email address, type: string, required: true, pattern: "^[^\\s@']{1,100}@[^\\s@']{1,100}$", max_length: 201}
+    outputs:
+      - {key: user_id, from: "$.value[0].id"}
+      - {key: user_ids, from: "$.value[*].id"}
+      - {key: user_principal_name, from: "$.value[0].userPrincipalName"}
+    errors:
+      403: The app registration lacks permission to read users (User.Read.All).
+
+  - id: find_group
+    label: Find group by name
+    method: GET
+    path: /v1.0/groups
+    query: {"$filter": "displayName eq '{name}'", "$select": "id,displayName", "$top": "5"}
+    inputs:
+      - {key: name, label: Group name, type: string, required: true, pattern: '^[A-Za-z0-9][A-Za-z0-9 _.-]{0,119}$', max_length: 120}
+    outputs:
+      - {key: group_id, from: "$.value[0].id"}
+      - {key: group_ids, from: "$.value[*].id"}
+    errors:
+      403: The app registration lacks permission to read groups (Group.Read.All).
+
+  - id: add_group_member
+    label: Add user to group
+    method: POST
+    path: /v1.0/groups/{group_id}/members/$ref
+    inputs:
+      - {key: group_id, label: Group object id, type: string, required: true, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$', max_length: 36}
+      - {key: user_id, label: User object id, type: string, required: true, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$', max_length: 36}
+    body: {"@odata.id": "https://graph.microsoft.com/v1.0/directoryObjects/{user_id}"}
+    errors:
+      400: Graph refused the change (is the user already a member, or is the group dynamic or read-only?).
+      403: The app registration lacks permission to change group membership (GroupMember.ReadWrite.All).
+      404: Group or user not found.
+
+  - id: remove_group_member
+    label: Remove user from group
+    method: DELETE
+    path: /v1.0/groups/{group_id}/members/{user_id}/$ref
+    inputs:
+      - {key: group_id, label: Group object id, type: string, required: true, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$', max_length: 36}
+      - {key: user_id, label: User object id, type: string, required: true, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$', max_length: 36}
+    errors:
+      403: The app registration lacks permission to change group membership (GroupMember.ReadWrite.All).
+      404: The user is not a member of that group, or the group does not exist.
+    idempotent: true
+
+  - id: disable_user
+    label: Disable account
+    description: Blocks sign-in. Combine with "Revoke sign-in sessions" to end sessions that are already open.
+    method: PATCH
+    path: /v1.0/users/{user}
+    inputs:
+      - {key: user, label: User object id or principal name, type: string, required: true, pattern: '^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z0-9._+-]{1,64}@[A-Za-z0-9][A-Za-z0-9.-]{0,200})$', max_length: 270}
+    body: {accountEnabled: false}
+    errors:
+      403: The app registration cannot update this user (User.ReadWrite.All; administrators need a directory role as well).
+      404: No such user.
+    idempotent: true
+
+  - id: enable_user
+    label: Enable account
+    method: PATCH
+    path: /v1.0/users/{user}
+    inputs:
+      - {key: user, label: User object id or principal name, type: string, required: true, pattern: '^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z0-9._+-]{1,64}@[A-Za-z0-9][A-Za-z0-9.-]{0,200})$', max_length: 270}
+    body: {accountEnabled: true}
+    errors:
+      403: The app registration cannot update this user (User.ReadWrite.All).
+      404: No such user.
+    idempotent: true
+
+  - id: revoke_sessions
+    label: Revoke sign-in sessions
+    description: Invalidates the user's refresh tokens and session cookies.
+    method: POST
+    path: /v1.0/users/{user}/revokeSignInSessions
+    inputs:
+      - {key: user, label: User object id or principal name, type: string, required: true, pattern: '^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z0-9._+-]{1,64}@[A-Za-z0-9][A-Za-z0-9.-]{0,200})$', max_length: 270}
+    outputs:
+      - {key: revoked, from: "$.value"}
+    errors:
+      403: The app registration cannot update this user (User.ReadWrite.All).
+      404: No such user.
+    idempotent: true
