@@ -14,7 +14,7 @@ type Role = { id: string; label: string; description: string; access: Record<str
 type Holder = { group_id: number; name: string; roles: string[] };
 const msgOf = (e: unknown) => (e instanceof Error ? e.message : "Failed");
 
-/** Roles, seen from the role's side: which groups hold each administrator role. Everyone in a team group that holds a role has it (ADR 019). */
+/** Roles, seen from the role's side: which groups hold each administrator role. Everyone in a team or role based group that holds a role has it (ADR 019). */
 export default function RolesPage() {
   const me = useCurrentUser();
   const [roles, setRoles] = useState<Role[]>([]);
@@ -26,13 +26,13 @@ export default function RolesPage() {
 
   const load = useCallback(async () => {
     try {
-      const [r, h, t] = await Promise.all([
+      const [r, h, ...kinds] = await Promise.all([
         http<{ items: Role[] }>("/admin/roles"),
         http<{ items: Holder[] }>("/admin/roles/groups"),
-        http<Page<Group>>(`/admin/groups${qs({ count: 100, filter: 'type eq "team"', sortBy: "name" })}`),
+        ...["team", "role"].map((type) => http<Page<Group>>(`/admin/groups${qs({ count: 100, filter: `type eq "${type}"`, sortBy: "name" })}`)),
       ]);
       setRoles(r.items); setHolders(h.items);
-      const team = t.Resources.filter((g) => !g.is_system_group);
+      const team = kinds.flatMap((k) => k.Resources).filter((g) => !g.is_system_group).sort((a, b) => a.name.localeCompare(b.name));
       setTeams(team);
       setMembers(Object.fromEntries(team.map((g) => [g.id, g.member_count])));
     } catch (e) { setMsg({ ok: false, text: msgOf(e) }); }
@@ -61,8 +61,8 @@ export default function RolesPage() {
     <div className="max-w-4xl">
       <PageHeader title="Roles" />
       <p className="mb-4 text-sm text-muted-foreground">
-        An administrator role decides what a person can do in the admin area. Give a role to a <strong>team</strong> group and everyone in that group holds it.
-        Roles can also be given to one person on their user page (Groups and Roles tab). Only team groups can hold roles; change a group&apos;s type to Team on its page first.
+        An administrator role decides what a person can do in the admin area. Give a role to a <strong>team</strong> or <strong>role based</strong> group and everyone in that group holds it.
+        Roles can also be given to one person on their user page (Groups and Roles tab). Only team and role based groups can hold roles; change a group&apos;s type on its page first.
       </p>
       {msg && <Alert variant={msg.ok ? "default" : "destructive"} className="mb-4" role="status" data-testid="roles-msg"><AlertDescription>{msg.text}</AlertDescription></Alert>}
 
@@ -103,7 +103,7 @@ export default function RolesPage() {
                 <div className="flex flex-wrap items-center gap-2">
                   <select aria-label={`Add a group to ${role.label}`} className={fieldClass + " !w-72"} value={pick[role.id] ?? ""} disabled={available.length === 0}
                     onChange={(e) => setPick((p) => ({ ...p, [role.id]: e.target.value }))}>
-                    <option value="">{available.length === 0 ? "No more team groups" : "Choose a team group…"}</option>
+                    <option value="">{available.length === 0 ? "No more groups" : "Choose a group…"}</option>
                     {available.map((g) => <option key={g.id} value={g.id}>{g.name} ({g.member_count})</option>)}
                   </select>
                   <Button size="sm" disabled={!pick[role.id]} onClick={() => void change(role.id, Number(pick[role.id]), true)} aria-label={`Add group to ${role.label}`}>Add group</Button>
@@ -115,7 +115,7 @@ export default function RolesPage() {
       </div>
       {teams.length === 0 && roles.length > 0 && (
         <p className="mt-4 text-sm text-muted-foreground" data-testid="roles-no-teams">
-          There are no team groups yet. Create a group with type Team (it needs an owner) on the <Link className="underline underline-offset-4" href="/admin/groups">Groups</Link> page, or change an existing group&apos;s type.
+          There are no team or role based groups yet. Create one (it needs an owner) on the <Link className="underline underline-offset-4" href="/admin/groups">Groups</Link> page, or change an existing group&apos;s type.
         </p>
       )}
     </div>

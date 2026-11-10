@@ -20,7 +20,7 @@ class AdminRoleAssignment(TenantOwned, Base):
 
 
 class GroupAdminRole(TenantOwned, Base):
-    """An administrator role granted to every member of a group (ADR 019). Only team groups may carry roles."""
+    """An administrator role granted to every member of a group (ADR 019). Only team and role based groups may carry roles."""
 
     __tablename__ = "group_admin_roles"
     __table_args__ = (UniqueConstraint("group_id", "role", name="uq_group_admin_role"),)

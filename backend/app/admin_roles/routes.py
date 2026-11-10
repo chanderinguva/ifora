@@ -89,6 +89,13 @@ def set_user_roles(user_id: int, body: RolesBody, request: Request, db: Session 
 
 # ---- roles carried by a group (ADR 019) ------------------------------------------------------------------------
 
+def _can_carry(g) -> bool:
+    """Whether this group's type may carry administrator roles (group standards, ADR 019)."""
+    from backend.app.groups.standards import TYPES
+
+    return bool(TYPES.get(g.type, {}).get("can_carry_admin_roles")) and not g.is_system_group
+
+
 def _group(db: Session, group_id: int):
     from backend.app.groups.model import Group
 
@@ -118,19 +125,19 @@ def groups_with_roles(db: Session = Depends(get_db), actor: User = Depends(requi
 def get_group_roles(group_id: int, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
     _super(actor)
     g = _group(db, group_id)
-    return {"group_id": g.id, "type": g.type, "roles": _group_roles(db, g.id), "can_carry_roles": g.type == "team" and not g.is_system_group}
+    return {"group_id": g.id, "type": g.type, "roles": _group_roles(db, g.id), "can_carry_roles": _can_carry(g)}
 
 
 @router.put("/groups/{group_id}")
 def set_group_roles(group_id: int, body: RolesBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
-    """Every member of the group gets these roles. Only team groups may carry roles; changing them takes effect on members' next request."""
+    """Every member of the group gets these roles. Only team and role based groups may carry roles; changing them takes effect on members' next request."""
     _super(actor)
     g = _group(db, group_id)
     wanted = sorted(set(body.roles))
     if any(r not in permissions.ROLES for r in wanted):
         raise HTTPException(status_code=400, detail="Unknown role")
-    if wanted and (g.type != "team" or g.is_system_group):
-        raise HTTPException(status_code=409, detail="Only team groups can carry administrator roles (set the group type to Team first)")
+    if wanted and not _can_carry(g):
+        raise HTTPException(status_code=409, detail="Only team and role based groups can carry administrator roles (set the group type to Team or Role based first)")
     before = _group_roles(db, g.id)
     if wanted != before:
         db.query(GroupAdminRole).filter(GroupAdminRole.group_id == g.id).delete()

@@ -12,10 +12,11 @@ async function api(page: Page, method: string, path: string, body?: unknown) {
 }
 
 // Nobody signs in as another user, so this runs with ADMIN_MFA_REQUIRED either way.
-test("the Roles page: pick a team group for a role, see it listed, remove it; groups that are not teams are not offered", async ({ page }) => {
+test("the Roles page: pick a team group for a role, see it listed, remove it; role based groups are offered too; other kinds are not", async ({ page }) => {
   const tag = Date.now();
   const teamName = `Team - E2E Roles page ${tag}`;
   const plainName = `E2E Plain roles page ${tag}`;
+  const roleName = `Role - E2E Roles page ${tag}`;
   page.on("dialog", (d) => d.accept());
   await loginAsAdmin(page);
   const me = (await api(page, "GET", "/me")).json.user;
@@ -24,7 +25,9 @@ test("the Roles page: pick a team group for a role, see it listed, remove it; gr
     const team = (await api(page, "POST", "/admin/groups", { name: teamName, type: "team", owner_user_id: me.id })).json;
     const plain = (await api(page, "POST", "/admin/groups", { name: plainName, type: "other" })).json;
     expect(team?.id, "team group created").toBeTruthy();
-    groupIds.push(team.id, plain.id);
+    const roleGroup = (await api(page, "POST", "/admin/groups", { name: roleName, type: "role", owner_user_id: me.id })).json;
+    expect(roleGroup?.id, "role based group created").toBeTruthy();
+    groupIds.push(team.id, plain.id, roleGroup.id);
 
     // in the sidebar, next to Users and Groups
     await page.goto("/admin/dashboard");
@@ -40,9 +43,10 @@ test("the Roles page: pick a team group for a role, see it listed, remove it; gr
     const card = page.getByTestId("role-card-help_desk_admin");
     const select = card.getByLabel("Add a group to Help desk administrator");
 
-    // only team groups are offered
+    // team and role based groups are offered, other kinds are not
     const options = await select.locator("option").allTextContents();
     expect(options.join("|")).toContain(teamName);
+    expect(options.join("|")).toContain(roleName);
     expect(options.join("|")).not.toContain(plainName);
 
     // add the team group to the role

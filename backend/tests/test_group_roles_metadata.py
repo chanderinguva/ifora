@@ -64,7 +64,7 @@ def test_only_super_admins_manage_group_roles(db, super_admin, admin):
     assert admin.put(f"/admin/roles/groups/{gid}", {"roles": ["read_only_admin"]}).status_code == 403
 
 
-def test_only_team_groups_can_carry_roles(super_admin):
+def test_only_team_and_role_groups_can_carry_roles(super_admin):
     r = super_admin.post("/admin/groups", {"name": "Project - X", "type": "project", "owner_user_id": super_admin.user.id,
                                            "review_by": str(date.today() + timedelta(days=30))})
     assert super_admin.put(f"/admin/roles/groups/{r.json()['id']}", {"roles": ["read_only_admin"]}).status_code == 409
@@ -72,6 +72,11 @@ def test_only_team_groups_can_carry_roles(super_admin):
     assert super_admin.put(f"/admin/roles/groups/{gid}", {"roles": ["nope"]}).status_code == 400
     assert super_admin.put(f"/admin/roles/groups/{gid}", {"roles": ["read_only_admin"]}).status_code == 200
     assert super_admin.patch(f"/admin/groups/{gid}", {"type": "project", "review_by": str(date.today())}).status_code == 409
+    # a role based group may carry them too
+    rg = super_admin.post("/admin/groups", {"name": "Role - IFora - Help desk", "type": "role", "owner_user_id": super_admin.user.id})
+    assert rg.status_code in (200, 201), rg.text
+    assert super_admin.get(f"/admin/roles/groups/{rg.json()['id']}").json()["can_carry_roles"] is True
+    assert super_admin.put(f"/admin/roles/groups/{rg.json()['id']}", {"roles": ["help_desk_admin"]}).status_code == 200
 
 
 def test_role_group_membership_is_super_admin_only(db, super_admin, admin):
@@ -188,4 +193,4 @@ def test_role_based_group_needs_an_owner_and_cannot_carry_admin_roles(super_admi
     assert r.status_code in (200, 201), r.text
     assert r.json()["type"] == "role"
     assert [g["name"] for g in super_admin.get("/admin/groups?type=role").json()["Resources"]] == ["Role - CRM - Manager"]
-    assert next(t for t in super_admin.get("/admin/groups/standards").json()["types"] if t["id"] == "role")["can_carry_admin_roles"] is False
+    assert next(t for t in super_admin.get("/admin/groups/standards").json()["types"] if t["id"] == "role")["can_carry_admin_roles"] is True

@@ -9,6 +9,9 @@ import { http } from "@/lib/http";
 type Role = { id: string; label: string; description: string };
 
 /** Super administrators only: administrator roles every member of this team group receives (ADR 019). */
+/** Group types that may carry administrator roles (mirrors the backend group standards). */
+const CAN_CARRY = ["team", "role"];
+
 export function GroupRolesCard({ groupId, groupType, members }: { groupId: number; groupType: string; members: number }) {
   const [catalog, setCatalog] = useState<Role[]>([]);
   const [roles, setRoles] = useState<string[]>([]);
@@ -35,17 +38,17 @@ export function GroupRolesCard({ groupId, groupType, members }: { groupId: numbe
       <CardHeader><CardTitle>Administrator roles</CardTitle></CardHeader>
       <CardContent className="space-y-3 text-sm">
         <p className="text-muted-foreground">
-          Everyone in this group gets the selected roles (only team groups can carry roles, and only super administrators can change who is in a group that does).
-          {groupType !== "team" && " Set the group type to Team to use this."}
+          Everyone in this group gets the selected roles (only team and role based groups can carry roles, and only super administrators can change who is in a group that does).
+          {!CAN_CARRY.includes(groupType) && " Set the group type to Team or Role based to use this."}
         </p>
         {msg && <Alert variant={msg.ok ? "default" : "destructive"} role="status"><AlertDescription>{msg.text}</AlertDescription></Alert>}
         {catalog.map((r) => (
           <label key={r.id} className="flex items-start gap-2">
-            <input type="checkbox" className="mt-1" disabled={groupType !== "team"} checked={roles.includes(r.id)} onChange={() => toggle(r.id)} data-testid={`group-role-${r.id}`} />
+            <input type="checkbox" className="mt-1" disabled={!CAN_CARRY.includes(groupType)} checked={roles.includes(r.id)} onChange={() => toggle(r.id)} data-testid={`group-role-${r.id}`} />
             <span><span className="font-medium">{r.label}</span><span className="block text-xs text-muted-foreground">{r.description}</span></span>
           </label>
         ))}
-        <Button size="sm" disabled={groupType !== "team" && roles.length === 0} onClick={save} data-testid="group-roles-save">Save roles</Button>
+        <Button size="sm" disabled={!CAN_CARRY.includes(groupType) && roles.length === 0} onClick={save} data-testid="group-roles-save">Save roles</Button>
       </CardContent>
     </Card>
   );
