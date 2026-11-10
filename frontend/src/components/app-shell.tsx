@@ -15,6 +15,11 @@ export type { NavGroup, NavItem } from "./sidebar-nav";
 
 const COLLAPSE_KEY = "ifora.sidebar";
 const LEGACY_COLLAPSE_KEY = "identityforge.sidebar"; // read once so a collapsed rail stays collapsed after the rebrand
+const WIDTH_KEY = "ifora.sidebar.width";
+const DEFAULT_WIDTH = 240; // the former fixed w-60
+const MIN_WIDTH = 200;
+const MAX_WIDTH = 420;
+const clampWidth = (w: number) => Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.round(w)));
 const iconButton =
   "inline-flex h-9 w-9 items-center justify-center rounded-md border text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
 
@@ -68,10 +73,15 @@ export function AppShell({ title, nav, children }: { title: string; nav: NavGrou
   const [drawer, setDrawer] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [stepUp, setStepUp] = useState(false);
+  const [width, setWidth] = useState(DEFAULT_WIDTH);
+  const [dragging, setDragging] = useState(false);
+  const aside = useRef<HTMLElement>(null);
 
   useEffect(() => {
     try {
       setCollapsed((localStorage.getItem(COLLAPSE_KEY) ?? localStorage.getItem(LEGACY_COLLAPSE_KEY)) === "1");
+      const saved = Number(localStorage.getItem(WIDTH_KEY));
+      if (saved) setWidth(clampWidth(saved));
     } catch {
       /* storage unavailable: stay expanded */
     }
@@ -90,6 +100,37 @@ export function AppShell({ title, nav, children }: { title: string; nav: NavGrou
     });
   const closeDrawer = useCallback(() => setDrawer(false), []);
 
+  const saveWidth = (w: number) => {
+    try {
+      localStorage.setItem(WIDTH_KEY, String(w));
+    } catch {
+      /* ignore */
+    }
+  };
+  // Drag the right edge of the rail; the keyboard works too (arrows resize, Home/double-click reset).
+  const startResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setDragging(true);
+  };
+  const resize = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragging || !aside.current) return;
+    setWidth(clampWidth(e.clientX - aside.current.getBoundingClientRect().left));
+  };
+  const endResize = () => {
+    if (!dragging) return;
+    setDragging(false);
+    saveWidth(width);
+  };
+  const resizeByKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const next = e.key === "ArrowLeft" ? width - 16 : e.key === "ArrowRight" ? width + 16 : e.key === "Home" ? DEFAULT_WIDTH : null;
+    if (next === null) return;
+    e.preventDefault();
+    const w = clampWidth(next);
+    setWidth(w);
+    saveWidth(w);
+  };
+
   return (
     <div className="flex min-h-screen bg-muted/30">
       <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:border focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:shadow">
@@ -98,18 +139,46 @@ export function AppShell({ title, nav, children }: { title: string; nav: NavGrou
 
       <aside
         id="sidebar"
+        ref={aside}
         aria-label={title}
         data-collapsed={collapsed}
+        style={collapsed ? undefined : { width }}
         className={cn(
-          "hidden shrink-0 flex-col border-r bg-background md:flex",
-          collapsed ? "w-16" : "w-60",
-          ready && "transition-[width] duration-200 ease-in-out motion-reduce:transition-none",
+          "relative hidden shrink-0 flex-col border-r bg-background md:flex",
+          collapsed && "w-16",
+          ready && !dragging && "transition-[width] duration-200 ease-in-out motion-reduce:transition-none",
         )}
       >
         <div className={cn("flex h-14 shrink-0 items-center border-b", collapsed ? "justify-center" : "px-5")}>
           {collapsed ? <LogoLink href={home} /> : <Logo href={home} />}
         </div>
         <SidebarNav groups={nav} collapsed={collapsed} />
+        {!collapsed && (
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize sidebar"
+            aria-valuemin={MIN_WIDTH}
+            aria-valuemax={MAX_WIDTH}
+            aria-valuenow={width}
+            tabIndex={0}
+            data-testid="sidebar-resizer"
+            title="Drag to resize, double-click to reset"
+            className={cn(
+              "absolute inset-y-0 -right-1 z-20 w-2 cursor-col-resize touch-none outline-none hover:bg-ring/40 focus-visible:bg-ring/60",
+              dragging && "bg-ring/60",
+            )}
+            onPointerDown={startResize}
+            onPointerMove={resize}
+            onPointerUp={endResize}
+            onPointerCancel={endResize}
+            onKeyDown={resizeByKey}
+            onDoubleClick={() => {
+              setWidth(DEFAULT_WIDTH);
+              saveWidth(DEFAULT_WIDTH);
+            }}
+          />
+        )}
       </aside>
 
       <MobileDrawer open={drawer} onClose={closeDrawer} groups={nav} home={home} title={title} />
@@ -133,11 +202,13 @@ export function AppShell({ title, nav, children }: { title: string; nav: NavGrou
           <Breadcrumbs groups={nav} className="hidden sm:block" />
           <div className="ml-auto flex items-center gap-2 sm:gap-3">
             {user.is_admin && !user.acting_as_user && (
-              <button className={cn(iconButton, "w-auto gap-2 px-3 text-sm text-muted-foreground")} aria-label="Search" data-testid="open-search"
+              <button
+                className={cn(iconButton, "w-9 gap-2 bg-muted/40 text-sm sm:w-64 sm:justify-start sm:px-3 lg:w-96 xl:w-[28rem]")}
+                aria-label="Search" data-testid="open-search"
                 onClick={() => window.dispatchEvent(new Event("open-command-palette"))}>
-                <Search className="h-4 w-4" aria-hidden="true" />
-                <span className="hidden sm:inline">Search</span>
-                <kbd className="hidden rounded border px-1 text-[10px] sm:inline">⌘K</kbd>
+                <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
+                <span className="hidden truncate sm:inline">Search users, groups, apps…</span>
+                <kbd className="ml-auto hidden rounded border bg-background px-1.5 py-0.5 text-[10px] sm:inline">⌘K</kbd>
               </button>
             )}
             <ThemeToggle />
