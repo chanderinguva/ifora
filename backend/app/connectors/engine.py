@@ -9,11 +9,13 @@ Safety rules enforced here, whatever a definition says:
 """
 
 import base64
+import hashlib
 import json
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from backend.app.connectors.schema import Action, Connector, Input, placeholders
 from backend.app.recipes.http_client import EgressBlocked, EgressPolicy, HttpFailure, ResponseTooLarge, safe_request, validate_url
@@ -169,6 +171,19 @@ def _subst(text: str, values: Dict[str, Any], encode: Callable[[str], str]) -> s
     return re.sub(r"\{([a-z][a-z0-9_]*)\}", rep, text)
 
 
+def _qvalue(tmpl: str, values: Dict[str, Any]) -> str:
+    """A query value: the definition's own text is encoded leniently (commas, quotes and so on stay readable), every placeholder value strictly."""
+    out, last = [], 0
+    for m in re.finditer(r"\{([a-z][a-z0-9_]*)\}", tmpl):
+        out.append(quote(tmpl[last:m.start()], safe=",:@$'()*"))
+        if m.group(1) not in values:
+            raise ConnectorError(f"missing value for {m.group(1)}")
+        out.append(quote(str(values[m.group(1)]), safe=""))
+        last = m.end()
+    out.append(quote(tmpl[last:], safe=",:@$'()*"))
+    return "".join(out)
+
+
 def _seg(s: str) -> str:
     if s in (".", "..") or _CTRL.search(s):
         raise ConnectorError("invalid value in the request path")
@@ -204,9 +219,59 @@ def _auth_headers(c: Connector, config: Dict[str, Any], secrets: Dict[str, Any])
         if a.scheme == "basic":
             raw = f"{config['username']}:{secrets['password']}".encode()
             return {"Authorization": "Basic " + base64.b64encode(raw).decode()}
+        if a.scheme == "oauth2_client_credentials":
+            return {"Authorization": "Bearer " + _clean(secrets[_TOKEN_KEY], "access token")}
         return {a.header_name: a.header_prefix + _clean(secrets["value"], "value")}
     except KeyError:
         raise ConnectorError("the connection is missing a credential; edit it and enter the secret again")
+
+
+_TOKEN_KEY = "__access_token"   # the fetched access token travels in the secrets dict under this key (never stored)
+_token_cache: Dict[Tuple[str, str, str, str], Tuple[str, float]] = {}   # per process; keyed by the exact credentials, so rotating a secret drops it
+_TOKEN_CACHE_MAX = 64
+
+
+def _fetch_token(c: Connector, config: Dict[str, Any], secrets: Dict[str, Any], policy, resolver, transport) -> str:
+    """OAuth2 client credentials against the definition's fixed token host. Remote error text is never echoed."""
+    a = c.auth
+    path = _subst(a.token_path, config, _seg)
+    try:
+        client_id, client_secret = config["client_id"], secrets["client_secret"]
+    except KeyError:
+        raise ConnectorError("the connection is missing a credential; edit it and enter the secret again")
+    key = (a.token_host, path, client_id, hashlib.sha256(client_secret.encode()).hexdigest())
+    hit = _token_cache.get(key)
+    if hit and hit[1] > time.monotonic():
+        return hit[0]
+    url = f"https://{a.token_host}{path}"
+    form = {"grant_type": "client_credentials", "client_id": client_id, "client_secret": client_secret, "scope": a.scope}
+    try:
+        _, host, _, _ = validate_url(url, policy or EgressPolicy.from_settings())
+        if host != a.token_host.lower():
+            raise ConnectorError("the token request left the connector's allowed host")
+        res = safe_request("POST", url, {"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json", "User-Agent": "Ifora"},
+                           urlencode(form).encode(), policy=policy, resolver=resolver, transport=transport)
+    except EgressBlocked as e:
+        raise ConnectorError(f"blocked: {e}")
+    except ResponseTooLarge:
+        raise ConnectorError("the token response was too large")
+    except HttpFailure as e:
+        raise ConnectorError(str(e), retryable=True)   # nothing has been sent to the API yet, so retrying is always safe
+    if res.status >= 500 or res.status == 429:
+        raise ConnectorError(f"{c.name}'s sign-in service answered {res.status}", retryable=True)
+    try:
+        data = json.loads(res.body.decode("utf-8", errors="replace"))
+        token = data["access_token"]
+        if res.status != 200 or not isinstance(token, str) or not token or _CTRL.search(token):
+            raise ValueError
+    except (ValueError, KeyError, TypeError):
+        raise ConnectorError(f"{c.name} refused the client id, secret or tenant (status {res.status}).")
+    ttl = data.get("expires_in")
+    ttl = min(max(int(ttl), 30), 3600) if isinstance(ttl, (int, float)) and not isinstance(ttl, bool) else 300
+    if len(_token_cache) >= _TOKEN_CACHE_MAX:
+        _token_cache.clear()
+    _token_cache[key] = (token, time.monotonic() + ttl - 20)
+    return token
 
 
 def _base_headers(c: Connector, config: Dict[str, Any]) -> Dict[str, str]:
@@ -231,7 +296,7 @@ def build(c: Connector, a: Action, config: Dict[str, Any], inputs: Dict[str, Any
         m = _FULL.match(tmpl)
         if m and m.group(1) not in values:
             continue
-        query_parts.append(f"{quote(k, safe='')}={_subst(tmpl, values, lambda s: quote(s, safe=''))}")
+        query_parts.append(f"{quote(k, safe='')}={_qvalue(tmpl, values)}")
     pq = path + ("?" + "&".join(query_parts) if query_parts else "")
     headers = _base_headers(c, config)
     body = None
@@ -352,10 +417,14 @@ def run_action(c: Connector, a: Action, conn_name: str, config: Dict[str, Any], 
                policy: Optional[EgressPolicy] = None, resolver=None, transport=None) -> Result:
     inputs = validate_inputs(a, raw_inputs)
     secret_values = [v for v in secrets.values() if isinstance(v, str)]
-    p = build(c, a, config, inputs, None if dry else secrets)
-    summary = _summary(c, a.id, p, conn_name, secret_values)
     if dry:
-        return Result(summary, {"dry_run": True, "status_code": None, "ok": None, **{o.key: None for o in a.outputs}}, None)
+        p = build(c, a, config, inputs, None)
+        return Result(_summary(c, a.id, p, conn_name, secret_values), {"dry_run": True, "status_code": None, "ok": None, **{o.key: None for o in a.outputs}}, None)
+    if c.auth.scheme == "oauth2_client_credentials":
+        token = _fetch_token(c, config, secrets, policy, resolver, transport)
+        secrets, secret_values = {**secrets, _TOKEN_KEY: token}, secret_values + [token]
+    p = build(c, a, config, inputs, secrets)
+    summary = _summary(c, a.id, p, conn_name, secret_values)
     status, parsed = _send(c, a.idempotent or a.read_only, a.errors, p, secret_values, policy, resolver, transport, a.body_errors)
     out = redact(scrub(map_outputs(a, status, parsed), secret_values))
     return Result(summary, out, status)
@@ -365,6 +434,10 @@ def check_connection(c: Connector, config: Dict[str, Any], secrets: Dict[str, An
     """The definition's test request. Never raises for remote problems: returns (ok, status, message)."""
     path = _subst(c.test.path, config, _seg)
     try:
+        if c.auth.scheme == "oauth2_client_credentials":
+            secrets = {**secrets, _TOKEN_KEY: _fetch_token(c, config, secrets, policy, resolver, transport)}
+            if c.test.token_only:
+                return True, 200, "Connected."
         p = Prepared("GET", resolve_host(c, config), path, {**_base_headers(c, config), **_auth_headers(c, config, secrets)}, None, _scope(c.test.path))
         status, _ = _send(c, True, {401: "The credentials were refused.", 403: "The credentials were accepted but may not use this resource.",
                                     404: "Not found: check the organisation or account name."}, p, list(secrets.values()), policy, resolver, transport)

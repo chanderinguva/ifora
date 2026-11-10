@@ -181,6 +181,29 @@ def test_jira_connection_uses_basic_auth_against_its_site_host(admin, db, _remot
     assert bad.status_code == 422
 
 
+def test_entra_connection_runs_in_a_recipe_with_a_fetched_token(admin, db, monkeypatch):
+    from backend.app.connectors import engine as ce
+
+    ce._token_cache.clear()
+    tenant, client = "11111111-2222-3333-4444-555555555555", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    remote = Remote([httpx.Response(200, json={"access_token": "GRAPH_ACCESS_TOKEN", "expires_in": 3599}),
+                     httpx.Response(200, json={"id": "u1", "displayName": "Ann", "accountEnabled": True})])
+    install_remote(monkeypatch, remote)
+    r = admin.post("/admin/connectors/entra/connections", {"name": "entra", "config": {"tenant": tenant, "client_id": client}, "secrets": {"client_secret": "CLIENT_SECRET_XYZ"}})
+    assert r.status_code == 201, r.text
+    assert r.json()["allowed_host"] == "graph.microsoft.com" and "CLIENT_SECRET_XYZ" not in r.text
+    bad = admin.post("/admin/connectors/entra/connections", {"name": "e2", "config": {"tenant": "x/../y", "client_id": client}, "secrets": {"client_secret": "s"}})
+    assert bad.status_code == 422
+    step_cfg = {"connector": "entra", "connection_id": r.json()["id"], "action": "get_user", "inputs": {"user": "ann@contoso.com"}}
+    _, j, ss = go(db, admin, [step("e", "connector_action", step_cfg), step("l", "log", {"message": "{{steps.e.output.display_name}}"})])
+    assert j.status == "succeeded", j.error
+    assert [s.output["message"] for s in ss if s.step_id == "l"] == ["Ann"]
+    blob = dump([s.output for s in ss]) + dump([a.event_metadata for a in db.query(AuditEvent).all()])
+    assert "GRAPH_ACCESS_TOKEN" not in blob and "CLIENT_SECRET_XYZ" not in blob
+    assert [q.headers["host"] for q in remote.requests] == ["login.microsoftonline.com", "graph.microsoft.com"]
+    ce._token_cache.clear()
+
+
 def test_members_cannot_reach_the_connector_api(member):
     assert member.get("/admin/connectors").status_code in (401, 403)
     assert member.post("/admin/connectors/github/connections", {"name": "x", "config": {"org": "acme"}, "secrets": {"token": "t"}}).status_code in (401, 403)

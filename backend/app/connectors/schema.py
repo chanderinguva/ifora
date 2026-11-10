@@ -16,9 +16,9 @@ _OUT_PATH = re.compile(r"^\$(\.[A-Za-z_][A-Za-z0-9_]{0,40}|\[\d{1,3}\]|\[\*\]){0
 _HOST_TEMPLATE = re.compile(r"^[a-z0-9{}][a-z0-9.{}_-]{0,250}[a-z0-9}]$")
 _HEADER_NAME = re.compile(r"^[A-Za-z0-9-]{1,100}$")
 _FORBIDDEN_HEADERS = {"host", "content-length", "transfer-encoding", "connection", "upgrade", "te", "trailer", "expect", "authorization"}
-SCHEMES = ("bearer", "basic", "header")
+SCHEMES = ("bearer", "basic", "header", "oauth2_client_credentials")
 # the fields every scheme needs (key -> must be secret)
-SCHEME_FIELDS = {"bearer": {"token": True}, "basic": {"username": False, "password": True}, "header": {"value": True}}
+SCHEME_FIELDS = {"bearer": {"token": True}, "basic": {"username": False, "password": True}, "header": {"value": True}, "oauth2_client_credentials": {"client_id": False, "client_secret": True}}
 MAX_ACTIONS = 20
 
 
@@ -39,10 +39,13 @@ class AuthField(_Strict):
 
 
 class Auth(_Strict):
-    scheme: Literal["bearer", "basic", "header"]
+    scheme: Literal["bearer", "basic", "header", "oauth2_client_credentials"]
     fields: List[AuthField] = Field(..., min_length=1, max_length=8)
     header_name: Optional[str] = Field(None, max_length=100)  # scheme "header"
     header_prefix: str = Field("", max_length=40)             # e.g. "Token token=" for scheme "header"
+    token_host: Optional[str] = Field(None, max_length=100)   # scheme oauth2_client_credentials: the one fixed host the token is fetched from
+    token_path: Optional[str] = Field(None, max_length=200)   # ... and its path; may use non-secret fields such as {tenant}
+    scope: Optional[str] = Field(None, max_length=200)
 
 
 class Input(_Strict):
@@ -85,6 +88,7 @@ class Action(_Strict):
 
 class Test(_Strict):
     path: str = Field(..., min_length=2, max_length=300)
+    token_only: bool = False   # oauth2 only: getting a token is the whole test (the app may hold no read permission for the test path)
 
 
 class Reply(_Strict):
@@ -140,11 +144,11 @@ def _regex(pattern: str, where: str):
         raise DefinitionInvalid(f"{where}: invalid pattern ({e})")
 
 
-def _static_prefix_ok(path: str, where: str) -> None:
+def _static_prefix_ok(path: str, where: str, *, scoped: bool = True) -> None:
     if not path.startswith("/") or "//" in path or ".." in path or "?" in path or "#" in path or "\\" in path or " " in path:
         raise DefinitionInvalid(f"{where}: path must start with / and contain no '..', '//', '?', '#' or spaces")
     first = path.split("/")[1] if len(path.split("/")) > 1 else ""
-    if not first or "{" in first:
+    if not first or ("{" in first and scoped):
         raise DefinitionInvalid(f"{where}: path must start with a fixed segment (an unscoped path would let a credential reach the whole host)")
 
 
@@ -184,6 +188,19 @@ def validate_connector(raw: Any) -> Connector:
             raise DefinitionInvalid(f"auth.{f.key}: non-secret fields need a pattern")
         _regex(f.pattern, f"auth.{f.key}")
         config_keys.add(f.key)
+
+    if c.auth.scheme == "oauth2_client_credentials":
+        th = c.auth.token_host or ""
+        if not _HOST_TEMPLATE.match(th) or "{" in th or "*" in th or ".." in th or "." not in th or th.startswith("."):
+            raise DefinitionInvalid("auth: token_host must be one fixed host name")
+        _static_prefix_ok(c.auth.token_path or "", "auth.token_path", scoped=False)   # the token host is dedicated and pinned, so a tenant may lead the path
+        for p in placeholders(c.auth.token_path):
+            if p not in config_keys:
+                raise DefinitionInvalid(f"auth.token_path: placeholder {{{p}}} must be a non-secret auth field")
+        if not c.auth.scope or not re.fullmatch(r"[A-Za-z0-9:/._ -]{1,200}", c.auth.scope):
+            raise DefinitionInvalid("auth: scope is required and may only hold letters, digits and : / . _ - space")
+    elif c.auth.token_host or c.auth.token_path or c.auth.scope or c.test.token_only:
+        raise DefinitionInvalid("auth: token_host, token_path, scope and test.token_only only apply to scheme 'oauth2_client_credentials'")
 
     # hosts: placeholders must be config fields whose pattern cannot add dots, slashes, colons or '@' --------------------------
     host_fields = set()
