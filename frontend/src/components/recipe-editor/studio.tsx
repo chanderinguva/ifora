@@ -101,7 +101,7 @@ function summary(s: StepNode, props: Props): string {
     case "connector_action": { const con = props.meta.connectors?.find((x) => x.id === c.connector); const a = con?.actions.find((x) => x.id === c.action); return a && con ? `${con.name}: ${a.label}` : "Choose a connector action"; }
     case "log": return c.message ? String(c.message).slice(0, 50) : "Write a log message";
     case "send_email": return c.subject ? `Email: ${String(c.subject).slice(0, 40)}` : "Send an email";
-    case "send_slack": return c.message ? `Slack: ${String(c.message).slice(0, 40)}` : "Send a Slack message";
+    case "send_slack": return c.message ? `Slack: ${String(c.message).slice(0, 40)}` : "Send a Slack message (incoming webhook)";
     case "condition": { const n = (c.conditions ?? []).length; return n ? `${c.match === "any" ? "Any" : "All"} of ${n} condition${n > 1 ? "s" : ""}` : "Always applies"; }
     case "stop": return c.outcome === "failed" ? "Stop and fail the job" : "Stop the job";
     case "for_each_member": return `Members of ${group(c.group_id)}`;

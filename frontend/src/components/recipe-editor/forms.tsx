@@ -186,7 +186,14 @@ export function StepForm({ step, ctx, onChange }: { step: StepNode; ctx: Ctx; on
             <Select label="Slack connection" value={cfg.connection_id ?? ""} onChange={(v) => set({ connection_id: v ? Number(v) : null })}>
               <option value="">Choose a connection…</option>{ctx.connections.filter((c) => c.kind === "slack_webhook").map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </Select>
-            {!ctx.connections.some((c) => c.kind === "slack_webhook") && <p className="text-xs text-muted-foreground">Add a “Slack incoming webhook” under Connections first.</p>}</div>
+            {!ctx.connections.some((c) => c.kind === "slack_webhook") && (
+              <p className="text-xs text-muted-foreground" data-testid="slack-webhook-hint">
+                This step posts through a Slack <em>incoming webhook</em>, which is not the same as a Slack connection with a bot token.{" "}
+                {ctx.connections.some((c) => c.kind === "connector" && c.connector_id === "slack")
+                  ? <>Your Slack connection works with <strong>Slack → Post a message</strong> in the Add a step menu; use that instead. To keep this step, add a “Slack incoming webhook” under Connections.</>
+                  : <>Add a “Slack incoming webhook” under Connections, or connect Slack with a bot token and use <strong>Slack → Post a message</strong>.</>}
+              </p>
+            )}</div>
           <div className="space-y-1"><Label>Message</Label><PillInput label="Slack message" multiline value={cfg.message ?? ""} onChange={(v) => set({ message: v })} pills={pills} payload={payload} />
             <p className="text-xs text-muted-foreground">Plain text. Mentions and links are neutralised so user-supplied values cannot ping channels.</p></div>
         </div>
