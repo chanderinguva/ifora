@@ -13,6 +13,7 @@ import { Badge, PageHeader, Pager, fieldClass, fmt, td, th } from "@/components/
 import { useCurrentUser } from "@/components/auth-guard";
 import { http, qs, type Page } from "@/lib/http";
 import { AttrField, toApi } from "@/components/attr-field";
+import { UserLifecycle } from "@/components/user-lifecycle";
 import { USER_STATUSES, statusTone, type Group, type ProfileAttribute, type User } from "@/lib/types";
 
 const PAGE_SIZE = 15;
@@ -72,6 +73,8 @@ export default function UsersPage() {
           }}
         />
       )}
+
+      <UserLifecycle current={status} onPick={(s) => { setStatus(s); setPage(1); }} />
 
       <div className="mb-4 flex flex-wrap gap-3">
         <Input
@@ -168,14 +171,23 @@ const FIELD_NOTE = "Attributes set here are managed by administrators; users can
 function CreateUser({ canMakeAdmin, onDone }: { canMakeAdmin: boolean; onDone: () => void }) {
   const [f, setF] = useState({ email: "", first_name: "", last_name: "", username: "", password: "", is_admin: false });
   const [schema, setSchema] = useState<ProfileAttribute[]>([]);
-  const [attrs, setAttrs] = useState<Record<string, string>>({});
+  const [attrs, setAttrs] = useState<Record<string, string>>({ user_type: "Employee" });
   const [pwMode, setPwMode] = useState<"set" | "generate" | "invite">("generate");
   const [groups, setGroups] = useState<Group[]>([]);
   const [picked, setPicked] = useState<number[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [created, setCreated] = useState<{ email: string; password: string } | null>(null);
+  const [sugg, setSugg] = useState<{ username: string | null; email: string | null; email_domain: string | null }>({ username: null, email: null, email_domain: null });
   const set = (k: string, v: string | boolean) => setF((s) => ({ ...s, [k]: v }));
+
+  // preview the username / email the new user would get (nothing is reserved until the account is created)
+  useEffect(() => {
+    const t = setTimeout(() => {
+      http<typeof sugg>(`/admin/users/suggest-identity${qs({ first_name: f.first_name, last_name: f.last_name })}`).then(setSugg).catch(() => {});
+    }, 250);
+    return () => clearTimeout(t);
+  }, [f.first_name, f.last_name]);
 
   useEffect(() => {
     http<{ items: ProfileAttribute[] }>("/admin/profile-attributes").then((r) => setSchema(r.items.filter((a) => !a.user_editable))).catch(() => {});
@@ -188,16 +200,17 @@ function CreateUser({ canMakeAdmin, onDone }: { canMakeAdmin: boolean; onDone: (
     setError(null);
     try {
       const body: Record<string, unknown> = {
-        email: f.email, first_name: f.first_name, last_name: f.last_name, is_admin: f.is_admin, group_ids: picked,
+        first_name: f.first_name, last_name: f.last_name, is_admin: f.is_admin, group_ids: picked,
         profile_attributes: Object.fromEntries(schema.map((a) => [a.key, toApi(a, attrs[a.key] ?? "")]).filter(([, v]) => v !== null)),
       };
+      if (f.email.trim()) body.email = f.email.trim();
       if (f.username.trim()) body.username = f.username.trim();
       if (pwMode === "set") body.password = f.password;
       else if (pwMode === "invite") body.send_invite = true;
       else body.generate_password = true;
-      const r = await http<{ temporary_password?: string; invitation_sent?: boolean }>("/admin/users", { method: "POST", body });
+      const r = await http<{ temporary_password?: string; invitation_sent?: boolean; email: string }>("/admin/users", { method: "POST", body });
       if (r.invitation_sent === false) setError("The user was created, but the invitation email could not be sent. Use “Send invite” on their page to retry.");
-      else if (r.temporary_password) setCreated({ email: f.email, password: r.temporary_password });
+      else if (r.temporary_password) setCreated({ email: r.email, password: r.temporary_password });
       else onDone();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed");
@@ -243,12 +256,15 @@ function CreateUser({ canMakeAdmin, onDone }: { canMakeAdmin: boolean; onDone: (
             <Input id="nu-last" required value={f.last_name} onChange={(e) => set("last_name", e.target.value)} />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="nu-email">Primary email</Label>
-            <Input id="nu-email" type="email" required value={f.email} onChange={(e) => set("email", e.target.value)} />
+            <Label htmlFor="nu-email">Primary email {sugg.email_domain && <span className="text-muted-foreground">(optional)</span>}</Label>
+            <Input id="nu-email" type="email" required={!sugg.email_domain} data-testid="nu-email" value={f.email} onChange={(e) => set("email", e.target.value)}
+              placeholder={sugg.email ?? (sugg.email_domain ? `username@${sugg.email_domain}` : "name@example.com")} />
+            {sugg.email_domain && !f.email && <p className="text-xs text-muted-foreground" data-testid="nu-email-hint">Built from the username: {sugg.email ?? `username@${sugg.email_domain}`}</p>}
           </div>
           <div className="space-y-2">
             <Label htmlFor="nu-username">Username <span className="text-muted-foreground">(optional)</span></Label>
-            <Input id="nu-username" placeholder="defaults to the part before @" value={f.username} onChange={(e) => set("username", e.target.value)} />
+            <Input id="nu-username" data-testid="nu-username" placeholder={sugg.username ?? "first.last"} value={f.username} onChange={(e) => set("username", e.target.value)} />
+            <p className="text-xs text-muted-foreground">Set once, then it never changes, even if the name or email does. A number is added if the name is taken.</p>
           </div>
 
           <fieldset className="space-y-2 sm:col-span-2">

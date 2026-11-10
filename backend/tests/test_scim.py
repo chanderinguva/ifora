@@ -271,7 +271,11 @@ def test_uniqueness_conflicts(scim):
         r = scim.post("/Users", body)
         assert r.status_code == 409 and r.json()["scimType"] == "uniqueness", r.text
     other = mk(scim, "someone")
+    # the username is assigned once: a changed userName is ignored (not a conflict) and the stored one comes back
     r = scim.patch(f"/Users/{other['id']}", [{"op": "replace", "path": "userName", "value": "dup"}])
+    assert r.status_code == 200 and r.json()["userName"] == "someone"
+    # ...but an email that belongs to somebody else is still a conflict
+    r = scim.patch(f"/Users/{other['id']}", [{"op": "replace", "path": "emails", "value": [{"value": "dup@example.com", "primary": True}]}])
     assert r.status_code == 409 and r.json()["scimType"] == "uniqueness"
 
 

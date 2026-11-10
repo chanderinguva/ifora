@@ -23,12 +23,12 @@ def test_expression_rule_assigns_and_follows_changes(db, admin):
     gid = new_group(admin)
     dept(db, "a@example.com", "Sales")
     dept(db, "b@example.com", "Engineering")
-    rid = make_el(admin, gid, 'user.department == "Sales" && user.userType != "Contractor"')
+    rid = make_el(admin, gid, 'user.department == "Sales" && user.userType != "Contingent Worker"')
     assert members(admin, gid) == {"a@example.com": rid}
     u = dept(db, "c@example.com", "Engineering")
     admin.patch(f"/admin/users/{u.id}", {"profile_attributes": {"department": "Sales", "user_type": "Employee"}})
     assert "c@example.com" in members(admin, gid)
-    admin.patch(f"/admin/users/{u.id}", {"profile_attributes": {"user_type": "Contractor"}})
+    admin.patch(f"/admin/users/{u.id}", {"profile_attributes": {"user_type": "Contingent Worker"}})
     assert "c@example.com" not in members(admin, gid)
 
 

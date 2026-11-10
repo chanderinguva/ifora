@@ -374,9 +374,14 @@ def create_user(request: Request, body: Any = Depends(read_json), ctx: Ctx = Dep
 def apply_user_update(ctx: Ctx, user: User, data: dict) -> None:
     db = ctx.db
     _guard_admin(user)
+    # The username is assigned once and never changes. An IdP that mirrors the email into userName sends a new one
+    # after an email change: accept the request, keep ours, and answer with the stored value (RFC 7644 lets a
+    # service provider ignore what it will not change). The IdP links by `id` / externalId, so nothing breaks.
+    kept_username = data["username"] != user.username
+    data["username"] = user.username
     _unique_user(db, data, user.id)
     changed: List[str] = []
-    for attr, key in (("username", "userName"), ("email", "email"), ("first_name", "name.givenName"), ("last_name", "name.familyName")):
+    for attr, key in (("email", "email"), ("first_name", "name.givenName"), ("last_name", "name.familyName")):
         if getattr(user, attr) != data[attr]:
             setattr(user, attr, data[attr])
             changed.append(key)
@@ -406,7 +411,7 @@ def apply_user_update(ctx: Ctx, user: User, data: dict) -> None:
         db.flush()
         if user.status == "deprovisioned" and action == AuditAction.SCIM_USER_DEACTIVATED:
             retention.mark_deactivated(db, user, ctx.token)
-        audit(db, action, ctx.request, ctx.token, user.id, "user", {"changed": changed})
+        audit(db, action, ctx.request, ctx.token, user.id, "user", {"changed": changed, **({"username_change_ignored": True} if kept_username else {})})
     _commit(db)
     db.refresh(user)
 

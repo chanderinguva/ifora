@@ -88,6 +88,9 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str = Field(default="")
     SMTP_FROM: str = Field(default="")
     SMTP_STARTTLS: bool = Field(default=True)
+    # New users get username "first.last" (numeric suffix on conflict) and primary email "<username>@<this domain>".
+    # Empty = no automatic email: the admin must type one. See docs/architecture/023-user-identity-naming.md.
+    PRIMARY_EMAIL_DOMAIN: str = Field(default="")
     # Links in invite / password-reset emails point here (the web app's public URL).
     PUBLIC_APP_URL: str = Field(default="http://localhost:3000")
     PASSWORD_RESET_MINUTES: int = Field(default=30)
@@ -143,6 +146,16 @@ class Settings(BaseSettings):
     # API
     API_V1_PREFIX: str = Field(default="/api/v1")
     CORS_ORIGINS: List[str] = Field(default=["http://localhost:3000", "http://localhost:8000"])
+
+    @field_validator("PRIMARY_EMAIL_DOMAIN")
+    @classmethod
+    def _primary_domain(cls, v: str) -> str:
+        import re
+
+        v = v.strip().lower().lstrip("@")
+        if v and not re.fullmatch(r"(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}", v):
+            raise ValueError("PRIMARY_EMAIL_DOMAIN must be a domain name such as example.com")
+        return v
 
     @field_validator("MFA_ENCRYPTION_KEY")
     @classmethod

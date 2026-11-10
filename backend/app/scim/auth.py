@@ -51,6 +51,11 @@ def audit(db: Session, action: AuditAction, request: Optional[Request], token: O
         target_type=target_type,
         metadata=metadata or None,
     ))
+    # Same hook audit.service.record() runs: an inbound change must reach outbound provisioning (a renamed user is
+    # updated in the apps they already have, never re-created) in this transaction.
+    from backend.app.provisioning.service import on_audit
+
+    on_audit(db, action, target_id, metadata)
 
 
 def _unauthorized() -> ScimError:

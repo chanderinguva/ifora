@@ -30,7 +30,7 @@ def test_create_get_list_update_delete(admin):
     r = admin.post("/admin/users", NEW)
     assert r.status_code == 201, r.text
     u = r.json()
-    assert u["username"] == "new" and "password" not in u and "password_hash" not in u
+    assert u["username"] == "new.person" and "password" not in u and "password_hash" not in u
     uid = u["id"]
     assert admin.get(f"/admin/users/{uid}").json()["email"] == "new@example.com"
     assert admin.get("/admin/users?q=person").json()["total"] == 1
@@ -57,9 +57,9 @@ def test_validation(admin):
 def test_duplicate_email_and_username(admin):
     assert admin.post("/admin/users", NEW).status_code == 201
     assert admin.post("/admin/users", {**NEW, "email": "NEW@example.com"}).status_code == 409
-    assert admin.post("/admin/users", {**NEW, "email": "x@example.com", "username": "new"}).status_code == 409
+    assert admin.post("/admin/users", {**NEW, "email": "x@example.com", "username": "new.person"}).status_code == 409
     r = admin.post("/admin/users", {**NEW, "email": "new@other.org"})  # derived username collides -> suffixed
-    assert r.status_code == 201 and r.json()["username"] == "new2"
+    assert r.status_code == 201 and r.json()["username"] == "new.person2"
 
 
 def test_mutations_require_csrf(admin):
