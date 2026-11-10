@@ -74,7 +74,7 @@ test("passkeys: register two, sign in usernameless, require them, admin resets",
   await page.getByLabel("Search users").fill(email);
   await page.getByRole("link", { name: "Pass Key" }).click();
   page.once("dialog", (d) => d.accept());
-  await page.getByRole("button", { name: /Reset MFA/ }).click();
+  await page.getByRole("button", { name: /Reset authenticators/ }).click();
   await expect(page.getByText("passkey required")).toHaveCount(0);
   await logout(page);
   await login(page, email, USER_PASSWORD);
