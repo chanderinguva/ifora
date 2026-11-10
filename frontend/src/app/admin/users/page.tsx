@@ -18,12 +18,19 @@ import { UserLifecycle } from "@/components/user-lifecycle";
 import { USER_STATUSES, statusTone, type Group, type ProfileAttribute, type User } from "@/lib/types";
 
 const PAGE_SIZE = 15;
+// the Role filter: account kind first, then the built-in administrator roles (held directly or through a group)
+const ROLE_FILTERS: [string, string][] = [
+  ["super_admin", "Super admin"], ["admin", "Any administrator"], ["user", "Not an administrator"],
+  ["org_admin", "Organization administrator"], ["read_only_admin", "Read-only administrator"], ["help_desk_admin", "Help desk administrator"],
+  ["app_admin", "Application administrator"], ["group_admin", "Group administrator"], ["report_admin", "Report administrator"],
+];
 
 export default function UsersPage() {
   const me = useCurrentUser();
   const [data, setData] = useState<Page<User> | null>(null);
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("");
+  const [role, setRole] = useState("");
   const [page, setPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -43,10 +50,10 @@ export default function UsersPage() {
   }
 
   const load = useCallback(() => {
-    http<Page<User>>(`/admin/users${qs({ q, status, ...pageQs(page, PAGE_SIZE) })}`)
+    http<Page<User>>(`/admin/users${qs({ q, status, role, ...pageQs(page, PAGE_SIZE) })}`)
       .then(setData)
       .catch((e) => setError(e.message));
-  }, [q, status, page]);
+  }, [q, status, role, page]);
 
   useEffect(() => {
     const st = new URLSearchParams(window.location.search).get("status");
@@ -102,6 +109,18 @@ export default function UsersPage() {
         >
           <option value="">All statuses</option>
           {USER_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+        </select>
+        <select
+          aria-label="Filter by role"
+          className={fieldClass + " max-w-[14rem]"}
+          value={role}
+          onChange={(e) => {
+            setRole(e.target.value);
+            setPage(1);
+          }}
+        >
+          <option value="">All roles</option>
+          {ROLE_FILTERS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
         </select>
       </div>
 

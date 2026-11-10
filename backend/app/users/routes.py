@@ -151,15 +151,37 @@ def suggest_identity(first_name: str = Query("", max_length=100), last_name: str
     return {"username": username, "email": naming.email_for(username), "email_domain": settings.PRIMARY_EMAIL_DOMAIN or None}
 
 
+def _filter_by_role(db: Session, query, role: str):
+    """The Role filter of the user list: account kind, or an administrator role held directly or through a group."""
+    from backend.app.admin_roles import permissions
+    from backend.app.admin_roles.models import AdminRoleAssignment, GroupAdminRole
+
+    if role == "super_admin":
+        return query.filter(User.is_super_admin.is_(True))
+    if role == "admin":
+        return query.filter(User.is_admin.is_(True), User.is_super_admin.is_(False))
+    if role == "user":
+        return query.filter(User.is_admin.is_(False), User.is_super_admin.is_(False))
+    if role not in permissions.ROLES:
+        raise HTTPException(status_code=422, detail="Unknown role")
+    direct = db.query(AdminRoleAssignment.user_id).filter(AdminRoleAssignment.role == role)
+    via_group = (db.query(user_group_association.c.user_id).join(GroupAdminRole, GroupAdminRole.group_id == user_group_association.c.group_id)
+                 .filter(GroupAdminRole.role == role))
+    return query.filter(or_(User.id.in_(direct), User.id.in_(via_group)))
+
+
 @router.get("")
 def list_users(
     q: Optional[str] = Query(None, max_length=100),
     status: Optional[str] = Query(None, pattern=lifecycle.STATUS_PATTERN),
+    role: Optional[str] = Query(None, max_length=32, description="super_admin, admin (any administrator), user (not an administrator), or a built-in administrator role id"),
     p: ListParams = Depends(list_params),
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
     query = db.query(User)
+    if role:
+        query = _filter_by_role(db, query, role)
     if q:
         like = f"%{q.lower().replace('%', '').replace('_', '')}%"
         from sqlalchemy import func
