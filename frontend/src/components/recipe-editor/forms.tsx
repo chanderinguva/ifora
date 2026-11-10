@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { fieldClass } from "@/components/bits";
 import { PillInput } from "@/components/recipe-bits";
+import { ConnectorActionForm, connectorStartingConfig } from "@/components/recipe-editor/connector-form";
 import { OPERATOR_LABELS, decisionPills, stepPills, stepsBefore, type Comparison, type Connection, type Definition, type Pill, type RecipeMeta, type StepNode } from "@/lib/recipes";
 import type { Group } from "@/lib/types";
 
@@ -26,6 +27,7 @@ export function defaultConfig(type: string, ctx: Ctx): Record<string, any> {
     case "set_attribute": return { user: USER_PILL, attribute: ctx.meta.managed_attributes[0]?.key ?? "", value: "" };
     case "activate_user": case "deactivate_user": return { user: USER_PILL };
     case "http_request": return { method: "POST", url: "https://", headers: {}, body: "", connection_id: null };
+    case "connector_action": return connectorStartingConfig(ctx.connections, ctx.meta);
     case "log": return { message: "" };
     case "send_slack": return { connection_id: ctx.connections.find((c) => c.kind === "slack_webhook")?.id ?? null, message: "" };
     case "send_email": return { to: USER_EMAIL_PILL, subject: "", body: "" };
@@ -158,7 +160,7 @@ export function StepForm({ step, ctx, onChange }: { step: StepNode; ctx: Ctx; on
           </div>
           <div className="space-y-1"><Label>Connection (credentials)</Label>
             <Select label="Connection" value={cfg.connection_id ?? ""} onChange={(v) => set({ connection_id: v ? Number(v) : null })}>
-              <option value="">None (no credentials)</option>{ctx.connections.filter((c) => c.kind !== "slack_webhook").map((c) => <option key={c.id} value={c.id}>{c.name} → {c.allowed_host}</option>)}
+              <option value="">None (no credentials)</option>{ctx.connections.filter((c) => c.kind !== "slack_webhook" && c.kind !== "connector").map((c) => <option key={c.id} value={c.id}>{c.name} → {c.allowed_host}</option>)}
             </Select>
             {!ctx.connectionsAvailable && <p className="text-xs text-muted-foreground">Connections are unavailable until RECIPE_ENCRYPTION_KEY is configured.</p>}
             <p className="text-xs text-muted-foreground">The secret is attached by the server and only sent to the connection’s own host. Requests to private or internal addresses are blocked.</p></div>
@@ -175,6 +177,8 @@ export function StepForm({ step, ctx, onChange }: { step: StepNode; ctx: Ctx; on
         </div>
       );
     }
+    case "connector_action":
+      return <ConnectorActionForm cfg={cfg} set={set} connections={ctx.connections} meta={ctx.meta} pills={pills} payload={payload} available={ctx.connectionsAvailable} />;
     case "send_slack":
       return (
         <div className="space-y-3">

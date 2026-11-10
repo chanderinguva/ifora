@@ -160,10 +160,15 @@ def test_connection_in_use_cannot_be_deleted(admin):
     assert admin.delete(f"/admin/recipe-connections/{unused['id']}").status_code in (200, 204)
 
 
-def test_step_is_hidden_from_the_editor_palette(admin):
-    r = admin.get("/admin/recipes/steps")
-    if r.status_code == 200:
-        assert "connector_action" not in dump(r.json())
+def test_editor_meta_offers_the_step_and_the_connector_catalog(admin):
+    r = admin.get("/admin/recipes/meta")
+    assert r.status_code == 200, r.text
+    assert "connector_action" in [x["type"] for x in r.json()["steps"]]
+    ids = {c["id"] for c in r.json()["connectors"]}
+    assert {"github", "jira", "slack", "pagerduty", "entra"} <= ids
+    gh = next(c for c in r.json()["connectors"] if c["id"] == "github")
+    add = next(a for a in gh["actions"] if a["id"] == "add_team_member")
+    assert "state" in add["outputs"] and any(i["key"] == "role" and i["type"] == "select" for i in add["inputs"])
 
 
 def test_jira_connection_uses_basic_auth_against_its_site_host(admin, db, _remote):

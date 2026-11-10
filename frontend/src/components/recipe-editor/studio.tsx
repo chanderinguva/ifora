@@ -97,6 +97,7 @@ function summary(s: StepNode, props: Props): string {
     case "remove_from_group": return `Remove from ${group(c.group_id)}`;
     case "set_attribute": return c.attribute ? `Set ${c.attribute}` : "Choose an attribute";
     case "http_request": return `${c.method ?? "POST"} ${String(c.url ?? "").replace(/^https?:\/\//, "").slice(0, 40)}`;
+    case "connector_action": { const con = props.meta.connectors?.find((x) => x.id === c.connector); const a = con?.actions.find((x) => x.id === c.action); return a && con ? `${con.name}: ${a.label}` : "Choose a connector action"; }
     case "log": return c.message ? String(c.message).slice(0, 50) : "Write a log message";
     case "send_email": return c.subject ? `Email: ${String(c.subject).slice(0, 40)}` : "Send an email";
     case "send_slack": return c.message ? `Slack: ${String(c.message).slice(0, 40)}` : "Send a Slack message";
