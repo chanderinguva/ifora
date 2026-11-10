@@ -25,6 +25,14 @@ export function connectorStartingConfig(connections: Connection[], meta: RecipeM
   return { connector: con?.id ?? "", connection_id: conn?.id ?? null, action: action?.id ?? "", inputs: action ? startingInputs(action) : {} };
 }
 
+/** A step added straight from the menu ("Jira Cloud: Create issue"): connection, connector and action are known, inputs start at their defaults. */
+export type ConnectorPreset = { connector: string; connection_id: number; action: string };
+
+export function presetConfig(meta: RecipeMeta, p: ConnectorPreset): Cfg {
+  const a = meta.connectors?.find((c) => c.id === p.connector)?.actions.find((x) => x.id === p.action);
+  return { connector: p.connector, connection_id: p.connection_id, action: p.action, inputs: a ? startingInputs(a) : {} };
+}
+
 /** The step form for "Run a connector action": pick a connection, an action, and fill the action's declared inputs. */
 export function ConnectorActionForm({ cfg, set, connections, meta, pills, payload, available }: {
   cfg: Cfg; set: (patch: Record<string, unknown>) => void; connections: Connection[]; meta: RecipeMeta; pills: Pill[]; payload: boolean; available: boolean;
@@ -66,7 +74,7 @@ export function ConnectorActionForm({ cfg, set, connections, meta, pills, payloa
         <div className="space-y-1"><Label>Action</Label>
           <select aria-label="Action" className={fieldClass} value={cfg.action ?? ""} disabled={!connector}
             onChange={(e) => { const a = connector?.actions.find((x) => x.id === e.target.value); if (a) set({ action: a.id, inputs: startingInputs(a, inputs) }); }}>
-            {!action && <option value="">Choose an action…</option>}
+            {!action && <option value="">{connector ? "Choose an action…" : "Choose a connection first"}</option>}
             {connector?.actions.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
           </select>
         </div>
