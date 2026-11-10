@@ -44,6 +44,8 @@ function moveIn(steps: StepNode[], id: string, dir: -1 | 1): StepNode[] {
 
 function StepList({ steps, ctx, onChange, depth }: { steps: StepNode[]; ctx: Ctx; onChange: (s: StepNode[]) => void; depth: number }) {
   const addable = ctx.meta.steps.filter((s) => (s.type !== "condition" && s.type !== "approval") || depth < ctx.meta.limits.max_nesting)
+    .filter((s) => s.type !== "return_data" || (ctx.trigger === "call" && !ctx.handler))
+    .filter((s) => !(s.type === "call_recipe" && ctx.handler))
     .filter((s) => !(isLoopType(s.type) && (depth > 0 || ctx.handler)) && !((s.type === "approval" || s.type === "wait" || s.type === "throttle") && ctx.handler));
   const [type, setType] = useState("log");
   const root = ctx.root;

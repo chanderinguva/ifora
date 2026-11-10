@@ -13,11 +13,12 @@ Definition JSON::
 import re
 from typing import Any, Callable, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from sqlalchemy.orm import Session
 
 from backend.app.groups.model import Group
 from backend.app.profiles import catalog as profile_catalog
+from backend.app.recipes import calls
 from backend.app.recipes import conditions as cond
 from backend.app.recipes import lookup
 from backend.app.recipes import templates as tpl
@@ -34,12 +35,12 @@ EVENT_TRIGGERS = (
     "user.deleted", "group.created", "group.deleted", "login.succeeded",
     "session.logout", "mfa.enabled", "mfa.disabled", "password.changed",
 )
-TRIGGER_TYPES = EVENT_TRIGGERS + ("schedule", "manual", "webhook")
+TRIGGER_TYPES = EVENT_TRIGGERS + ("schedule", "manual", "webhook", "call")
 ACTION_TYPES = (
     "add_to_group", "remove_from_group", "set_attribute", "activate_user", "deactivate_user", "http_request", "log",
     "send_slack", "send_email", "lookup_row", "lookup_write",
 )
-STEP_TYPES = ACTION_TYPES + ("condition", "stop", "for_each_member", "for_each_item", "approval", "set_variable", "wait", "throttle")
+STEP_TYPES = ACTION_TYPES + ("condition", "stop", "for_each_member", "for_each_item", "approval", "set_variable", "wait", "throttle", "call_recipe", "return_data")
 BRANCHING = ("condition", "approval")  # then/else steps
 MAX_LOOP_MEMBERS = 100
 LOOP_TYPES = ("for_each_member", "for_each_item")
@@ -75,6 +76,36 @@ class _TrigLogin(_Cfg):
     min_failures: int = Field(1, ge=1, le=100)
 
 
+_NAME = r"^[a-z][a-z0-9_]{0,31}$"
+
+
+class _CallInput(_Cfg):
+    name: str = Field(..., pattern=_NAME)
+    type: str = Field("text", pattern="^(text|number|boolean|list|object)$")
+    required: bool = True
+
+
+class _TrigCall(_Cfg):
+    """A callable recipe: the data it accepts and the data it gives back."""
+    inputs: List[_CallInput] = Field(default_factory=list, max_length=20)
+    outputs: List[str] = Field(default_factory=list, max_length=20)
+
+    @field_validator("outputs")
+    @classmethod
+    def _outputs(cls, v):
+        import re
+        if any(not isinstance(n, str) or not re.match(_NAME, n) for n in v) or len(set(v)) != len(v):
+            raise ValueError("output names must be unique lowercase names like total or user_id")
+        return v
+
+    @field_validator("inputs")
+    @classmethod
+    def _inputs(cls, v):
+        if len({i.name for i in v}) != len(v):
+            raise ValueError("input names must be unique")
+        return v
+
+
 class _TrigSchedule(_Cfg):
     interval_minutes: int = Field(..., ge=5, le=1440)
 
@@ -84,7 +115,7 @@ TRIGGER_CFG = {
                               "user.deleted", "group.created", "group.deleted", "login.succeeded",
                               "session.logout", "mfa.enabled", "mfa.disabled", "password.changed")},
     "group.member_added": _TrigGroup, "group.member_removed": _TrigGroup,
-    "user.attribute_changed": _TrigAttribute, "login.failed": _TrigLogin, "schedule": _TrigSchedule,
+    "user.attribute_changed": _TrigAttribute, "login.failed": _TrigLogin, "schedule": _TrigSchedule, "call": _TrigCall,
 }
 
 _USER_DEFAULT = "{{trigger.user.id}}"
@@ -163,6 +194,15 @@ class _Wait(_Cfg):
     unit: Literal["minutes", "hours", "days"] = "minutes"
 
 
+class _CallRecipe(_Cfg):
+    recipe_id: int
+    inputs: Dict[str, str] = Field(default_factory=dict, max_length=20)   # input name -> datapill, formula or text
+
+
+class _ReturnData(_Cfg):
+    values: Dict[str, str] = Field(default_factory=dict, max_length=20)   # output name -> datapill, formula or text
+
+
 class _Throttle(_Cfg):
     max_runs: int = Field(..., ge=1, le=1000)      # at most this many jobs may pass this step ...
     per_minutes: int = Field(..., ge=1, le=1440)   # ... in any window of this length
@@ -187,7 +227,7 @@ class _LookupWrite(_Cfg):
 
 STEP_CFG = {
     "lookup_row": _LookupRow, "lookup_write": _LookupWrite,
-    "set_variable": _SetVar, "wait": _Wait, "throttle": _Throttle,
+    "set_variable": _SetVar, "wait": _Wait, "throttle": _Throttle, "call_recipe": _CallRecipe, "return_data": _ReturnData,
     "add_to_group": _AddRemove, "remove_from_group": _AddRemove, "set_attribute": _SetAttr,
     "activate_user": _UserOnly, "deactivate_user": _UserOnly, "http_request": _Http, "log": _Log,
     "send_slack": _Slack, "send_email": _Email,
@@ -219,12 +259,13 @@ TRIGGER_FIELDS = {
     "schedule": _COMMON + [("trigger.schedule.scheduled_for", "Scheduled for")],
     "manual": _COMMON + _USER + [("trigger.manual.started_by", "Started by (admin id)")],
     "webhook": _COMMON,
+    "call": [("trigger.call.parent_job", "Calling job id")],
 }
 _DYNAMIC_PREFIXES = {  # any suffix is allowed below these
     "trigger.user.attributes.": ("user.created", "user.activated", "user.deactivated", "user.updated",
                                  "user.attribute_changed", "group.member_added", "group.member_removed",
                                  "login.failed", "login.succeeded", "session.logout", "mfa.enabled", "mfa.disabled", "password.changed", "manual"),
-    "trigger.payload.": ("manual", "webhook"),
+    "trigger.payload.": ("manual", "webhook", "call"),
 }
 STEP_OUTPUTS = {
     "add_to_group": ["user_id", "group_id", "changed"], "remove_from_group": ["user_id", "group_id", "changed"],
@@ -234,7 +275,7 @@ STEP_OUTPUTS = {
     "send_slack": ["ok"], "send_email": ["to", "sent"], "condition": ["result"], "stop": [],
     "for_each_member": ["total", "processed"], "for_each_item": ["total", "processed"], "approval": ["decision", "decided_by"],
     "lookup_row": ["found", "count", "row"], "lookup_write": ["action", "changed"],
-    "set_variable": ["value"], "wait": ["waited_seconds"], "throttle": ["waited_seconds"],
+    "set_variable": ["value"], "wait": ["waited_seconds"], "throttle": ["waited_seconds"], "call_recipe": ["result"], "return_data": [],
 }
 _RECIPE_FIELDS = ["recipe.id", "recipe.name", "recipe.version", "job.id"]
 _SAFE_USER_FIELDS = {"id", "email", "username", "status"}
@@ -420,8 +461,23 @@ def validate_definition(db: Session, definition: Any, *, for_publish: bool = Fal
                 if len(variables) > MAX_VARIABLES:
                     raise DefinitionError(f"at most {MAX_VARIABLES} variables")
                 seen["$var:" + cfg["name"]] = "variable"
+            elif stype in ("call_recipe", "return_data") and mode["handler"]:
+                raise DefinitionError(f"{where}: the error handler cannot call recipes or return data")
             elif stype in ("wait", "throttle") and mode["handler"]:
                 raise DefinitionError(f"{where}: the error handler cannot wait or throttle")
+            if stype == "return_data":
+                if ttype != "call":
+                    raise DefinitionError(f"{where}: 'Return data' is only for recipes whose trigger is 'Called by another recipe'")
+                if set(cfg["values"]) != set(tcfg["outputs"]):
+                    raise DefinitionError(f"{where}: return exactly the declared outputs ({', '.join(tcfg['outputs']) or 'none declared'})")
+            if stype == "call_recipe":
+                found = calls.callee(db, cfg["recipe_id"])
+                if found is None:
+                    raise DefinitionError(f"{where}: choose a published, enabled recipe whose trigger is 'Called by another recipe'")
+                try:
+                    calls.check_inputs(found[2], cfg["inputs"])
+                except ValueError as e:
+                    raise DefinitionError(f"{where}: {e}")
             if stype == "wait" and cfg["amount"] * WAIT_UNIT_MINUTES[cfg["unit"]] > MAX_WAIT_MINUTES:
                 raise DefinitionError(f"{where}: wait at most 7 days")
             if stype == "condition":
@@ -525,7 +581,7 @@ def _check_step(db, stype, cfg, ttype, earlier, managed, taint, where, handler=F
         return
     for p in tpl.all_pills({k: v for k, v in cfg.items() if k not in ("connection_id", "name", "unit", "when_full")}):
         _pill_allowed(p, ttype, earlier, managed, handler, in_loop)
-        if stype in STATE_CHANGING or stype in ("set_variable", "lookup_row", "for_each_item"):   # a variable must not carry user-editable text onward; a lookup key picks what is read
+        if stype in STATE_CHANGING or stype in ("set_variable", "lookup_row", "for_each_item", "call_recipe", "return_data"):   # a variable must not carry user-editable text onward; a lookup key picks what is read
             taint(p)
     if stype in ("add_to_group", "remove_from_group"):
         g = db.get(Group, cfg["group_id"])
