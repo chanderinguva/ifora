@@ -212,6 +212,7 @@ STEP_INFO = {
     "set_attribute": ("Set a profile attribute", "action"), "activate_user": ("Activate user", "action"),
     "deactivate_user": ("Deactivate user", "action"), "http_request": ("Send an HTTP request", "action"),
     "log": ("Write to the job log", "action"),
+    "connector_action": ("Run a connector action", "action"),
     "send_slack": ("Send a Slack message", "action"), "send_email": ("Send an email", "action"), "condition": ("If / else", "control"), "stop": ("Stop", "control"), "handle_errors": ("Handle errors", "control"),
     "for_each_member": ("For each member of a group", "control"), "for_each_item": ("For each item in a list", "control"), "approval": ("Wait for approval", "control"),
     "lookup_row": ("Look up a row", "action"), "lookup_write": ("Add, update or delete a lookup row", "action"),
@@ -231,7 +232,7 @@ def meta(db: Session = Depends(get_db), _: User = Depends(require_admin)):
              "payload_pills": t in ("manual", "webhook", "call")}
             for t in defn.TRIGGER_TYPES
         ],
-        "steps": [{"type": t, "label": STEP_INFO[t][0], "kind": STEP_INFO[t][1], "outputs": defn.STEP_OUTPUTS[t]} for t in defn.STEP_TYPES],
+        "steps": [{"type": t, "label": STEP_INFO[t][0], "kind": STEP_INFO[t][1], "outputs": defn.STEP_OUTPUTS[t]} for t in defn.STEP_TYPES if t not in defn.PALETTE_HIDDEN],
         "operators": list(cond.OPERATORS),
         "managed_attributes": [
             {"key": a.key, "display_name": a.display_name, "data_type": a.data_type, "enum_options": a.enum_options}
@@ -804,6 +805,7 @@ def _conn_dict(c: RecipeConnection, viewer: Optional[User] = None) -> dict:
         "can_manage": manage, "allowed_users": (c.allowed_users or []) if manage else None,
         "id": c.id, "name": c.name, "kind": c.kind, "header_name": c.header_name, "allowed_host": c.allowed_host,
         "allowed_paths": c.allowed_paths or [], "client_id": c.client_id, "token_url": c.token_url, "scope": c.scope,
+        "connector_id": c.connector_id, "connector_version": c.connector_version, "config": c.config or {},
         "has_secret": True, "created_at": c.created_at.isoformat(), "updated_at": c.updated_at.isoformat(),
     }
 
@@ -900,6 +902,8 @@ def update_connection(cid: int, body: ConnectionBody, request: Request, db: Sess
 
     if not access.can_manage_connection(actor, c):
         raise HTTPException(status_code=403, detail="Only the creator of this connection or a super admin can change it")
+    if c.connector_id:
+        raise HTTPException(status_code=409, detail="This is a connector connection: change it through /admin/connectors")
     _need_key()
     host = _conn_checks(body)
     c.name, c.kind, c.allowed_host = body.name.strip(), body.kind, host
@@ -922,6 +926,28 @@ def update_connection(cid: int, body: ConnectionBody, request: Request, db: Sess
     return _conn_dict(c, actor)
 
 
+def _holds_connection(node: Any, cid: int) -> bool:
+    if isinstance(node, dict):
+        return node.get("connection_id") == cid or any(_holds_connection(v, cid) for v in node.values())
+    if isinstance(node, list):
+        return any(_holds_connection(v, cid) for v in node)
+    return False
+
+
+def _recipes_using_connection(db: Session, cid: int) -> List[str]:
+    """Recipes whose draft or published version has a step using the connection."""
+    out = []
+    for r in db.query(Recipe).order_by(Recipe.id).all():
+        defs = [r.draft or {}]
+        if r.published_version:
+            v = db.query(RecipeVersion).filter(RecipeVersion.recipe_id == r.id, RecipeVersion.version == r.published_version).first()
+            if v:
+                defs.append(v.definition or {})
+        if any(_holds_connection(d, cid) for d in defs):
+            out.append(r.name)
+    return out
+
+
 @connections_router.delete("/{cid}")
 def delete_connection(cid: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
     c = db.get(RecipeConnection, cid)
@@ -932,6 +958,10 @@ def delete_connection(cid: int, request: Request, db: Session = Depends(get_db),
     if not access.can_manage_connection(actor, c):
         raise HTTPException(status_code=403, detail="Only the creator of this connection or a super admin can delete it")
     name = c.name
+    if c.connector_id:
+        used = _recipes_using_connection(db, cid)
+        if used:
+            raise HTTPException(status_code=409, detail="Used by recipes: " + ", ".join(used[:5]) + ". Remove or change those steps first.")
     db.delete(c)
     record(db, AuditAction.RECIPE_CONNECTION_DELETED, request, actor, cid, "recipe_connection", {"name": name})
     db.commit()

@@ -65,7 +65,10 @@ class RecipeConnection(TenantOwned, Base):
     token_url = Column(String(2000), nullable=True)  # oauth2_client_credentials (must be on allowed_host)
     scope = Column(String(500), nullable=True)
     allowed_users = Column(JSONB, nullable=True)  # admin ids that may use it in recipes; None/empty = every administrator
-    secret_enc = Column(Text, nullable=False)  # bearer/header secret, OAuth2 client secret, or Slack webhook URL
+    secret_enc = Column(Text, nullable=False)  # bearer/header secret, OAuth2 client secret, Slack webhook URL, or (connectors) encrypted JSON of the secret fields
+    connector_id = Column(String(32), nullable=True)  # a pre-built connector (ADR 026); kind is then "connector"
+    connector_version = Column(Integer, nullable=True)
+    config = Column(JSONB, nullable=True)  # the connector's non-secret settings (organisation, account name, ...)
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=_now)

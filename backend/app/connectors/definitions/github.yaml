@@ -1,0 +1,86 @@
+id: github
+version: 1
+name: GitHub
+category: developer
+description: Organisation and team membership for joiner, mover and leaver recipes.
+hosts: ["api.github.com"]
+headers:
+  Accept: application/vnd.github+json
+  X-GitHub-Api-Version: "2022-11-28"
+  User-Agent: Ifora
+auth:
+  scheme: bearer
+  fields:
+    - {key: token, label: Personal access token or app token, secret: true}
+    - {key: org, label: Organisation, pattern: "^[A-Za-z0-9-]{1,39}$", max_length: 39}
+test:
+  path: /orgs/{org}
+actions:
+  - id: get_user
+    label: Get user
+    description: Look up a GitHub account by username.
+    method: GET
+    path: /users/{username}
+    inputs:
+      - {key: username, label: GitHub username, type: string, required: true, pattern: "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$", max_length: 39}
+    outputs:
+      - {key: login, from: "$.login"}
+      - {key: id, from: "$.id"}
+      - {key: name, from: "$.name"}
+    errors:
+      404: No GitHub account with that username.
+
+  - id: list_teams
+    label: List teams
+    description: The first 100 teams of the organisation.
+    method: GET
+    path: /orgs/{org}/teams
+    query: {per_page: "100"}
+    outputs:
+      - {key: team_slugs, from: "$[*].slug"}
+      - {key: team_names, from: "$[*].name"}
+    errors:
+      404: Organisation not found, or the token cannot see its teams.
+
+  - id: add_team_member
+    label: Add user to team
+    description: Adds the user to the organisation (as an invitation when needed) and to the team.
+    method: PUT
+    path: /orgs/{org}/teams/{team}/memberships/{username}
+    inputs:
+      - {key: team, label: Team slug, type: string, required: true, pattern: "^[a-z0-9](?:[a-z0-9_-]{0,98}[a-z0-9])?$", max_length: 100}
+      - {key: username, label: GitHub username, type: string, required: true, pattern: "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$", max_length: 39}
+      - {key: role, label: Role, type: select, options: [member, maintainer], default: member}
+    body: {role: "{role}"}
+    outputs:
+      - {key: state, from: "$.state"}
+      - {key: role, from: "$.role"}
+    errors:
+      403: The token is not allowed to manage this team.
+      404: Team or user not found.
+      422: GitHub refused the change (is the user a member of the organisation?).
+    idempotent: true
+
+  - id: remove_team_member
+    label: Remove user from team
+    method: DELETE
+    path: /orgs/{org}/teams/{team}/memberships/{username}
+    inputs:
+      - {key: team, label: Team slug, type: string, required: true, pattern: "^[a-z0-9](?:[a-z0-9_-]{0,98}[a-z0-9])?$", max_length: 100}
+      - {key: username, label: GitHub username, type: string, required: true, pattern: "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$", max_length: 39}
+    errors:
+      403: The token is not allowed to manage this team.
+      404: Team or user not found.
+    idempotent: true
+
+  - id: remove_org_member
+    label: Remove user from organisation
+    description: Removes the user from the organisation and from all of its teams.
+    method: DELETE
+    path: /orgs/{org}/members/{username}
+    inputs:
+      - {key: username, label: GitHub username, type: string, required: true, pattern: "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$", max_length: 39}
+    errors:
+      403: The token is not allowed to remove members.
+      404: Organisation or user not found.
+    idempotent: true
