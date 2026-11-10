@@ -27,6 +27,7 @@ from backend.app.listing import ListParams, list_params, paginate, sortable
 from backend.app.scim import filter as flt
 from backend.app.profiles import catalog as profile_catalog
 from backend.app.recipes import calls
+from backend.app.connectors import registry as connector_registry
 from backend.app.recipes import conditions as cond
 from backend.app.recipes import crypto, definition as defn, engine, formula, portable
 from backend.app.recipes import templates as tpl
@@ -242,6 +243,7 @@ def meta(db: Session = Depends(get_db), _: User = Depends(require_admin)):
         "limits": {"max_steps": defn.MAX_STEPS, "max_nesting": defn.MAX_NESTING},
         "functions": formula.CATALOG,
         "callable_recipes": calls.callable_recipes(db),
+        "connectors": [connector_registry.public_view(c) for c in connector_registry.all_connectors()],
         "lookup_tables": [{"name": t.name, "columns": t.columns, "key_column": t.key_column, "admin_managed": t.admin_managed}
                           for t in db.query(LookupTable).order_by(LookupTable.name).all()],
     }

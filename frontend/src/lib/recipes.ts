@@ -71,6 +71,16 @@ export type RecipeMeta = {
   callable_recipes?: { id: number; name: string; inputs: { name: string; type: string; required: boolean }[]; outputs: string[] }[];
   lookup_tables?: { name: string; columns: { name: string; type: string }[]; key_column: string | null; admin_managed: boolean }[];
   functions?: { name: string; signature: string; description: string; example: string }[];
+  connectors?: ConnectorInfo[];
+};
+
+/** A pre-built connector from the server's catalog (ADR 026). */
+export type ConnectorField = { key: string; label: string; secret: boolean; pattern: string | null; max_length: number };
+export type ConnectorInput = { key: string; label: string; type: "string" | "integer" | "boolean" | "select"; required: boolean; default: unknown; options: string[]; max_length: number; multiline?: boolean };
+export type ConnectorAction = { id: string; label: string; description: string; method: string; read_only: boolean; idempotent: boolean; inputs: ConnectorInput[]; outputs: string[] };
+export type ConnectorInfo = {
+  id: string; version: number; name: string; category: string; description: string; hosts: string[];
+  auth: { scheme: string; fields: ConnectorField[] }; actions: ConnectorAction[];
 };
 
 export type JobStep = {
@@ -108,7 +118,10 @@ export type Job = {
 export type Connection = {
   id: number;
   name: string;
-  kind: "bearer" | "header" | "oauth2_client_credentials" | "slack_webhook";
+  kind: "bearer" | "header" | "oauth2_client_credentials" | "slack_webhook" | "connector";
+  connector_id?: string | null;
+  connector_version?: number | null;
+  config?: Record<string, string> | null;
   header_name: string | null;
   allowed_host: string;
   allowed_paths?: string[];
@@ -179,6 +192,10 @@ export function stepPills(meta: RecipeMeta, before: StepNode[], forDecision = fa
     for (const o of info?.outputs ?? []) pills.push({ path: `steps.${s.id}.output.${o}`, label: `${label} (${s.id}): ${o}` });
     for (const c of lt?.columns ?? []) pills.push({ path: `steps.${s.id}.output.row.${c.name}`, label: `${label} (${s.id}): row ${c.name}` });
     if (s.type === "call_recipe") for (const o of meta.callable_recipes?.find((r) => r.id === s.config?.recipe_id)?.outputs ?? []) pills.push({ path: `steps.${s.id}.output.result.${o}`, label: `${label} (${s.id}): ${o}` });
+    if (s.type === "connector_action") {   // the outputs depend on the chosen action
+      const act = meta.connectors?.find((c) => c.id === s.config?.connector)?.actions.find((a) => a.id === s.config?.action);
+      for (const o of act?.outputs ?? []) if (!(info?.outputs ?? []).includes(o)) pills.push({ path: `steps.${s.id}.output.${o}`, label: `${label} (${s.id}): ${o}` });
+    }
     if (s.type === "set_variable" && s.config?.name) pills.push({ path: `vars.${s.config.name}`, label: `Variable: ${s.config.name}` });
     if (info?.kind === "action") pills.push({ path: `steps.${s.id}.output.error`, label: `${label} (${s.id}): error (when set to continue)` });
   }

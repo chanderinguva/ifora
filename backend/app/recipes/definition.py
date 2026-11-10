@@ -41,7 +41,7 @@ ACTION_TYPES = (
     "add_to_group", "remove_from_group", "set_attribute", "activate_user", "deactivate_user", "http_request", "log",
     "send_slack", "send_email", "lookup_row", "lookup_write", "connector_action",
 )
-PALETTE_HIDDEN = ("connector_action",)  # valid in definitions (API) but not offered in the editor until its form exists (ADR 026 phase 2)
+PALETTE_HIDDEN: tuple = ()   # step types valid in definitions but not offered in the editor palette
 STEP_TYPES = ACTION_TYPES + ("condition", "stop", "for_each_member", "for_each_item", "approval", "set_variable", "wait", "throttle", "call_recipe", "return_data", "handle_errors")
 BRANCHING = ("condition", "approval")  # then/else steps
 MAX_LOOP_MEMBERS = 100

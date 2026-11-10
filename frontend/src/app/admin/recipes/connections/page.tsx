@@ -10,23 +10,27 @@ import { Label } from "@/components/ui/label";
 import { Badge, PageHeader, fieldClass, td, th } from "@/components/bits";
 import { RecipeTabs } from "@/components/recipe-bits";
 import { http, qs, type Page } from "@/lib/http";
-import type { Connection } from "@/lib/recipes";
+import type { Connection, ConnectorInfo } from "@/lib/recipes";
+import { ConnectorCatalog, ConnectorConnectionForm, newConnectorDraft, type ConnectorDraft } from "@/components/connectors";
 import type { User } from "@/lib/types";
 
 type Kind = Connection["kind"];
 type Draft = { id?: number; name: string; kind: Kind; header_name: string; allowed_host: string; paths: string; client_id: string; token_url: string; scope: string; secret: string; allowed_users: number[] };
 const empty = (): Draft => ({ name: "", kind: "bearer", header_name: "X-Api-Key", allowed_host: "", paths: "", client_id: "", token_url: "", scope: "", secret: "", allowed_users: [] });
-const KIND_LABEL: Record<Kind, string> = { bearer: "Bearer token", header: "Custom header", oauth2_client_credentials: "OAuth2 client credentials", slack_webhook: "Slack webhook" };
+const KIND_LABEL: Record<Kind, string> = { bearer: "Bearer token", header: "Custom header", oauth2_client_credentials: "OAuth2 client credentials", slack_webhook: "Slack webhook", connector: "Pre-built connector" };
 
 export default function ConnectionsPage() {
   const [items, setItems] = useState<Connection[] | null>(null);
   const [available, setAvailable] = useState(true);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [admins, setAdmins] = useState<User[]>([]);
+  const [connectors, setConnectors] = useState<ConnectorInfo[]>([]);
+  const [cdraft, setCdraft] = useState<ConnectorDraft | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const load = useCallback(() => {
     http<{ connections_available: boolean }>("/admin/recipes/status").then((s) => setAvailable(s.connections_available)).catch(() => {});
+    http<{ items: ConnectorInfo[] }>("/admin/connectors").then((r) => setConnectors(r.items)).catch(() => {});
     http<{ items: Connection[] }>("/admin/recipe-connections").then((r) => setItems(r.items)).catch((e) => setMsg({ ok: false, text: e.message }));
   }, []);
   useEffect(load, [load]);
@@ -35,6 +39,31 @@ export default function ConnectionsPage() {
   async function run(fn: () => Promise<unknown>, ok: string) {
     setMsg(null);
     try { await fn(); setMsg({ ok: true, text: ok }); load(); } catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : "Failed" }); }
+  }
+
+  async function saveConnector(d: ConnectorDraft) {
+    const secrets = Object.fromEntries(Object.entries(d.secrets).filter(([, v]) => v.trim() !== ""));
+    const body = { name: d.name.trim(), config: d.config, secrets, allowed_users: d.allowed_users };
+    await run(async () => {
+      if (d.id) await http(`/admin/connectors/${d.connector.id}/connections/${d.id}`, { method: "PUT", body });
+      else await http(`/admin/connectors/${d.connector.id}/connections`, { method: "POST", body });
+      setCdraft(null);
+    }, "Connection saved");
+  }
+
+  function editConnector(c: Connection) {
+    const con = connectors.find((x) => x.id === c.connector_id);
+    if (!con) { setMsg({ ok: false, text: "This connector is no longer available." }); return; }
+    setDraft(null);
+    setCdraft({ connector: con, id: c.id, name: c.name, config: { ...(c.config ?? {}) }, secrets: {}, allowed_users: c.allowed_users ?? [] });
+  }
+
+  async function testConnection(c: Connection) {
+    setMsg(null);
+    try {
+      const r = await http<{ ok: boolean; message: string }>(`/admin/recipe-connections/${c.id}/test`, { method: "POST" });
+      setMsg({ ok: r.ok, text: `${c.name}: ${r.message}` });
+    } catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : "Test failed" }); }
   }
 
   return (
@@ -49,6 +78,9 @@ export default function ConnectionsPage() {
       </p>
       {!available && <Alert className="mb-4"><AlertDescription>Connections are unavailable: set <code>RECIPE_ENCRYPTION_KEY</code> (a dedicated Fernet key) and restart the API.</AlertDescription></Alert>}
       {msg && <Alert variant={msg.ok ? "default" : "destructive"} className="mb-4" role="status"><AlertDescription>{msg.text}</AlertDescription></Alert>}
+
+      {cdraft && <ConnectorConnectionForm draft={cdraft} setDraft={setCdraft} admins={admins} onSave={() => saveConnector(cdraft)} onCancel={() => setCdraft(null)} />}
+      {!cdraft && !draft && <ConnectorCatalog items={connectors} disabled={!available} onConnect={(c) => setCdraft(newConnectorDraft(c))} />}
 
       {draft && (
         <Card className="mb-6" data-testid="connection-editor"><CardContent className="space-y-3 pt-6">
@@ -107,10 +139,11 @@ export default function ConnectionsPage() {
             {items?.map((c) => (
               <tr key={c.id} className="border-b last:border-0">
                 <td className={td + " font-medium"}>{c.name}{c.restricted && <> <Badge tone="info">restricted</Badge></>}</td><td className={td}>{c.allowed_host}</td>
-                <td className={td}>{c.kind === "header" ? c.header_name : KIND_LABEL[c.kind]}{c.allowed_paths && c.allowed_paths.length > 0 && <div className="text-xs text-muted-foreground">paths: {c.allowed_paths.join(", ")}</div>}</td>
+                <td className={td}>{c.kind === "header" ? c.header_name : c.kind === "connector" ? (connectors.find((x) => x.id === c.connector_id)?.name ?? c.connector_id) : KIND_LABEL[c.kind]}{c.allowed_paths && c.allowed_paths.length > 0 && <div className="text-xs text-muted-foreground">paths: {c.allowed_paths.join(", ")}</div>}</td>
                 <td className={td}><Badge tone="good">stored, hidden</Badge></td>
                 <td className={td + " space-x-2 whitespace-nowrap text-right"}>
-                  <Button size="sm" variant="outline" disabled={c.can_manage === false} title={c.can_manage === false ? "Only its creator or a super admin can change this" : ""} onClick={() => setDraft({ id: c.id, name: c.name, kind: c.kind, header_name: c.header_name ?? "X-Api-Key", allowed_host: c.allowed_host, paths: (c.allowed_paths ?? []).join("\n"), client_id: c.client_id ?? "", token_url: c.token_url ?? "", scope: c.scope ?? "", secret: "", allowed_users: c.allowed_users ?? [] })}>Edit</Button>
+                  {c.kind === "connector" && <Button size="sm" variant="outline" onClick={() => testConnection(c)}>Test</Button>}
+                  <Button size="sm" variant="outline" disabled={c.can_manage === false} title={c.can_manage === false ? "Only its creator or a super admin can change this" : ""} onClick={() => c.kind === "connector" ? editConnector(c) : setDraft({ id: c.id, name: c.name, kind: c.kind, header_name: c.header_name ?? "X-Api-Key", allowed_host: c.allowed_host, paths: (c.allowed_paths ?? []).join("\n"), client_id: c.client_id ?? "", token_url: c.token_url ?? "", scope: c.scope ?? "", secret: "", allowed_users: c.allowed_users ?? [] })}>Edit</Button>
                   <Button size="sm" variant="outline" disabled={c.can_manage === false} onClick={() => { if (confirm(`Delete connection "${c.name}"? Recipes using it will fail until updated.`)) run(() => http(`/admin/recipe-connections/${c.id}`, { method: "DELETE" }), "Connection deleted"); }}>Delete</Button>
                 </td>
               </tr>
