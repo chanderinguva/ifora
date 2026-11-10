@@ -9,6 +9,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge, PageHeader, fieldClass, td, th } from "@/components/bits";
+import { useDirty } from "@/lib/use-dirty";
+import { SaveButton } from "@/components/save-button";
 import { GroupMetadataFields, metaBody, metaFromGroup, type Meta } from "@/components/group-metadata";
 import { GroupRolesCard } from "@/components/group-roles-card";
 import { http, qs, type Page } from "@/lib/http";
@@ -24,11 +26,13 @@ export default function GroupDetail() {
   const [pick, setPick] = useState("");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
+  const { dirty, markClean } = useDirty({ form, meta }, group !== null && meta !== null);
   const apply = useCallback((g: Group) => {
+    markClean();
     setGroup(g);
     setForm({ name: g.name, description: g.description ?? "" });
     setMeta(metaFromGroup(g));
-  }, []);
+  }, [markClean]);
 
   useEffect(() => {
     http<Group>(`/admin/groups/${id}`).then(apply).catch((e) => setMsg({ ok: false, text: e.message }));
@@ -72,9 +76,9 @@ export default function GroupDetail() {
             <Input id="gdesc" disabled={group.is_system_group} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           </div>
           {meta && <GroupMetadataFields value={meta} onChange={setMeta} disabled={group.is_system_group} />}
-          <Button disabled={group.is_system_group} onClick={() => run(async () => apply(await http<Group>(`/admin/groups/${id}`, { method: "PATCH", body: { ...form, ...(meta ? metaBody(meta) : {}) } })), "Saved")}>
+          <SaveButton dirty={dirty} disabled={group.is_system_group} onClick={() => run(async () => apply(await http<Group>(`/admin/groups/${id}`, { method: "PATCH", body: { ...form, ...(meta ? metaBody(meta) : {}) } })), "Saved")}>
             Save changes
-          </Button>
+          </SaveButton>
         </CardContent>
       </Card>
 

@@ -32,6 +32,9 @@ test("SAML application: configure in the UI, then IdP- and SP-initiated sign-in 
 
   await page.locator("#s-ent").fill(SP);
   await page.locator("#s-acs").fill(ACS);
+  // the wizard already saved the entity ID and ACS URL, so those alone are no change and there is nothing to save yet
+  await expect(page.getByRole("button", { name: "Save SAML settings" })).toHaveCount(0);
+  await page.locator("#s-aud").fill(SP);   // same as the default audience, but an edit
   await page.getByRole("button", { name: "Save SAML settings" }).click();
   await expect(page.getByText("SAML settings saved")).toBeVisible();
   await expect(page.getByTestId("saml-idp-info")).toContainText("SHA-256");

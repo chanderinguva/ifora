@@ -18,6 +18,8 @@ import { setDisplayPrefs } from "@/lib/display";
 import { useCurrentUser } from "@/components/auth-guard";
 import { inAdminView } from "@/lib/roles";
 import { http } from "@/lib/http";
+import { compact, useDirty } from "@/lib/use-dirty";
+import { SaveButton } from "@/components/save-button";
 import type { User } from "@/lib/types";
 
 type SessionRow = { id: number; created_at: string; expires_at: string; current: boolean; ip_address: string | null; user_agent: string | null };
@@ -41,8 +43,10 @@ export default function AccountSettings() {
   const [pw, setPw] = useState({ current_password: "", new_password: "" });
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
+  const { dirty, markClean } = useDirty({ names, attrs: compact(attrs) }, me !== null);
   const apply = (u: User) => {
     setMe(u);
+    markClean();
     setDisplayPrefs(u.profile_attributes);
     setNames({ first_name: u.first_name, last_name: u.last_name });
     setAttrs(Object.fromEntries((u.editable_attributes ?? []).map((k) => [k, fromApi(u.profile_attributes?.[k])])));
@@ -147,9 +151,9 @@ export default function AccountSettings() {
               </ul>
             </div>
           )}
-          <Button onClick={() => run(async () => apply(await http<User>("/me/profile", { method: "PATCH", body: { ...names, profile_attributes: Object.fromEntries((me.attribute_schema ?? []).filter((a) => a.user_editable).map((a) => [a.key, toApi(a, attrs[a.key] ?? "")])) } })), "Profile saved")}>
+          <SaveButton dirty={dirty} onClick={() => run(async () => apply(await http<User>("/me/profile", { method: "PATCH", body: { ...names, profile_attributes: Object.fromEntries((me.attribute_schema ?? []).filter((a) => a.user_editable).map((a) => [a.key, toApi(a, attrs[a.key] ?? "")])) } })), "Profile saved")}>
             Save profile
-          </Button>
+          </SaveButton>
         </CardContent>
       </Card>
 

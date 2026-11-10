@@ -9,6 +9,8 @@ import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/bits";
 import { Logo } from "@/components/logo";
 import { http } from "@/lib/http";
+import { useDirty } from "@/lib/use-dirty";
+import { SaveButton } from "@/components/save-button";
 import { logoUrl, themeCss, useBranding, type Branding } from "@/lib/branding";
 
 export default function BrandingPage() {
@@ -16,9 +18,10 @@ export default function BrandingPage() {
   const [b, setB] = useState<Branding | null>(null);
   const [form, setForm] = useState({ display_name: "", primary_color: "", tagline: "" });
   const [rev, setRev] = useState(0);
+  const { dirty, markClean } = useDirty(form, b !== null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
-  const apply = (x: Branding) => { setB(x); setForm({ display_name: x.custom_name ? x.display_name : "", primary_color: x.primary_color ?? "", tagline: x.tagline ?? "" }); };
+  const apply = (x: Branding) => { markClean(); setB(x); setForm({ display_name: x.custom_name ? x.display_name : "", primary_color: x.primary_color ?? "", tagline: x.tagline ?? "" }); };
   const started = useRef(false);  // load once: a second (dev double-effect) response would overwrite what the admin has typed
   useEffect(() => {
     if (started.current) return;
@@ -64,7 +67,7 @@ export default function BrandingPage() {
           </div>
           {!colorOk && <p className="text-xs text-destructive">Use a six-digit hex colour such as #1a73e8.</p>}
           <p className="text-xs text-muted-foreground">Buttons and highlights use it. Text on top switches between dark and light automatically; in the dark theme a very dark colour is lightened so it stays visible.</p></div>
-        <div><Button onClick={save} disabled={!colorOk} data-testid="branding-save">Save</Button></div>
+        <div><SaveButton dirty={dirty} onClick={save} disabled={!colorOk} data-testid="branding-save">Save</SaveButton></div>
       </CardContent></Card>
 
       <Card className="mb-6" data-testid="logo-card">

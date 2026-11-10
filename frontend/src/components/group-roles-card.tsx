@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { http } from "@/lib/http";
+import { useDirty } from "@/lib/use-dirty";
+import { SaveButton } from "@/components/save-button";
 
 type Role = { id: string; label: string; description: string };
 
@@ -17,10 +18,12 @@ export function GroupRolesCard({ groupId, groupType, members }: { groupId: numbe
   const [roles, setRoles] = useState<string[]>([]);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [allowed, setAllowed] = useState<boolean | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const { dirty, markClean } = useDirty([...roles].sort(), loaded);
 
   useEffect(() => {
     http<{ items: Role[] }>("/admin/roles").then((r) => setCatalog(r.items)).then(() => setAllowed(true)).catch(() => setAllowed(false));
-    http<{ roles: string[] }>(`/admin/roles/groups/${groupId}`).then((r) => setRoles(r.roles)).catch(() => {});
+    http<{ roles: string[] }>(`/admin/roles/groups/${groupId}`).then((r) => { setRoles(r.roles); setLoaded(true); }).catch(() => {});
   }, [groupId, groupType]);
 
   if (!allowed) return null; // only super administrators can read the role catalogue
@@ -30,6 +33,7 @@ export function GroupRolesCard({ groupId, groupType, members }: { groupId: numbe
     try {
       const r = await http<{ roles: string[] }>(`/admin/roles/groups/${groupId}`, { method: "PUT", body: { roles } });
       setRoles(r.roles);
+      markClean();
       setMsg({ ok: true, text: `Roles saved for ${members} member${members === 1 ? "" : "s"}; they apply on each administrator's next request` });
     } catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : "Failed" }); }
   }
@@ -48,7 +52,7 @@ export function GroupRolesCard({ groupId, groupType, members }: { groupId: numbe
             <span><span className="font-medium">{r.label}</span><span className="block text-xs text-muted-foreground">{r.description}</span></span>
           </label>
         ))}
-        <Button size="sm" disabled={!CAN_CARRY.includes(groupType) && roles.length === 0} onClick={save} data-testid="group-roles-save">Save roles</Button>
+        <SaveButton dirty={dirty} size="sm" disabled={!CAN_CARRY.includes(groupType) && roles.length === 0} onClick={save} data-testid="group-roles-save">Save roles</SaveButton>
       </CardContent>
     </Card>
   );

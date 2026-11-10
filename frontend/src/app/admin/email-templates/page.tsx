@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageHeader, fieldClass } from "@/components/bits";
 import { http } from "@/lib/http";
+import { useDirty } from "@/lib/use-dirty";
+import { SaveButton } from "@/components/save-button";
 
 type Tpl = { key: string; label: string; subject: string; body: string; customised: boolean; default_subject: string; default_body: string; variables: Record<string, string> };
 
@@ -21,11 +23,12 @@ export default function EmailTemplates() {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const cur = items.find((t) => t.key === key);
+  const { dirty, markClean } = useDirty({ key, subject, body }, cur !== undefined);
 
   const load = (select?: string) => http<{ items: Tpl[]; mail_configured: boolean }>("/admin/email-templates").then((r) => {
     setItems(r.items); setMail(r.mail_configured);
     const t = r.items.find((x) => x.key === (select ?? key)) ?? r.items[0];
-    if (t) { setKey(t.key); setSubject(t.subject); setBody(t.body); setPreview(null); }
+    if (t) { setKey(t.key); setSubject(t.subject); setBody(t.body); setPreview(null); markClean(); }
   }).catch((e) => setMsg({ ok: false, text: e.message }));
   const started = useRef(false);  // load once, so a duplicate response cannot overwrite a draft being typed
   useEffect(() => { if (started.current) return; started.current = true; load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
@@ -63,7 +66,7 @@ export default function EmailTemplates() {
             {Object.entries(cur.variables).map(([v, d]) => <button key={v} type="button" title={d} onClick={() => insert(v)} className="rounded border px-2 py-1 font-mono hover:bg-accent">{`{{${v}}}`}</button>)}
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button onClick={() => run(async () => { await http(`/admin/email-templates/${key}`, { method: "PUT", body: draft }); await load(key); }, "Template saved")} data-testid="tpl-save">Save</Button>
+            <SaveButton dirty={dirty} onClick={() => run(async () => { await http(`/admin/email-templates/${key}`, { method: "PUT", body: draft }); await load(key); }, "Template saved")} data-testid="tpl-save">Save</SaveButton>
             <Button variant="outline" onClick={async () => { setMsg(null); try { setPreview(await http(`/admin/email-templates/${key}/preview`, { method: "POST", body: draft })); } catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : "Failed" }); } }} data-testid="tpl-preview">Preview</Button>
             <Button variant="outline" disabled={!mail} onClick={() => run(async () => { await http(`/admin/email-templates/${key}/send-test`, { method: "POST", body: draft }); }, "Test email sent to your own address")}>Send me a test</Button>
             {cur.customised && <Button variant="ghost" onClick={() => run(async () => { await http(`/admin/email-templates/${key}`, { method: "DELETE" }); await load(key); }, "Reset to the built-in text")} data-testid="tpl-restore">Reset to default</Button>}

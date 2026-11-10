@@ -11,6 +11,8 @@ import { Label } from "@/components/ui/label";
 import { Badge, PageHeader, fieldClass, fmt, td, th } from "@/components/bits";
 import { useCurrentUser } from "@/components/auth-guard";
 import { http, qs, type Page } from "@/lib/http";
+import { useDirty } from "@/lib/use-dirty";
+import { SaveButton } from "@/components/save-button";
 import { toBody, type ProvApp, type ProvOptions } from "@/lib/provisioning";
 import type { Group, User } from "@/lib/types";
 
@@ -42,28 +44,37 @@ export default function AppDetail() {
   const [preview, setPreview] = useState<unknown>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
+  const conn = useDirty({ form, opts }, app !== null);   // the connection settings and the attribute mapping are saved by separate buttons
+  const map = useDirty(rules, app !== null);
+  const { markClean: cleanConn } = conn;
+  const { markClean: cleanMap } = map;
   const apply = useCallback((a: ProvApp) => {
+    cleanConn(); cleanMap();
     setApp(a);
     setForm({ name: a.name, description: a.description ?? "", base_url: a.base_url, auth_type: a.auth_type, header_name: a.header_name ?? "", secret: "", client_id: a.client_id ?? "", token_url: a.token_url ?? "", scope: a.scope ?? "", rest: a.rest_config ? JSON.stringify(a.rest_config, null, 2) : "" });
     setOpts(a.options);
     setRules(a.mapping);
-  }, []);
+  }, [cleanConn, cleanMap]);
 
+  // queued work finishes in the background, so these two lists are polled; the forms are not (a poll must never overwrite what is being typed)
+  const refreshWork = useCallback(() => {
+    http<{ Resources: Link_[] }>(`/admin/provisioning-apps/${id}/links?count=50`).then((r) => setLinks(r.Resources)).catch(() => {});
+    http<{ items: Task[] }>(`/admin/provisioning-apps/${id}/tasks`).then((r) => setTasks(r.items)).catch(() => {});
+  }, [id]);
   const refresh = useCallback(() => {
     http<ProvApp>(`/admin/provisioning-apps/${id}`).then(apply).catch((e) => setMsg({ ok: false, text: e.message }));
     http<{ items: Assignment[] }>(`/admin/provisioning-apps/${id}/assignments`).then((r) => setAssignments(r.items)).catch(() => {});
-    http<{ Resources: Link_[] }>(`/admin/provisioning-apps/${id}/links?count=50`).then((r) => setLinks(r.Resources)).catch(() => {});
-    http<{ items: Task[] }>(`/admin/provisioning-apps/${id}/tasks`).then((r) => setTasks(r.items)).catch(() => {});
-  }, [id, apply]);
+    refreshWork();
+  }, [id, apply, refreshWork]);
 
   useEffect(() => {
     refresh();
     http<{ defaults: { target: string; source: string }[]; sources: string[] }>("/admin/provisioning-apps/mapping").then((r) => { setDefaults(r.defaults); setSources(r.sources); }).catch(() => {});
     http<Page<User>>(`/admin/users${qs({ count: 100, status: "active" })}`).then((p) => setUsers(p.Resources)).catch(() => {});
     http<Page<Group>>(`/admin/groups${qs({ count: 100 })}`).then((p) => setGroups(p.Resources)).catch(() => {});
-    const t = setInterval(refresh, 10000); // queued work finishes in the background
+    const t = setInterval(refreshWork, 10000);
     return () => clearInterval(t);
-  }, [refresh]);
+  }, [refresh, refreshWork]);
 
   async function run(fn: () => Promise<unknown>, ok?: string) {
     setMsg(null);
@@ -202,7 +213,7 @@ export default function AppDetail() {
             {canEdit && (
               <div className="flex gap-2">
                 <Button size="sm" variant="outline" onClick={() => setRules([...rules, { target: "", source: "" }])}>Add rule</Button>
-                <Button size="sm" data-testid="save-mapping" onClick={() => run(async () => { apply(await save()); }, "Mapping saved")}>Save mapping</Button>
+                <SaveButton dirty={map.dirty} size="sm" data-testid="save-mapping" onClick={() => run(async () => { apply(await save()); }, "Mapping saved")}>Save mapping</SaveButton>
               </div>
             )}
           </div>
@@ -251,7 +262,7 @@ export default function AppDetail() {
             <div className="space-y-2"><Label htmlFor="d-rest">Gateway operations (JSON)</Label>
               <textarea id="d-rest" rows={14} spellCheck={false} disabled={!canEdit} className={`${fieldClass} h-auto font-mono text-xs`} value={form.rest} onChange={(e) => setForm({ ...form, rest: e.target.value })} /></div>
           )}
-          {canEdit ? <Button onClick={() => run(async () => { apply(await save()); }, "Saved")}>Save</Button>
+          {canEdit ? <SaveButton dirty={conn.dirty} onClick={() => run(async () => { apply(await save()); }, "Saved")}>Save</SaveButton>
             : <p className="text-xs text-muted-foreground">Only super administrators can change the connection.</p>}
         </CardContent>
       </Card>

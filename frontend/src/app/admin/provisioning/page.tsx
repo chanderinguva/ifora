@@ -10,6 +10,8 @@ import { Label } from "@/components/ui/label";
 import { Badge, PageHeader, fieldClass, fmt } from "@/components/bits";
 import { useCurrentUser } from "@/components/auth-guard";
 import { http } from "@/lib/http";
+import { useDirty } from "@/lib/use-dirty";
+import { SaveButton } from "@/components/save-button";
 import type { ScimToken } from "@/lib/types";
 
 const tone = (s: ScimToken["status"]) => (s === "active" ? "good" : "bad");
@@ -25,6 +27,7 @@ export default function ProvisioningPage() {
   const [cidrs, setCidrs] = useState("");
   const [retention, setRetention] = useState("");
   const [editing, setEditing] = useState<{ id: number; read_only: boolean; users_only: boolean; cidrs: string; retention: string } | null>(null);
+  const { dirty, markClean } = useDirty(editing, editing !== null);
   const [reveal, setReveal] = useState<{ name: string; token: string } | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -140,14 +143,14 @@ export default function ProvisioningPage() {
               <div className="space-y-2"><Label htmlFor="e-ret">Delete deactivated users after (days; empty = never)</Label><input id="e-ret" type="number" min={7} max={3650} className={fieldClass} value={editing.retention} onChange={(e) => setEditing({ ...editing, retention: e.target.value })} /></div>
             </div>
             <div className="flex gap-2">
-              <Button onClick={() => run(async () => {
+              <SaveButton dirty={dirty} onClick={() => run(async () => {
                 await http(`/admin/scim/tokens/${editing.id}/restrictions`, { method: "PUT", body: {
                   read_only: editing.read_only, users_only: editing.users_only,
                   allowed_cidrs: editing.cidrs.trim() ? editing.cidrs.split(",").map((c) => c.trim()).filter(Boolean) : [],
                   hard_delete_after_days: editing.retention ? Number(editing.retention) : 0,
                 } });
                 setEditing(null);
-              }, "Restrictions saved")}>Save</Button>
+              }, "Restrictions saved")}>Save</SaveButton>
               <Button variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
             </div>
           </CardContent>
@@ -171,7 +174,7 @@ export default function ProvisioningPage() {
               </span>
               {t.status === "active" && me.is_super_admin && (
                 <div className="ml-auto flex gap-2">
-                  <Button size="sm" variant="outline" onClick={() => setEditing({ id: t.id, read_only: !!t.read_only, users_only: !!t.users_only, cidrs: (t.allowed_cidrs ?? []).join(", "), retention: t.hard_delete_after_days ? String(t.hard_delete_after_days) : "" })}>Restrictions</Button>
+                  <Button size="sm" variant="outline" onClick={() => { setEditing({ id: t.id, read_only: !!t.read_only, users_only: !!t.users_only, cidrs: (t.allowed_cidrs ?? []).join(", "), retention: t.hard_delete_after_days ? String(t.hard_delete_after_days) : "" }); markClean(); }}>Restrictions</Button>
                   {!t.replaced_by_id && (
                     <Button size="sm" variant="outline"
                       onClick={() => { if (confirm(`Rotate ${t.name}? A new token with the same restrictions is issued; the old one keeps working for 24 hours.`)) run(async () => { const r = await http<ScimToken>(`/admin/scim/tokens/${t.id}/rotate`, { method: "POST", body: { overlap_hours: 24 } }); if (r.token) setReveal({ name: r.name, token: r.token }); }, "Token rotated"); }}>

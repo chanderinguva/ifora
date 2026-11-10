@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { fieldClass } from "@/components/bits";
 import { http, qs, type Page } from "@/lib/http";
+import { useDirty } from "@/lib/use-dirty";
+import { SaveButton } from "@/components/save-button";
 import type { User } from "@/lib/types";
 
 type Mapping = { name: string; source: string; filter?: { type: string; value: string }; required?: boolean };
@@ -35,6 +37,7 @@ export function SamlCard({ appId, onChange }: { appId: number; onChange: () => v
   const [pv, setPv] = useState<Preview | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
+  const { dirty, markClean } = useDirty({ f, maps });   // the blank form is the baseline until saved settings replace it (see load)
   const load = useCallback(() => {
     http<Info>(`/admin/applications/${appId}/saml`).then((i) => {
       setInfo(i);
@@ -43,9 +46,10 @@ export function SamlCard({ appId, onChange }: { appId: number; onChange: () => v
         setF({ sp_entity_id: p.sp_entity_id, acs_url: p.acs_url, audience: p.audience ?? "", name_id_format: p.name_id_format, name_id_attribute: p.name_id_attribute ?? "", signing: p.signing, sp_cert: p.sp_cert ?? "",
           require_signed_requests: p.require_signed_requests, default_relay_state: p.default_relay_state ?? "", validity_seconds: p.validity_seconds });
         setMaps(p.attribute_mappings);
+        markClean();   // only when the server's settings replaced the form: otherwise what was already typed must stay "changed"
       }
     }).catch((e) => setMsg({ ok: false, text: e.message }));
-  }, [appId]);
+  }, [appId, markClean]);
   useEffect(load, [load]);
   useEffect(() => {
     http<{ items: Preset[] }>("/admin/applications/saml/presets").then((r) => setPresets(r.items)).catch(() => {});
@@ -167,8 +171,8 @@ export function SamlCard({ appId, onChange }: { appId: number; onChange: () => v
         )}
 
         <div className="flex flex-wrap gap-2">
-          <Button disabled={!f.sp_entity_id.trim() || !f.acs_url.trim()} onClick={() => run(() => http(`/admin/applications/${appId}/saml`, { method: "PUT", body: {
-            ...f, name_id_attribute: f.name_id_format === "attribute" ? f.name_id_attribute : null, audience: f.audience || null, sp_cert: f.sp_cert || null, default_relay_state: f.default_relay_state || null, attribute_mappings: maps } }), "SAML settings saved")}>Save SAML settings</Button>
+          <SaveButton dirty={dirty} disabled={!f.sp_entity_id.trim() || !f.acs_url.trim()} onClick={() => run(() => http(`/admin/applications/${appId}/saml`, { method: "PUT", body: {
+            ...f, name_id_attribute: f.name_id_format === "attribute" ? f.name_id_attribute : null, audience: f.audience || null, sp_cert: f.sp_cert || null, default_relay_state: f.default_relay_state || null, attribute_mappings: maps } }), "SAML settings saved")}>Save SAML settings</SaveButton>
           {info?.configured && <Button variant="outline" onClick={() => { if (confirm("Remove the SAML configuration? Users will no longer be able to sign in to this application.")) run(() => http(`/admin/applications/${appId}/saml`, { method: "DELETE" }), "SAML configuration removed"); }}>Remove</Button>}
         </div>
       </CardContent>
