@@ -10,6 +10,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge, PageHeader, fieldClass } from "@/components/bits";
+import { isLoop, isLoopType } from "@/components/recipe-editor/tree";
 import { JobView, RecipeTabs } from "@/components/recipe-bits";
 import { Studio } from "@/components/recipe-editor/studio";
 import { FunctionsContext } from "@/components/recipe-editor/pill-context";
@@ -43,7 +44,10 @@ function moveIn(steps: StepNode[], id: string, dir: -1 | 1): StepNode[] {
 
 function StepList({ steps, ctx, onChange, depth }: { steps: StepNode[]; ctx: Ctx; onChange: (s: StepNode[]) => void; depth: number }) {
   const addable = ctx.meta.steps.filter((s) => (s.type !== "condition" && s.type !== "approval") || depth < ctx.meta.limits.max_nesting)
-    .filter((s) => !(s.type === "for_each_member" && (depth > 0 || ctx.handler)) && !((s.type === "approval" || s.type === "wait" || s.type === "throttle") && ctx.handler));
+    .filter((s) => s.type !== "handle_errors") // blocks are built in the studio editor
+    .filter((s) => s.type !== "return_data" || (ctx.trigger === "call" && !ctx.handler))
+    .filter((s) => !(s.type === "call_recipe" && ctx.handler))
+    .filter((s) => !(isLoopType(s.type) && (depth > 0 || ctx.handler)) && !((s.type === "approval" || s.type === "wait" || s.type === "throttle") && ctx.handler));
   const [type, setType] = useState("log");
   const root = ctx.root;
   return (
@@ -81,8 +85,8 @@ function StepList({ steps, ctx, onChange, depth }: { steps: StepNode[]; ctx: Ctx
                   <div><div className="mb-1 text-sm font-medium">{s.type === "approval" ? "If denied or no answer in time" : "Otherwise"}</div><StepList steps={s.else ?? []} ctx={ctx} depth={depth + 1} onChange={(n) => replace({ ...s, else: n })} /></div>
                 </div>
               )}
-              {s.type === "for_each_member" && (
-                <div><div className="mb-1 text-sm font-medium">For each member</div>
+              {isLoop(s) && (
+                <div><div className="mb-1 text-sm font-medium">{s.type === "for_each_item" ? "For each item" : "For each member"}</div>
                   <StepList steps={s.then ?? []} ctx={{ ...ctx, inLoop: true }} depth={depth + 1} onChange={(n) => replace({ ...s, then: n })} /></div>
               )}
             </CardContent>
@@ -95,7 +99,7 @@ function StepList({ steps, ctx, onChange, depth }: { steps: StepNode[]; ctx: Ctx
           <optgroup label="Control">{addable.filter((m) => m.kind === "control").map((m) => <option key={m.type} value={m.type}>{m.label}</option>)}</optgroup>
         </Select>
         <Button type="button" variant="secondary" size="sm" disabled={allSteps(root).length >= ctx.meta.limits.max_steps}
-          onClick={() => { const n: StepNode = { id: nextStepId([...root, ...(ctx.other ?? [])]), type, config: defaultConfig(type, ctx), on_error: "fail", max_attempts: 3 }; if (type === "condition" || type === "approval") { n.then = []; n.else = []; } if (type === "for_each_member") n.then = []; onChange([...steps, n]); }}>
+          onClick={() => { const n: StepNode = { id: nextStepId([...root, ...(ctx.other ?? [])]), type, config: defaultConfig(type, ctx), on_error: "fail", max_attempts: 3 }; if (type === "condition" || type === "approval") { n.then = []; n.else = []; } if (isLoopType(type)) n.then = []; onChange([...steps, n]); }}>
           <Plus className="mr-1 h-4 w-4" /> Add step
         </Button>
       </div>

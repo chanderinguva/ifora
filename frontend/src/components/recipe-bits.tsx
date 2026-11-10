@@ -18,6 +18,7 @@ export function RecipeTabs() {
     { href: "/admin/recipes/jobs", label: "Job history", active: path.startsWith("/admin/recipes/jobs") },
     { href: "/admin/recipes/health", label: "Health", active: path.startsWith("/admin/recipes/health") },
     { href: "/admin/recipes/connections", label: "Connections", active: path.startsWith("/admin/recipes/connections") },
+    { href: "/admin/recipes/lookup-tables", label: "Lookup tables", active: path.startsWith("/admin/recipes/lookup-tables") },
   ];
   return (
     <nav aria-label="Automation" className="mb-4 flex gap-1 border-b">
@@ -110,11 +111,11 @@ export function PillInput({
     <div className="relative min-w-0" ref={setNodeRef}>
       <div className={cn("flex gap-2 rounded-md", isOver && "ring-2 ring-primary")}>
         {multiline ? (
-          <textarea ref={ref} rows={3} {...field} onChange={(e) => change(e.target.value, e.target.selectionStart)} className={cn(fieldClass, "h-auto font-mono")} />
+          <textarea ref={ref} rows={3} {...field} onChange={(e) => change(e.target.value, e.target.selectionStart)} className={cn(fieldClass, "h-auto min-w-0 flex-1 font-mono")} />
         ) : (
-          <Input ref={ref} {...field} onChange={(e) => change(e.target.value, e.target.selectionStart)} className="h-10" />
+          <Input ref={ref} {...field} onChange={(e) => change(e.target.value, e.target.selectionStart)} className="h-10 min-w-0 flex-1" />
         )}
-        <select aria-label={`Insert datapill into ${label}`} className={cn(fieldClass, "!w-44 shrink-0")} value=""
+        <select aria-label={`Insert datapill into ${label}`} className={cn(fieldClass, "!w-32 shrink-0")} value=""
           onChange={(e) => {
             const v = e.target.value;
             if (v === "__payload") {

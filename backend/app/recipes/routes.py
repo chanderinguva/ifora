@@ -24,11 +24,12 @@ from backend.app.config import settings
 from backend.app.db import get_db
 from backend.app.groups.model import Group
 from backend.app.profiles import catalog as profile_catalog
+from backend.app.recipes import calls
 from backend.app.recipes import conditions as cond
 from backend.app.recipes import crypto, definition as defn, engine, formula, portable
 from backend.app.recipes import templates as tpl
 from backend.app.recipes.models import (
-    Recipe, RecipeConnection, RecipeJob, RecipeJobStep, RecipeVersion,
+    LookupTable, Recipe, RecipeConnection, RecipeJob, RecipeJobStep, RecipeVersion,
 )
 from backend.app.recipes.redact import redact
 from backend.app.users.model import User
@@ -196,15 +197,18 @@ TRIGGER_INFO = {
     "schedule": ("On a schedule", "Runs every N minutes (5 to 1440)."),
     "manual": ("Run manually", "Started by an administrator with the Run button."),
     "webhook": ("An external system calls a webhook", "Signed with a per-recipe secret (HMAC-SHA256)."),
+    "call": ("Called by another recipe", "Runs when a Call recipe step in another recipe uses it; it declares inputs and outputs."),
 }
 STEP_INFO = {
     "add_to_group": ("Add user to group", "action"), "remove_from_group": ("Remove user from group", "action"),
     "set_attribute": ("Set a profile attribute", "action"), "activate_user": ("Activate user", "action"),
     "deactivate_user": ("Deactivate user", "action"), "http_request": ("Send an HTTP request", "action"),
     "log": ("Write to the job log", "action"),
-    "send_slack": ("Send a Slack message", "action"), "send_email": ("Send an email", "action"), "condition": ("If / else", "control"), "stop": ("Stop", "control"),
-    "for_each_member": ("For each member of a group", "control"), "approval": ("Wait for approval", "control"),
+    "send_slack": ("Send a Slack message", "action"), "send_email": ("Send an email", "action"), "condition": ("If / else", "control"), "stop": ("Stop", "control"), "handle_errors": ("Handle errors", "control"),
+    "for_each_member": ("For each member of a group", "control"), "for_each_item": ("For each item in a list", "control"), "approval": ("Wait for approval", "control"),
+    "lookup_row": ("Look up a row", "action"), "lookup_write": ("Add, update or delete a lookup row", "action"),
     "set_variable": ("Set a variable", "control"), "wait": ("Wait (delay)", "control"), "throttle": ("Throttle", "control"),
+    "call_recipe": ("Call a recipe", "control"), "return_data": ("Return data to the caller", "control"),
 }
 
 
@@ -216,7 +220,7 @@ def meta(db: Session = Depends(get_db), _: User = Depends(require_admin)):
         "triggers": [
             {"type": t, "label": TRIGGER_INFO[t][0], "description": TRIGGER_INFO[t][1],
              "fields": defn.trigger_field_paths(t, db),
-             "payload_pills": t in ("manual", "webhook")}
+             "payload_pills": t in ("manual", "webhook", "call")}
             for t in defn.TRIGGER_TYPES
         ],
         "steps": [{"type": t, "label": STEP_INFO[t][0], "kind": STEP_INFO[t][1], "outputs": defn.STEP_OUTPUTS[t]} for t in defn.STEP_TYPES],
@@ -228,6 +232,9 @@ def meta(db: Session = Depends(get_db), _: User = Depends(require_admin)):
         "safe_user_fields": sorted(defn._SAFE_USER_FIELDS),
         "limits": {"max_steps": defn.MAX_STEPS, "max_nesting": defn.MAX_NESTING},
         "functions": formula.CATALOG,
+        "callable_recipes": calls.callable_recipes(db),
+        "lookup_tables": [{"name": t.name, "columns": t.columns, "key_column": t.key_column, "admin_managed": t.admin_managed}
+                          for t in db.query(LookupTable).order_by(LookupTable.name).all()],
     }
 
 
@@ -620,6 +627,13 @@ def disable(recipe_id: int, request: Request, db: Session = Depends(get_db), act
     return _recipe_dict(db, r, viewer=actor)
 
 
+@router.get("/{recipe_id}/callers")
+def callers(recipe_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    """Recipes that call this one: shown before the callee is changed or published."""
+    _get(db, recipe_id)
+    return {"callers": calls.callers_of(db, recipe_id)}
+
+
 @router.get("/{recipe_id}/versions")
 def versions(recipe_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):
     _get(db, recipe_id)
@@ -678,11 +692,11 @@ def _sample_trigger(db: Session, d: dict, body: RunBody, admin: User) -> dict:
     t = d["trigger"]["type"]
     now = NOW().isoformat()
     ctx: Dict[str, Any] = {"event": {"id": 0, "type": t, "occurred_at": now}, "actor": {"type": "user", "id": str(admin.id)}}
-    if t in ("manual", "webhook"):
+    if t in ("manual", "webhook", "call"):
         ctx["payload"] = _payload_ok(body.payload)
         if t == "manual":
             ctx["manual"] = {"started_by": admin.id}
-    needs_user = t not in ("schedule", "webhook")
+    needs_user = t not in ("schedule", "webhook", "call")
     if needs_user and (body.user_id is not None or t != "manual"):
         user = db.get(User, body.user_id) if body.user_id is not None else None
         if user is None:

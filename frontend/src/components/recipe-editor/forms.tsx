@@ -14,7 +14,7 @@ import type { Group } from "@/lib/types";
 // Forms shared by the classic builder and the studio editor.
 
 export type Ctx = {
-  meta: RecipeMeta; groups: Group[]; connections: Connection[]; connectionsAvailable: boolean; trigger: string; root: StepNode[]; other?: StepNode[]; handler?: boolean; inLoop?: boolean;
+  meta: RecipeMeta; groups: Group[]; connections: Connection[]; connectionsAvailable: boolean; trigger: string; root: StepNode[]; other?: StepNode[]; handler?: boolean; inLoop?: boolean; callOutputs?: string[];
 };
 
 const USER_PILL = "{{trigger.user.id}}";
@@ -31,10 +31,15 @@ export function defaultConfig(type: string, ctx: Ctx): Record<string, any> {
     case "send_email": return { to: USER_EMAIL_PILL, subject: "", body: "" };
     case "condition": return { match: "all", conditions: [{ left: "trigger.event.type", operator: "is_set", value: "" }] };
     case "stop": return { outcome: "success", message: "" };
+    case "for_each_item": return { list: "", limit: 50 };
     case "for_each_member": return { group_id: ctx.groups[0]?.id ?? null, limit: 50 };
     case "approval": return { message: "", timeout_hours: 24 };
+    case "lookup_row": { const t = ctx.meta.lookup_tables?.[0]; return { table: t?.name ?? "", column: t?.key_column ?? t?.columns[0]?.name ?? "", value: "" }; }
+    case "lookup_write": { const t = ctx.meta.lookup_tables?.find((x) => !x.admin_managed); return { table: t?.name ?? "", action: t?.key_column ? "upsert" : "add", values: {}, key: "" }; }
     case "set_variable": return { name: "", value: "" };
     case "wait": return { amount: 5, unit: "minutes" };
+    case "call_recipe": return { recipe_id: ctx.meta.callable_recipes?.[0]?.id ?? null, inputs: {} };
+    case "return_data": return { values: Object.fromEntries((ctx.callOutputs ?? []).map((n) => [n, ""])) };
     case "throttle": return { max_runs: 10, per_minutes: 60, when_full: "wait" };
     default: return {};
   }
@@ -71,11 +76,25 @@ export function Comparisons({ items, onChange, pills, payload }: { items: Compar
   );
 }
 
+/** The type of the repeat step that contains the step with this id (null if none). */
+function loopKind(steps: StepNode[], id: string, within: string | null = null): string | null {
+  for (const s of steps) {
+    if (s.id === id) return within;
+    const inner = s.type === "for_each_member" || s.type === "for_each_item" ? s.type : within;
+    const r = loopKind(s.then ?? [], id, inner) ?? loopKind(s.else ?? [], id, within);
+    if (r) return r;
+  }
+  return null;
+}
+
 /** The datapills a step may use: the trigger, earlier steps, the current repeat item, and (in the error steps) the error. */
 export function pillsFor(ctx: Ctx, stepId: string): Pill[] {
   const before = stepsBefore(ctx.root, stepId);
   const errorPills: Pill[] = ctx.handler ? [{ path: "error.message", label: "Error message" }, { path: "error.step_id", label: "Failed step" }] : [];
-  const loopPills: Pill[] = ctx.inLoop ? [
+  const kind = ctx.inLoop ? loopKind(ctx.root, stepId) : null;
+  const loopPills: Pill[] = kind === "for_each_item" ? [
+    { path: "loop.item", label: "Current item" }, { path: "loop.index", label: "Loop: position (1-based)" }, { path: "loop.total", label: "Loop: item count" },
+  ] : ctx.inLoop ? [
     { path: "loop.user.id", label: "Current member: id" }, { path: "loop.user.email", label: "Current member: email" },
     { path: "loop.user.username", label: "Current member: username" }, { path: "loop.user.status", label: "Current member: status" },
     { path: "loop.index", label: "Loop: position (1-based)" }, { path: "loop.total", label: "Loop: member count" },
@@ -210,6 +229,23 @@ export function StepForm({ step, ctx, onChange }: { step: StepNode; ctx: Ctx; on
             <Input aria-label="Loop limit" type="number" min={1} max={100} className="h-10" value={cfg.limit ?? 50} onChange={(e) => set({ limit: Number(e.target.value) })} /></div>
         </div>
       );
+    case "for_each_item":
+      return (
+        <div className="grid gap-3 md:grid-cols-[1fr_10rem]">
+          <div className="space-y-1"><Label>List</Label>
+            <PillInput label="Loop list" value={cfg.list ?? ""} onChange={(v) => set({ list: v })} pills={pills} payload={payload} />
+            <p className="text-xs text-muted-foreground">One datapill or formula that gives a list, such as {"{{= split(trigger.payload.ids, \",\") }}"}. The steps below run once per item; use “Current item” inside. Too many items fails the step. Loops cannot be nested.</p></div>
+          <div className="space-y-1"><Label>Max items (1–100)</Label>
+            <Input aria-label="Loop limit" type="number" min={1} max={100} className="h-10" value={cfg.limit ?? 50} onChange={(e) => set({ limit: Number(e.target.value) })} /></div>
+        </div>
+      );
+    case "handle_errors":
+      return (
+        <p className="text-sm text-muted-foreground" data-testid="handle-errors-help">
+          If any step in <strong>Monitored steps</strong> fails for good (after its retries), the rest of those steps are skipped and the <strong>If any of them fails</strong> steps run
+          with <code>error.message</code> and <code>error.step_id</code>. The job then carries on after this block and is not marked failed. Errors outside the block still go to the recipe-level handler.
+        </p>
+      );
     case "approval":
       return (
         <div className="grid gap-3 md:grid-cols-[1fr_12rem]">
@@ -219,6 +255,58 @@ export function StepForm({ step, ctx, onChange }: { step: StepNode; ctx: Ctx; on
             <p className="text-xs text-muted-foreground">Approved runs “Then”; denied or timed out runs “Otherwise”.</p></div>
         </div>
       );
+    case "lookup_row": {
+      const tables = ctx.meta.lookup_tables ?? [];
+      const t = tables.find((x) => x.name === cfg.table);
+      return (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1"><Label>Table</Label>
+            <Select label="Lookup table" value={cfg.table ?? ""} onChange={(v) => { const n = tables.find((x) => x.name === v); set({ table: v, column: n?.key_column ?? n?.columns[0]?.name ?? "" }); }}>
+              <option value="">Choose a table…</option>{tables.map((x) => <option key={x.name} value={x.name}>{x.name}</option>)}
+            </Select>
+            {tables.length === 0 && <p className="text-xs text-muted-foreground">Create a table under Recipes › Lookup tables first.</p>}</div>
+          <div className="space-y-1"><Label>Find the row where</Label>
+            <Select label="Lookup column" value={cfg.column ?? ""} onChange={(v) => set({ column: v })}>
+              {(t?.columns ?? []).map((c) => <option key={c.name} value={c.name}>{c.name}{c.name === t?.key_column ? " (key)" : ""}</option>)}
+            </Select></div>
+          <div className="space-y-1 sm:col-span-2"><Label>equals</Label>
+            <PillInput label="Lookup value" value={cfg.value ?? ""} onChange={(v) => set({ value: v })} pills={decisionPills(ctx.meta, ctx.trigger, before)} payload={payload} />
+            <p className="text-xs text-muted-foreground">Outputs: found, count, and the first matching row (<code>row.column</code>). Text the user can edit themselves cannot be the key.
+              {t && !t.admin_managed && " This table can be written by recipes, so what it returns cannot be used in decisions or to change accounts."}</p></div>
+        </div>
+      );
+    }
+    case "lookup_write": {
+      const tables = (ctx.meta.lookup_tables ?? []).filter((x) => !x.admin_managed);
+      const t = tables.find((x) => x.name === cfg.table);
+      const values: Record<string, string> = cfg.values ?? {};
+      const setVal = (col: string, v: string) => { const n = { ...values }; if (v === "") delete n[col]; else n[col] = v; set({ values: n }); };
+      return (
+        <div className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1"><Label>Table</Label>
+              <Select label="Lookup table" value={cfg.table ?? ""} onChange={(v) => { const n = tables.find((x) => x.name === v); set({ table: v, values: {}, action: n?.key_column ? "upsert" : "add" }); }}>
+                <option value="">Choose a table…</option>{tables.map((x) => <option key={x.name} value={x.name}>{x.name}</option>)}
+              </Select>
+              {tables.length === 0 && <p className="text-xs text-muted-foreground">Only tables set to “Administrators and recipes” can be written by a recipe.</p>}</div>
+            <div className="space-y-1"><Label>Action</Label>
+              <Select label="Lookup action" value={cfg.action ?? "upsert"} onChange={(v) => set({ action: v })}>
+                <option value="add">Add a row</option>{t?.key_column && <option value="upsert">Add or update the row with the same key</option>}{t?.key_column && <option value="delete">Delete the row with this key</option>}
+              </Select></div>
+          </div>
+          {cfg.action === "delete" ? (
+            <div className="space-y-1"><Label>Key ({t?.key_column ?? "key"}) of the row to delete</Label>
+              <PillInput label="Lookup key" value={cfg.key ?? ""} onChange={(v) => set({ key: v })} pills={pills} payload={payload} /></div>
+          ) : (
+            <div className="space-y-2">
+              {(t?.columns ?? []).map((c) => (
+                <div key={c.name} className="space-y-1"><Label>{c.name}{c.name === t?.key_column ? " (key)" : ""} <span className="font-normal text-muted-foreground">{c.type}</span></Label>
+                  <PillInput label={`Value for ${c.name}`} value={values[c.name] ?? ""} onChange={(v) => setVal(c.name, v)} pills={pills} payload={payload} placeholder={cfg.action === "upsert" && c.name !== t?.key_column ? "Leave empty to keep the current value" : ""} /></div>))}
+              <p className="text-xs text-muted-foreground">Values are converted to the column type. Anything stored here, including text the user typed, is treated as user-editable when read back. A test run writes nothing.</p>
+            </div>)}
+        </div>
+      );
+    }
     case "set_variable":
       return (
         <div className="grid gap-3 md:grid-cols-[12rem_1fr]">
@@ -228,6 +316,34 @@ export function StepForm({ step, ctx, onChange }: { step: StepNode; ctx: Ctx; on
           <div className="space-y-1"><Label>Value</Label>
             <PillInput label="Variable value" value={cfg.value ?? ""} onChange={(v) => set({ value: v })} pills={decisionPills(ctx.meta, ctx.trigger, before)} payload={payload} placeholder="Text, a datapill or {{= formula }}" />
             <p className="text-xs text-muted-foreground">A value that is exactly one formula keeps its type (a number stays a number). Text the user can edit themselves, such as their name, cannot be stored.</p></div>
+        </div>
+      );
+    case "call_recipe": {
+      const callee = ctx.meta.callable_recipes?.find((r) => r.id === cfg.recipe_id);
+      return (
+        <div className="space-y-3">
+          <div className="space-y-1"><Label>Recipe to call</Label>
+            <Select label="Recipe to call" value={cfg.recipe_id ?? ""} onChange={(v) => set({ recipe_id: v ? Number(v) : null, inputs: {} })}>
+              <option value="">Choose a recipe…</option>{(ctx.meta.callable_recipes ?? []).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </Select>
+            {(ctx.meta.callable_recipes ?? []).length === 0 && <p className="text-xs text-muted-foreground">No callable recipes yet: publish and enable a recipe whose trigger is “Called by another recipe”.</p>}</div>
+          {(callee?.inputs ?? []).map((i) => (
+            <div key={i.name} className="space-y-1"><Label>{`Input: ${i.name} (${i.type}${i.required ? "" : ", optional"})`}</Label>
+              <PillInput label={`Call input ${i.name}`} value={cfg.inputs?.[i.name] ?? ""} onChange={(v) => set({ inputs: { ...(cfg.inputs ?? {}), [i.name]: v } })} pills={pills} payload={payload} /></div>
+          ))}
+          {callee && <p className="text-xs text-muted-foreground">The job waits for the called recipe, then its returned data ({callee.outputs.join(", ") || "none"}) is available as “Call a recipe” datapills. A recipe cannot call itself, directly or through others, and calls go at most 5 levels deep.</p>}
+        </div>
+      );
+    }
+    case "return_data":
+      return (
+        <div className="space-y-3">
+          {(ctx.callOutputs ?? []).map((n) => (
+            <div key={n} className="space-y-1"><Label>{`Output: ${n}`}</Label>
+              <PillInput label={`Return ${n}`} value={cfg.values?.[n] ?? ""} onChange={(v) => set({ values: { ...(cfg.values ?? {}), [n]: v } })} pills={pills} payload={payload} /></div>
+          ))}
+          {(ctx.callOutputs ?? []).length === 0 && <p className="text-xs text-muted-foreground">Declare the outputs this recipe returns in its trigger first.</p>}
+          <p className="text-xs text-muted-foreground">Gives these values back to the recipe that called this one and ends this job.</p>
         </div>
       );
     case "wait":
@@ -257,6 +373,29 @@ export function StepForm({ step, ctx, onChange }: { step: StepNode; ctx: Ctx; on
   }
 }
 
+function CallSignature({ cfg, set }: { cfg: Record<string, any>; set: (p: Record<string, any>) => void }) {
+  const inputs: { name: string; type: string; required: boolean }[] = cfg.inputs ?? [];
+  const upd = (i: number, patch: Record<string, any>) => set({ inputs: inputs.map((x, j) => (j === i ? { ...x, ...patch } : x)) });
+  return (
+    <div className="space-y-2" data-testid="call-signature">
+      <Label>Inputs this recipe accepts</Label>
+      {inputs.map((x, i) => (
+        <div key={i} className="grid grid-cols-[1fr_8rem_auto_auto] items-center gap-2">
+          <Input aria-label={`Input name ${i + 1}`} className="h-10" placeholder="name (lowercase)" value={x.name} onChange={(e) => upd(i, { name: e.target.value })} />
+          <Select label={`Input type ${i + 1}`} value={x.type} onChange={(v) => upd(i, { type: v })}>{["text", "number", "boolean", "list", "object"].map((t) => <option key={t} value={t}>{t}</option>)}</Select>
+          <label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={x.required} onChange={(e) => upd(i, { required: e.target.checked })} />required</label>
+          <Button type="button" variant="outline" size="sm" aria-label={`Remove input ${i + 1}`} onClick={() => set({ inputs: inputs.filter((_, j) => j !== i) })}><Trash2 className="h-4 w-4" /></Button>
+        </div>
+      ))}
+      <Button type="button" variant="secondary" size="sm" onClick={() => set({ inputs: [...inputs, { name: "", type: "text", required: true }] })}>Add input</Button>
+      <div className="space-y-1"><Label htmlFor="call-outputs">Outputs it returns (names, comma separated)</Label>
+        <Input id="call-outputs" className="h-10" placeholder="total, user_id" value={(cfg.outputs ?? []).join(", ")}
+          onChange={(e) => set({ outputs: e.target.value.split(",").map((n) => n.trim()).filter(Boolean) })} />
+        <p className="text-xs text-muted-foreground">Inputs arrive as “payload” datapills. Use a “Return data” step to give the outputs back.</p></div>
+    </div>
+  );
+}
+
 export function TriggerCard({ def, meta, groups, setTrigger }: { def: Definition; meta: RecipeMeta; groups: Group[]; setTrigger: (patch: Partial<Definition["trigger"]>) => void }) {
   const trig = meta.triggers.find((t) => t.type === def.trigger.type)!;
   const tcfg = (patch: Record<string, any>) => setTrigger({ config: { ...def.trigger.config, ...patch } });
@@ -264,10 +403,9 @@ export function TriggerCard({ def, meta, groups, setTrigger }: { def: Definition
   const filterPills = decisionPills(meta, def.trigger.type, []);
   const isGroupTrig = def.trigger.type.startsWith("group.member_");
   return (
-    <Card className="mb-4" data-testid="trigger-card">
-        <CardHeader className="py-3"><CardTitle className="text-base">When this happens (trigger)</CardTitle></CardHeader>
-        <CardContent className="space-y-3">
-          <Select label="Trigger" value={def.trigger.type} onChange={(v) => setTrigger({ type: v, config: v === "schedule" ? { interval_minutes: 60 } : v === "login.failed" ? { min_failures: 3 } : v === "user.attribute_changed" ? { attribute: meta.managed_attributes[0]?.key ?? "" } : {}, filter: [] })}>
+    <Card className="border-0 shadow-none" data-testid="trigger-card">
+        <CardContent className="space-y-3 p-0">
+          <Select label="Trigger" value={def.trigger.type} onChange={(v) => setTrigger({ type: v, config: v === "schedule" ? { interval_minutes: 60 } : v === "call" ? { inputs: [], outputs: [] } : v === "login.failed" ? { min_failures: 3 } : v === "user.attribute_changed" ? { attribute: meta.managed_attributes[0]?.key ?? "" } : {}, filter: [] })}>
             {meta.triggers.map((t) => <option key={t.type} value={t.type}>{t.label}</option>)}
           </Select>
           <p className="text-sm text-muted-foreground">{trig.description}</p>
@@ -283,6 +421,7 @@ export function TriggerCard({ def, meta, groups, setTrigger }: { def: Definition
                 <div className="space-y-1"><Label htmlFor="t-to">…to (optional)</Label><Input id="t-to" placeholder="any value" value={def.trigger.config.to_value ?? ""} onChange={(e) => tcfg({ to_value: e.target.value === "" ? null : e.target.value })} /></div>
               </div></div>
           )}
+          {def.trigger.type === "call" && <CallSignature cfg={def.trigger.config} set={tcfg} />}
           {def.trigger.type === "login.failed" && (
             <div className="space-y-1"><Label htmlFor="t-min">Minimum consecutive failures</Label><Input id="t-min" type="number" min={1} max={100} className="w-32" value={def.trigger.config.min_failures ?? 1} onChange={(e) => tcfg({ min_failures: Number(e.target.value) })} /></div>
           )}

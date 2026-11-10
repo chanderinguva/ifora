@@ -53,7 +53,7 @@ export function PillTray({ pills }: { pills: Pill[] }) {
       <div className="text-sm font-medium">Data you can use here</div>
       <input aria-label="Search data" placeholder="Search…" value={q} onChange={(e) => setQ(e.target.value)} className="h-8 w-full rounded border bg-background px-2 text-sm" />
       {note && <p className="text-xs text-muted-foreground" role="note">{note}</p>}
-      <div className="max-h-64 space-y-2 overflow-auto">
+      <div className="max-h-80 space-y-2 overflow-auto">
         {groups.map(([g, list]) => (
           <div key={g}>
             <div className="mb-1 text-xs font-medium uppercase text-muted-foreground">{g}</div>

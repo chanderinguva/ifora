@@ -30,6 +30,7 @@ _AREAS = [
     ("/admin/profile-attributes", "directory_settings"),
     ("/admin/recipes", "automation"),
     ("/admin/recipe-connections", "automation"),
+    ("/admin/lookup-tables", "automation"),
     ("/admin/branding", "branding"),
     ("/admin/email-templates", "branding"),
     ("/admin/roles", "roles"),
