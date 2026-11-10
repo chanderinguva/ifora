@@ -40,7 +40,7 @@ TYPES: Dict[str, Dict[str, Any]] = {
         "purpose": "A named role inside an application (Admin, Editor, Viewer). Assign the group to the application, and put people in it by team group, rule or access request.",
         "naming": "Role - <application> - <role>, e.g. Role - Salesforce - Sales Manager",
         "requires": ["owner"],
-        "can_carry_admin_roles": False,
+        "can_carry_admin_roles": True,
         "typical_membership": "derived from team groups or a group rule on job attributes; reviewed by the owner",
     },
     "push": {
@@ -87,7 +87,7 @@ def document() -> dict:
             "attributes": f"Up to {MAX_ATTRS} free-form string pairs (key snake_case, value up to 200 characters), e.g. cost_center, business_unit, application.",
         },
         "rules": [
-            "Admin roles may be attached only to team groups, and only by a super administrator.",
+            "Admin roles may be attached only to team and role based groups, and only by a super administrator.",
             "Only a super administrator can change who is in a group that carries admin roles.",
             "Prefer assigning app access and role based groups to applications over assigning users.",
         ],
