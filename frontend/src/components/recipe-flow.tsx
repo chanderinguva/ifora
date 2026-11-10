@@ -16,7 +16,7 @@ function Arrow() {
 function Node({ step, meta, onSelect }: { step: StepNode; meta: RecipeMeta; onSelect: (id: string) => void }) {
   const info = meta.steps.find((m) => m.type === step.type);
   const kind = info?.kind ?? "action";
-  const branches = step.type === "condition" || step.type === "approval";
+  const branches = step.type === "condition" || step.type === "approval" || step.type === "handle_errors";
   const detail = step.type === "log" || step.type === "send_slack" ? step.config.message : step.type === "send_email" ? step.config.subject : step.type === "approval" ? step.config.message : "";
   return (
     <div className={cn("rounded-md border p-2", TONE[kind])} data-testid="flow-node">
@@ -26,8 +26,8 @@ function Node({ step, meta, onSelect }: { step: StepNode; meta: RecipeMeta; onSe
       </button>
       {branches && (
         <div className="mt-2 grid gap-2 md:grid-cols-2">
-          <Lane title={step.type === "approval" ? "Approved" : "Then"} steps={step.then ?? []} meta={meta} onSelect={onSelect} />
-          <Lane title={step.type === "approval" ? "Denied / no answer" : "Otherwise"} steps={step.else ?? []} meta={meta} onSelect={onSelect} />
+          <Lane title={step.type === "approval" ? "Approved" : step.type === "handle_errors" ? "Monitored" : "Then"} steps={step.then ?? []} meta={meta} onSelect={onSelect} />
+          <Lane title={step.type === "approval" ? "Denied / no answer" : step.type === "handle_errors" ? "On error" : "Otherwise"} steps={step.else ?? []} meta={meta} onSelect={onSelect} />
         </div>
       )}
       {isLoop(step) && <div className="mt-2"><Lane title={step.type === "for_each_item" ? "For each item" : "For each member"} steps={step.then ?? []} meta={meta} onSelect={onSelect} /></div>}

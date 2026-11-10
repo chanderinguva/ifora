@@ -41,18 +41,18 @@ export function find(steps: StepNode[], id: string): StepNode | undefined {
   return undefined;
 }
 
-export type Located = { step: StepNode; section: Section; inLoop: boolean };
+export type Located = { step: StepNode; section: Section; inLoop: boolean; inCatch: boolean };
 export function locate(def: Definition, id: string): Located | null {
-  const walk = (steps: StepNode[], loop: boolean, section: Section): Located | null => {
+  const walk = (steps: StepNode[], loop: boolean, section: Section, catching: boolean): Located | null => {
     for (const s of steps) {
-      if (s.id === id) return { step: s, section, inLoop: loop };
+      if (s.id === id) return { step: s, section, inLoop: loop, inCatch: catching };
       const inner = loop || isLoop(s);
-      const hit = walk(s.then ?? [], inner, section) ?? walk(s.else ?? [], loop, section);
+      const hit = walk(s.then ?? [], inner, section, catching) ?? walk(s.else ?? [], loop, section, catching || s.type === "handle_errors");
       if (hit) return hit;
     }
     return null;
   };
-  return walk(def.steps, false, "steps") ?? walk(def.on_error ?? [], false, "on_error");
+  return walk(def.steps, false, "steps", false) ?? walk(def.on_error ?? [], false, "on_error", false);
 }
 
 export function replaceStep(def: Definition, next: StepNode): Definition {
@@ -118,7 +118,7 @@ export function countSteps(def: Definition): number {
 
 import { stepsBefore } from "@/lib/recipes";
 
-const BRANCHING = ["condition", "approval"];
+const BRANCHING = ["condition", "approval", "handle_errors"];
 const isBranching = (s: StepNode) => BRANCHING.includes(s.type);
 
 function pathTo(steps: StepNode[], id: string, trail: StepNode[] = []): StepNode[] | null {
@@ -136,6 +136,14 @@ export function laneDepth(def: Definition, ref: LaneRef): number {
   if (!ref.owner) return 0;
   const p = pathOf(def, ref.owner);
   return p ? p.filter((x) => isBranching(x) || x.type === "for_each_member").length : 0;
+}
+/** Is this lane one of a Handle errors block's "on error" lanes, or nested inside one? (Same rules as the recipe-level error steps.) */
+export function laneInCatch(def: Definition, ref: LaneRef): boolean {
+  if (!ref.owner) return false;
+  const p = pathOf(def, ref.owner);
+  if (!p) return false;
+  if (ref.branch === "else" && p[p.length - 1].type === "handle_errors") return true;
+  return p.slice(0, -1).some((x, i) => x.type === "handle_errors" && (x.else ?? []).includes(p[i + 1]));
 }
 export function laneInLoop(def: Definition, ref: LaneRef): boolean {
   if (!ref.owner) return false;
@@ -156,7 +164,7 @@ function flat(steps: StepNode[]): StepNode[] { return steps.flatMap((s) => [s, .
 export function pillProblems(def: Definition): string[] {
   const out: string[] = [];
   const check = (root: StepNode[], section: Section) => {
-    const walk = (steps: StepNode[], inLoop: boolean) => {
+    const walk = (steps: StepNode[], inLoop: boolean, catching = section === "on_error") => {
       for (const s of steps) {
         const t = text(s);
         const earlier = stepsBefore(root, s.id);
@@ -165,9 +173,9 @@ export function pillProblems(def: Definition): string[] {
         for (const m of t.matchAll(/(?:\{\{\s*|")vars\.([a-z][a-z0-9_]*)/g)) if (!vars.has(m[1])) out.push(`${s.id}:vars.${m[1]}`);
         for (const m of t.matchAll(/(?:\{\{\s*|")steps\.([a-z][a-z0-9_]*)/g)) if (!before.has(m[1])) out.push(`${s.id}:steps.${m[1]}`);
         if (/(?:\{\{\s*|")loop\./.test(t) && !inLoop) out.push(`${s.id}:loop`);
-        if (/(?:\{\{\s*|")error\./.test(t) && section !== "on_error") out.push(`${s.id}:error`);
-        walk(s.then ?? [], inLoop || isLoop(s));
-        walk(s.else ?? [], inLoop);
+        if (/(?:\{\{\s*|")error\./.test(t) && !catching) out.push(`${s.id}:error`);
+        walk(s.then ?? [], inLoop || isLoop(s), catching);
+        walk(s.else ?? [], inLoop, catching || s.type === "handle_errors");
       }
     };
     walk(root, false);
@@ -186,7 +194,7 @@ export function moveProblem(def: Definition, id: string, ref: LaneRef, index: nu
   const h = branchHeight(step);
   if (h >= 0 && d + h >= maxNesting) return `Steps can be nested ${maxNesting} levels deep at most`;
   if (flat([step]).some((s) => isLoop(s)) && (d > 0 || ref.section === "on_error")) return "A repeat step must sit at the top level of the main steps";
-  if (ref.section === "on_error" && flat([step]).some((s) => s.type === "approval" || isLoop(s) || s.type === "wait" || s.type === "throttle")) return "Approvals, repeats, waits and throttles cannot be used in the error steps";
+  if ((ref.section === "on_error" || laneInCatch(def, ref)) && flat([step]).some((s) => s.type === "approval" || isLoop(s) || s.type === "wait" || s.type === "throttle" || s.type === "call_recipe" || s.type === "return_data")) return "Approvals, repeats, waits, throttles and recipe calls cannot be used in the error steps";
   const moved = moveStep(def, id, ref, index);
   const before = new Set(pillProblems(def));
   const worse = pillProblems(moved).find((p) => !before.has(p));
