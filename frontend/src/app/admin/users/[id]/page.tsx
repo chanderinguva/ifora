@@ -13,7 +13,7 @@ import { Badge, PageHeader, fmt } from "@/components/bits";
 import { useCurrentUser } from "@/components/auth-guard";
 import { http } from "@/lib/http";
 import { UserActivity, UserApplications } from "@/components/user-tabs";
-import { AdminRolesCard } from "@/components/admin-roles-card";
+import { UserGroupsAndRoles } from "@/components/user-access";
 import { AttrField, fromApi, toApi } from "@/components/attr-field";
 import { USER_STATUSES, statusTone, type ProfileAttribute, type User } from "@/lib/types";
 
@@ -30,7 +30,7 @@ export default function UserDetail() {
   const [attrs, setAttrs] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   useEffect(() => { http<{ access: Record<string, string> }>("/me/admin-access").then((r) => setCanWrite(r.access.users === "write")).catch(() => setCanWrite(false)); }, []);
-  const [tab, setTab] = useState<"profile" | "applications" | "activity">("profile");
+  const [tab, setTab] = useState<"profile" | "access" | "applications" | "activity">("profile");
   const [newPw, setNewPw] = useState("");
   const [requireChange, setRequireChange] = useState(false);
 
@@ -112,15 +112,15 @@ export default function UserDetail() {
       )}
 
       <div role="tablist" aria-label="User sections" className="mb-6 flex gap-1 border-b">
-        {([["profile", "Profile"], ["applications", "Applications"], ["activity", "Activity"]] as const).map(([k, l]) => (
+        {([["profile", "Profile"], ["access", "Groups and Roles"], ["applications", "Applications"], ["activity", "Activity"]] as const).map(([k, l]) => (
           <button key={k} role="tab" type="button" aria-selected={tab === k} data-testid={`utab-${k}`} onClick={() => setTab(k)}
             className={`-mb-px border-b-2 px-4 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${tab === k ? "border-primary font-medium" : "border-transparent text-muted-foreground hover:text-foreground"}`}>{l}</button>
         ))}
       </div>
+      {tab === "access" && <UserGroupsAndRoles user={user} viewerIsSuperAdmin={!!me.is_super_admin} />}
       {tab === "applications" && <UserApplications userId={user.id} />}
       {tab === "activity" && <UserActivity userId={user.id} />}
       {tab === "profile" && (<>
-      {me.is_super_admin && user.is_admin && !user.is_super_admin && <AdminRolesCard userId={user.id} />}
       <Card className="mb-6">
         <CardHeader><CardTitle>Account</CardTitle></CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2">
@@ -224,21 +224,6 @@ export default function UserDetail() {
           </Button>
         )}
       </div>
-
-      <Card className="mb-6">
-        <CardHeader><CardTitle>Groups</CardTitle></CardHeader>
-        <CardContent>
-          {user.groups && user.groups.length > 0 ? (
-            <ul className="flex flex-wrap gap-2">
-              {user.groups.map((g) => (
-                <li key={g.id}><Link href={`/admin/groups/${g.id}`}><Badge tone="info">{g.name}</Badge></Link></li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-muted-foreground">Not a member of any group.</p>
-          )}
-        </CardContent>
-      </Card>
 
       {!protectedTarget && (
         <Card className="mb-6">

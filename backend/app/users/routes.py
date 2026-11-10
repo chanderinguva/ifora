@@ -109,7 +109,7 @@ class PasswordReset(BaseModel):
 
 def _detail(user: User) -> dict:
     d = user.to_dict()
-    d["groups"] = [{"id": g.id, "name": g.name} for g in user.groups]
+    d["groups"] = [{"id": g.id, "name": g.name, "type": g.type} for g in user.groups]
     return d
 
 

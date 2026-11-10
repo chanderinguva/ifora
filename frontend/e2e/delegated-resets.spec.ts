@@ -29,6 +29,7 @@ test("a help desk admin can reset an end user's password; a report admin sees th
   for (const [last, mail, role] of [[`Desk${tag}`, deskMail, "help_desk_admin"], [`Rep${tag}`, reportMail, "report_admin"]]) {
     await createUser(page, last, mail, true);
     await open(page, mail, last);
+    await page.getByTestId("utab-access").click();
     await page.getByTestId(`role-${role}`).check();
     await page.getByTestId("roles-save").click();
     await expect(page.getByText(/Roles saved/)).toBeVisible();

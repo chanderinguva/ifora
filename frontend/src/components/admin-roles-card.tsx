@@ -21,6 +21,11 @@ export function AdminRolesCard({ userId }: { userId: number }) {
     http<{ roles: string[]; sources: Record<string, Source[]> }>(`/admin/roles/users/${userId}`).then((r) => { setRoles(r.roles); setSources(r.sources); }).catch((e) => setMsg({ ok: false, text: e.message }));
   }, [userId]);
 
+  // every role the person holds, in catalog order, with where it comes from (what is ticked below counts as direct even before it is saved)
+  const effective = catalog
+    .map((c) => ({ id: c.id, direct: roles.includes(c.id), groups: (sources[c.id] ?? []).filter((x) => x.via === "group").map((x) => x.group_name ?? "a group") }))
+    .filter((r) => r.direct || r.groups.length > 0);
+
   const toggle = (id: string) => setRoles((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
   async function save() {
     setMsg(null);
@@ -35,11 +40,21 @@ export function AdminRolesCard({ userId }: { userId: number }) {
       <CardHeader><CardTitle>Administrator roles</CardTitle></CardHeader>
       <CardContent className="space-y-3 text-sm">
         <p className="text-muted-foreground">Roles selected here are assigned to this person directly. With no role at all (directly or through a team group) an administrator cannot use any administrator function.</p>
-        {Object.entries(sources).filter(([, s]) => s.some((x) => x.via === "group")).map(([role, s]) => (
-          <p key={role} className="text-xs" data-testid={`role-via-${role}`}>
-            <span className="font-medium">{catalog.find((c) => c.id === role)?.label ?? role}</span> also comes from {s.filter((x) => x.via === "group").map((x) => x.group_name).join(", ")}
-          </p>
-        ))}
+        <div data-testid="effective-roles">
+          <div className="mb-1 font-medium">Effective roles</div>
+          {effective.length === 0 ? (
+            <p className="text-xs text-muted-foreground">None. This administrator cannot use any administrator function.</p>
+          ) : (
+            <ul className="space-y-0.5 text-xs">
+              {effective.map(({ id, direct, groups }) => (
+                <li key={id} data-testid={`role-via-${id}`}>
+                  <span className="font-medium">{catalog.find((c) => c.id === id)?.label ?? id}</span>
+                  {" "}<span className="text-muted-foreground">{[direct ? "assigned directly" : "", groups.length ? `through ${groups.join(", ")}` : ""].filter(Boolean).join("; ")}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
         {msg && <Alert variant={msg.ok ? "default" : "destructive"} role="status"><AlertDescription>{msg.text}</AlertDescription></Alert>}
         {catalog.map((r) => (
           <label key={r.id} className="flex items-start gap-2">
