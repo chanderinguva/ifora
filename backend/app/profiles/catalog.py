@@ -27,6 +27,9 @@ RESERVED = {
 }
 MAX_ATTRIBUTES = 80
 
+USER_TYPES = ["Employee", "Contingent Worker", "Intern", "Service Account", "Test Account", "Shared Account", "Agent Account"]
+DEFAULT_USER_TYPE = USER_TYPES[0]
+
 # key, display name, type, user editable, description
 DEFAULTS = [
     # The Okta base user profile (keys are snake_case of Okta's names; login/email/firstName/lastName are core fields).
@@ -49,7 +52,7 @@ DEFAULTS = [
     ("locale", "Locale", "locale", True, "Okta locale; date and number formats"),
     ("timezone", "Time zone", "timezone", True, "Okta timezone; used to display dates and times"),
     ("title", "Title", "string", True, "Okta title"),
-    ("user_type", "User type", "string", False, "Okta userType, e.g. Employee or Contractor"),
+    ("user_type", "User type", "enum", False, "Okta userType: what kind of account this is (a fixed list)"),
     ("employee_number", "Employee number", "string", False, "Okta employeeNumber"),
     ("cost_center", "Cost center", "string", False, "Okta costCenter"),
     ("organization", "Organization", "string", False, "Okta organization"),
@@ -96,7 +99,8 @@ def ensure_defaults(db: Session) -> None:
         return
     for i, (key, name, typ, editable, desc) in missing:
         db.add(ProfileAttribute(key=key, display_name=name, description=desc, data_type=typ,
-                                user_editable=editable, built_in=True, sort_order=i))
+                                user_editable=editable, built_in=True, sort_order=i,
+                                enum_options=USER_TYPES if key == "user_type" else None))
     db.commit()
 
 

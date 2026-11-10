@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 from passlib.hash import argon2
 import uuid
 from sqlalchemy import Column, DateTime, Integer, String, Boolean, Text, UniqueConstraint
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, validates
 
 from backend.app.db import Base
 from backend.app.tenancy import TenantOwned
@@ -96,6 +96,14 @@ class User(TenantOwned, Base):
         self.profile_attributes = profile_attributes
         self.is_admin = is_admin
         self.is_super_admin = is_super_admin
+
+    @validates("username")
+    def _username_is_immutable(self, _key: str, value: str) -> str:
+        """The username is assigned once. (A database trigger enforces the same for raw SQL; migration 0050.)"""
+        current = self.username   # loads the stored value if it was expired; None while the object is being built
+        if current is not None and current != value:
+            raise ValueError("A username cannot be changed once the account exists")
+        return value
 
     def set_password(self, password: str) -> None:
         """Hash and set password using Argon2id."""

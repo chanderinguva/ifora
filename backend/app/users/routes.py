@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, EmailStr, Field, field_validator
-from sqlalchemy import insert, or_, update
+from sqlalchemy import func, insert, or_, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -23,6 +23,7 @@ from backend.app.groups.model import Group, user_group_association
 from backend.app.profiles import catalog as profile_catalog
 from backend.app.recipes import events as recipe_events
 from backend.app.profiles.schemas import validate_attributes, validate_password
+from backend.app.config import settings
 from backend.app.users.model import User
 
 
@@ -41,7 +42,7 @@ _USERNAME = re.compile(r"^[a-z0-9][a-z0-9._-]{1,49}$")
 
 
 class UserCreate(BaseModel):
-    email: EmailStr
+    email: Optional[EmailStr] = None   # left out: <username>@PRIMARY_EMAIL_DOMAIN
     username: Optional[str] = None
     first_name: str = Field(..., min_length=1, max_length=100)
     last_name: str = Field(..., min_length=1, max_length=100)
@@ -126,14 +127,16 @@ def _clean_attrs(db: Session, values: Dict[str, Any], current: Dict[str, Any]) -
     return {k: v for k, v in cleaned.items() if v is not None}
 
 
-def _unique_username(db: Session, base: str) -> str:
-    base = re.sub(r"[^a-z0-9._-]", "", base.lower()) or "user"
-    base = (base if len(base) >= 2 else base + "0")[:44]
-    candidate, n = base, 1
-    while db.query(User.id).filter(User.username == candidate).first():
-        n += 1
-        candidate = f"{base}{n}"
-    return candidate
+@router.get("/suggest-identity")
+def suggest_identity(first_name: str = Query("", max_length=100), last_name: str = Query("", max_length=100),
+                     db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    """What a new user with these names would be given (a preview: nothing is reserved until the user is created)."""
+    from backend.app.users import naming
+
+    if not (first_name.strip() or last_name.strip()):
+        return {"username": None, "email": None, "email_domain": settings.PRIMARY_EMAIL_DOMAIN or None}
+    username = naming.generate_username(db, first_name, last_name)
+    return {"username": username, "email": naming.email_for(username), "email_domain": settings.PRIMARY_EMAIL_DOMAIN or None}
 
 
 @router.get("")
@@ -195,32 +198,50 @@ def create_user(
         guard_role_groups(db, ids, actor)
     from backend.app.security_policy import service as policy
 
-    email = body.email.lower()
+    from backend.app.users import naming
+
+    # Username: given, or first.last (numeric suffix on a clash). Email: given, or <username>@PRIMARY_EMAIL_DOMAIN.
+    if body.username and body.username in naming.RESERVED:
+        raise HTTPException(status_code=422, detail="That username is reserved")
+    if body.email is None and not settings.PRIMARY_EMAIL_DOMAIN:
+        raise HTTPException(status_code=422, detail="Enter an email address (no PRIMARY_EMAIL_DOMAIN is configured to build one)")
+    username = body.username
+    if username is None:
+        try:
+            username = naming.generate_username(db, body.first_name, body.last_name)
+        except ValueError as e:
+            raise HTTPException(status_code=409, detail=str(e))
+    email = body.email.lower() if body.email is not None else naming.email_for(username)
     if body.password is not None:
         policy.validate_new(db, body.password, None, email, body.first_name, body.last_name)
     password = body.password if body.password is not None else policy.generate(db)
-    if db.query(User.id).filter(User.email == email).first():
+    if db.query(User.id).filter(func.lower(User.email) == email).first():
         raise HTTPException(status_code=409, detail="Email already in use")
-    username = body.username or _unique_username(db, email.split("@")[0])
-    if body.username and db.query(User.id).filter(User.username == username).first():
+    if body.username and db.query(User.id).filter(func.lower(User.username) == username).first():
         raise HTTPException(status_code=409, detail="Username already in use")
 
-    user = User(
-        email=email,
-        username=username,
-        first_name=body.first_name,
-        last_name=body.last_name,
-        password=password,
-        is_admin=body.is_admin,
-    )
-    user.set_profile_attributes(_clean_attrs(db, body.profile_attributes, {}))
-    db.add(user)
-    try:
-        db.flush()
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(status_code=409, detail="User already exists")
-    record(db, AuditAction.USER_CREATED, request, actor, user.id, "user", {"email": email, "is_admin": body.is_admin})
+    user = None
+    for attempt in range(1, 6):
+        user = User(
+            email=email,
+            username=username,
+            first_name=body.first_name,
+            last_name=body.last_name,
+            password=password,
+            is_admin=body.is_admin,
+        )
+        user.set_profile_attributes(_clean_attrs(db, {"user_type": profile_catalog.DEFAULT_USER_TYPE, **body.profile_attributes}, {}))
+        try:
+            with db.begin_nested():   # a lost race on a generated name moves on to the next free one
+                db.add(user)
+                db.flush()
+            break
+        except IntegrityError:
+            if body.username is not None or attempt == 5:
+                raise HTTPException(status_code=409, detail="User already exists")
+            username = naming.generate_username(db, body.first_name, body.last_name, skip=attempt)
+            email = body.email.lower() if body.email is not None else naming.email_for(username)
+    record(db, AuditAction.USER_CREATED, request, actor, user.id, "user", {"email": email, "username": username, "is_admin": body.is_admin})
     if body.is_admin:
         _least_privilege(db, user, actor)
     for g in groups:

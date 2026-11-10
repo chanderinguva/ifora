@@ -129,7 +129,12 @@ export default function UserDetail() {
             <Label htmlFor="last">Last name</Label>
             <Input id="last" value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} />
           </div>
-          <div className="space-y-2 sm:col-span-2">
+          <div className="space-y-2">
+            <Label htmlFor="username">Username</Label>
+            <Input id="username" value={user.username} readOnly disabled data-testid="username-readonly" />
+            <p className="text-xs text-muted-foreground">Fixed when the account was created. Names and email can change without affecting it or the apps this person already has.</p>
+          </div>
+          <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
             <Input id="email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
           </div>
