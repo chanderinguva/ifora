@@ -60,4 +60,6 @@ export function qs(params: Record<string, string | number | undefined | null>): 
   return s ? `?${s}` : "";
 }
 
-export type Page<T> = { items: T[]; total: number; page: number; page_size: number };
+export type Page<T> = { Resources: T[]; totalResults: number; startIndex: number; itemsPerPage: number };
+// SCIM-style paging parameters (ADR 025) for a 1-based UI page
+export const pageQs = (page: number, size: number) => ({ startIndex: (page - 1) * size + 1, count: size });

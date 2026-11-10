@@ -51,8 +51,8 @@ export default function ApplicationDetail() {
   }, [id]);
   useEffect(() => {
     refresh();
-    http<Page<User>>(`/admin/users${qs({ page_size: 100 })}`).then((p) => setUsers(p.items)).catch(() => {});
-    http<Page<Group>>(`/admin/groups${qs({ page_size: 100 })}`).then((p) => setGroups(p.items)).catch(() => {});
+    http<Page<User>>(`/admin/users${qs({ count: 100 })}`).then((p) => setUsers(p.Resources)).catch(() => {});
+    http<Page<Group>>(`/admin/groups${qs({ count: 100 })}`).then((p) => setGroups(p.Resources)).catch(() => {});
   }, [refresh]);
 
   async function run(fn: () => Promise<unknown>, ok?: string) {

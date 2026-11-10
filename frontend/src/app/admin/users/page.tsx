@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge, PageHeader, Pager, fieldClass, fmt, td, th } from "@/components/bits";
 import { useCurrentUser } from "@/components/auth-guard";
-import { http, qs, type Page } from "@/lib/http";
+import { http, pageQs, qs, type Page } from "@/lib/http";
 import { AttrField, toApi } from "@/components/attr-field";
 import { ImportPanel, UserCsvButtons } from "@/components/user-csv";
 import { UserLifecycle } from "@/components/user-lifecycle";
@@ -43,7 +43,7 @@ export default function UsersPage() {
   }
 
   const load = useCallback(() => {
-    http<Page<User>>(`/admin/users${qs({ q, status, page, page_size: PAGE_SIZE })}`)
+    http<Page<User>>(`/admin/users${qs({ q, status, ...pageQs(page, PAGE_SIZE) })}`)
       .then(setData)
       .catch((e) => setError(e.message));
   }, [q, status, page]);
@@ -128,8 +128,8 @@ export default function UsersPage() {
           <table className="w-full" data-testid="users-table">
             <thead className="border-b">
               <tr>
-                <th className={th + " w-10"}><input type="checkbox" aria-label="Select all on this page" checked={!!data && data.items.length > 0 && data.items.every((u) => picked.has(u.id))}
-                  onChange={(e) => setPicked(e.target.checked && data ? new Set(data.items.map((u) => u.id)) : new Set())} /></th>
+                <th className={th + " w-10"}><input type="checkbox" aria-label="Select all on this page" checked={!!data && data.Resources.length > 0 && data.Resources.every((u) => picked.has(u.id))}
+                  onChange={(e) => setPicked(e.target.checked && data ? new Set(data.Resources.map((u) => u.id)) : new Set())} /></th>
                 <th className={th}>Name</th>
                 <th className={th}>Email</th>
                 <th className={th}>Role</th>
@@ -138,7 +138,7 @@ export default function UsersPage() {
               </tr>
             </thead>
             <tbody>
-              {data?.items.map((u) => (
+              {data?.Resources.map((u) => (
                 <tr key={u.id} className="border-b last:border-0 hover:bg-accent/30">
                   <td className={td}><input type="checkbox" aria-label={`Select ${u.email}`} checked={picked.has(u.id)} onChange={() => toggle(u.id)} /></td>
                   <td className={td}>
@@ -156,7 +156,7 @@ export default function UsersPage() {
                   <td className={td}>{fmt(u.last_login_at)}</td>
                 </tr>
               ))}
-              {data && data.items.length === 0 && (
+              {data && data.Resources.length === 0 && (
                 <tr>
                   <td className={td} colSpan={6}>No users match.</td>
                 </tr>
@@ -165,7 +165,7 @@ export default function UsersPage() {
           </table>
         </CardContent>
       </Card>
-      {data && <Pager page={page} pageSize={PAGE_SIZE} total={data.total} onPage={setPage} />}
+      {data && <Pager page={page} pageSize={PAGE_SIZE} total={data.totalResults} onPage={setPage} />}
     </div>
   );
 }
@@ -195,7 +195,7 @@ function CreateUser({ canMakeAdmin, onDone }: { canMakeAdmin: boolean; onDone: (
 
   useEffect(() => {
     http<{ items: ProfileAttribute[] }>("/admin/profile-attributes").then((r) => setSchema(r.items.filter((a) => !a.user_editable))).catch(() => {});
-    http<Page<Group>>(`/admin/groups${qs({ page: 1, page_size: 100 })}`).then((r) => setGroups(r.items.filter((g) => !g.is_system_group))).catch(() => {});
+    http<Page<Group>>(`/admin/groups${qs({ count: 100 })}`).then((r) => setGroups(r.Resources.filter((g) => !g.is_system_group))).catch(() => {});
   }, []);
 
   async function submit(e: React.FormEvent) {

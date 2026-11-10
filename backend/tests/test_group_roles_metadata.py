@@ -151,7 +151,7 @@ def test_update_metadata_and_audit(super_admin, db):
     r = super_admin.patch(f"/admin/groups/{gid}", {"sensitivity": "medium", "tags": ["a"], "attributes": {"k": "v"}})
     assert r.status_code == 200 and r.json()["sensitivity"] == "medium" and r.json()["tags"] == ["a"]
     assert super_admin.patch(f"/admin/groups/{gid}", {"owner_user_id": None}).status_code == 422   # a team needs an owner
-    ev = super_admin.get("/admin/audit?action=GROUP_UPDATED").json()["items"]
+    ev = super_admin.get("/admin/audit?action=GROUP_UPDATED").json()["Resources"]
     assert ev and "sensitivity" in ev[0]["metadata"]["changed"]
 
 
@@ -163,7 +163,7 @@ def test_list_filters_and_analytics(super_admin, db):
                                        "tags": ["finance"]})
     super_admin.post("/admin/groups", {"name": "Project - Old", "type": "project", "owner_user_id": owner.id,
                                        "review_by": str(date.today() - timedelta(days=1))})
-    names = lambda q: sorted(g["name"] for g in super_admin.get(f"/admin/groups{q}").json()["items"])  # noqa: E731
+    names = lambda q: sorted(g["name"] for g in super_admin.get(f"/admin/groups{q}").json()["Resources"])  # noqa: E731
     assert names("?type=app_access") == ["App - X - User"]
     assert names("?tag=finance") == ["App - X - User"]
     assert names("?sensitivity=high") == ["App - X - User"]
@@ -187,5 +187,5 @@ def test_role_based_group_needs_an_owner_and_cannot_carry_admin_roles(super_admi
     r = super_admin.post("/admin/groups", {"name": "Role - CRM - Manager", "type": "role", "owner_user_id": owner.id, "attributes": {"application": "CRM", "role": "Manager"}})
     assert r.status_code in (200, 201), r.text
     assert r.json()["type"] == "role"
-    assert [g["name"] for g in super_admin.get("/admin/groups?type=role").json()["items"]] == ["Role - CRM - Manager"]
+    assert [g["name"] for g in super_admin.get("/admin/groups?type=role").json()["Resources"]] == ["Role - CRM - Manager"]
     assert next(t for t in super_admin.get("/admin/groups/standards").json()["types"] if t["id"] == "role")["can_carry_admin_roles"] is False

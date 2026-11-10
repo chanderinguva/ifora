@@ -32,7 +32,7 @@ def test_restore_copies_a_version_into_the_draft_only(admin, rkey):
     assert body["draft"]["steps"][0]["config"]["message"] == "first"
     assert body["published_version"] == 2                                         # nothing was published
     assert admin.get(f"/admin/recipes/{rid}/versions/2").json()["definition"]["steps"][0]["config"]["message"] == "second"
-    ev = admin.get("/admin/audit?action=RECIPE_UPDATED").json()["items"]
+    ev = admin.get("/admin/audit?action=RECIPE_UPDATED").json()["Resources"]
     assert any((e.get("metadata") or {}).get("restored_version") == 1 for e in ev)
 
 

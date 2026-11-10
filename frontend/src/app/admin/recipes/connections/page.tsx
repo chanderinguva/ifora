@@ -30,7 +30,7 @@ export default function ConnectionsPage() {
     http<{ items: Connection[] }>("/admin/recipe-connections").then((r) => setItems(r.items)).catch((e) => setMsg({ ok: false, text: e.message }));
   }, []);
   useEffect(load, [load]);
-  useEffect(() => { http<Page<User>>(`/admin/users${qs({ page_size: 100 })}`).then((p) => setAdmins(p.items.filter((u) => u.is_admin))).catch(() => {}); }, []);
+  useEffect(() => { http<Page<User>>(`/admin/users${qs({ count: 100 })}`).then((p) => setAdmins(p.Resources.filter((u) => u.is_admin))).catch(() => {}); }, []);
 
   async function run(fn: () => Promise<unknown>, ok: string) {
     setMsg(null);

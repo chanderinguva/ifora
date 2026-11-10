@@ -23,6 +23,8 @@ from backend.app.auth.deps import require_admin
 from backend.app.config import settings
 from backend.app.db import get_db
 from backend.app.groups.model import Group
+from backend.app.listing import ListParams, list_params, paginate, sortable
+from backend.app.scim import filter as flt
 from backend.app.profiles import catalog as profile_catalog
 from backend.app.recipes import calls
 from backend.app.recipes import conditions as cond
@@ -41,6 +43,12 @@ def _enabled():
 
 
 router = APIRouter(prefix="/admin/recipes", tags=["recipes"], dependencies=[Depends(_enabled)])
+
+JOB_LIST_ATTRS = {
+    "status": flt.Attr("str", RecipeJob.status), "created_at": flt.Attr("date", RecipeJob.created_at),
+    "started_at": flt.Attr("date", RecipeJob.started_at), "finished_at": flt.Attr("date", RecipeJob.finished_at),
+}
+JOB_SORT = sortable(JOB_LIST_ATTRS, id=RecipeJob.id)
 connections_router = APIRouter(prefix="/admin/recipe-connections", tags=["recipes"], dependencies=[Depends(_enabled)])
 hooks_router = APIRouter(prefix="/hooks/recipes", tags=["recipes"])
 
@@ -244,8 +252,7 @@ def meta(db: Session = Depends(get_db), _: User = Depends(require_admin)):
 def list_jobs(
     recipe_id: Optional[int] = None,
     status: Optional[str] = Query(None, pattern="^(queued|waiting|running|succeeded|failed|cancelled)$"),
-    page: int = Query(1, ge=1, le=100000),
-    page_size: int = Query(25, ge=1, le=100),
+    p: ListParams = Depends(list_params),
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
@@ -254,10 +261,12 @@ def list_jobs(
         q = q.filter(RecipeJob.recipe_id == recipe_id)
     if status:
         q = q.filter(RecipeJob.status == status)
-    total = q.count()
-    rows = q.order_by(RecipeJob.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
-    names = {r.id: r.name for r in db.query(Recipe.id, Recipe.name).filter(Recipe.id.in_({j.recipe_id for j in rows})).all()} if rows else {}
-    return {"items": [_job_dict(j, names.get(j.recipe_id)) for j in rows], "total": total, "page": page, "page_size": page_size}
+
+    def render(rows):
+        names = {r.id: r.name for r in db.query(Recipe.id, Recipe.name).filter(Recipe.id.in_({j.recipe_id for j in rows})).all()} if rows else {}
+        return [_job_dict(j, names.get(j.recipe_id)) for j in rows]
+
+    return paginate(q, p, sort=JOB_SORT, default_order=[RecipeJob.id.desc()], tiebreak=RecipeJob.id, filter_attrs=JOB_LIST_ATTRS, render=render)
 
 
 @router.get("/jobs/{job_id}")

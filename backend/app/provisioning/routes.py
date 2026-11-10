@@ -20,7 +20,9 @@ from backend.app.config import settings
 from backend.app.db import get_db
 from backend.app.groups.model import Group
 from backend.app.profiles import catalog as profile_catalog
+from backend.app.listing import ListParams, list_params, paginate, sortable
 from backend.app.provisioning import adapters, mapping, service
+from backend.app.scim import filter as flt
 from backend.app.applications.models import Application, ApplicationAssignment
 from backend.app.provisioning.models import ProvisioningApp, ProvisioningLink, ProvisioningTask
 from backend.app.provisioning.presets import PRESETS
@@ -35,6 +37,13 @@ def _enabled():
 
 
 router = APIRouter(prefix="/admin/provisioning-apps", tags=["provisioning"], dependencies=[Depends(_enabled)])
+
+LINK_LIST_ATTRS = {
+    "type": flt.Attr("str", ProvisioningLink.resource_type), "label": flt.Attr("str", ProvisioningLink.label),
+    "remote_id": flt.Attr("str", ProvisioningLink.remote_id), "state": flt.Attr("str", ProvisioningLink.state),
+    "last_synced_at": flt.Attr("date", ProvisioningLink.last_synced_at),
+}
+LINK_SORT = sortable(LINK_LIST_ATTRS, id=ProvisioningLink.id)
 MAX_APPS = 50
 
 
@@ -402,7 +411,7 @@ def remove_assignment(app_id: int, assignment_id: int, request: Request, db: Ses
 
 @router.get("/{app_id}/links")
 def list_links(app_id: int, state: Optional[str] = Query(None, pattern="^(synced|deprovisioned|error)$"), q: str = Query("", max_length=100),
-               limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0), db: Session = Depends(get_db), _: User = Depends(require_admin)):
+               p: ListParams = Depends(list_params), db: Session = Depends(get_db), _: User = Depends(require_admin)):
     _get(db, app_id)
     query = db.query(ProvisioningLink).filter(ProvisioningLink.app_id == app_id)
     if state:
@@ -410,11 +419,11 @@ def list_links(app_id: int, state: Optional[str] = Query(None, pattern="^(synced
     if q.strip():
         like = "%" + q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
         query = query.filter(ProvisioningLink.label.ilike(like, escape="\\"))
-    total = query.count()
-    rows = query.order_by(ProvisioningLink.id.desc()).offset(offset).limit(limit).all()
-    return {"total": total, "items": [{
-        "id": r.id, "type": r.resource_type, "user_id": r.user_id, "group_id": r.group_id, "label": r.label, "remote_id": r.remote_id,
-        "state": r.state, "last_error": r.last_error, "last_synced_at": r.last_synced_at.isoformat() if r.last_synced_at else None} for r in rows]}
+    return paginate(query, p, sort=LINK_SORT, default_order=[ProvisioningLink.id.desc()], tiebreak=ProvisioningLink.id, filter_attrs=LINK_LIST_ATTRS,
+                    render=lambda rows: [{
+                        "id": r.id, "type": r.resource_type, "user_id": r.user_id, "group_id": r.group_id, "label": r.label, "remote_id": r.remote_id,
+                        "state": r.state, "last_error": r.last_error, "last_synced_at": r.last_synced_at.isoformat() if r.last_synced_at else None}
+                        for r in rows])
 
 
 @router.get("/{app_id}/tasks")

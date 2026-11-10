@@ -16,12 +16,12 @@ def test_filter_by_target_and_text(db, admin):
     u = make_user(db, "needle.user@example.com")
     admin.post("/admin/users/bulk", {"user_ids": [u.id], "action": "suspend"})
     r = admin.get(f"/admin/audit?target_type=user&target_id={u.id}").json()
-    assert r["total"] >= 1 and all(e["target_id"] == str(u.id) for e in r["items"])
+    assert r["totalResults"] >= 1 and all(e["target_id"] == str(u.id) for e in r["Resources"])
     by_text = admin.get("/admin/audit?q=suspended").json()
-    assert by_text["total"] >= 1
+    assert by_text["totalResults"] >= 1
     by_actor = admin.get("/admin/audit?q=admin@example.com").json()
-    assert by_actor["total"] >= 1
-    assert admin.get("/admin/audit?q=zzzz-no-such-thing").json()["total"] == 0
+    assert by_actor["totalResults"] >= 1
+    assert admin.get("/admin/audit?q=zzzz-no-such-thing").json()["totalResults"] == 0
 
 
 def test_filter_by_time_window(admin):
@@ -29,9 +29,9 @@ def test_filter_by_time_window(admin):
     future = (now + timedelta(days=1)).isoformat()
     past = (now - timedelta(days=1)).isoformat()
     import urllib.parse as up
-    assert admin.get("/admin/audit?since=" + up.quote(future)).json()["total"] == 0
-    assert admin.get("/admin/audit?since=" + up.quote(past)).json()["total"] >= 1
-    assert admin.get("/admin/audit?until=" + up.quote(past)).json()["total"] == 0
+    assert admin.get("/admin/audit?since=" + up.quote(future)).json()["totalResults"] == 0
+    assert admin.get("/admin/audit?since=" + up.quote(past)).json()["totalResults"] >= 1
+    assert admin.get("/admin/audit?until=" + up.quote(past)).json()["totalResults"] == 0
 
 
 def test_filters_reject_bad_input(admin):
@@ -48,7 +48,7 @@ def test_export_csv_and_it_is_audited(admin):
     assert rows[0][:3] == ["id", "timestamp", "actor_id"] and len(rows) >= 2
     assert all(row[5] == "LOGIN_SUCCESS" for row in rows[1:])
     logged = admin.get("/admin/audit?action=AUDIT_EXPORTED").json()
-    assert logged["total"] == 1 and logged["items"][0]["metadata"]["filters"]["action"] == "LOGIN_SUCCESS"
+    assert logged["totalResults"] == 1 and logged["Resources"][0]["metadata"]["filters"]["action"] == "LOGIN_SUCCESS"
 
 
 def test_export_neutralises_spreadsheet_formulas():

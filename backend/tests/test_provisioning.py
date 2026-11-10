@@ -353,7 +353,7 @@ def test_permanent_error_fails_marks_the_link_audits_and_can_be_retried(db, admi
     run()
     (failed,) = tasks(db, app, "failed")
     assert "400" in failed.last_error and links(db, app)[0].state == "error"
-    assert "PROVISIONING_TASK_FAILED" in admin.get("/admin/audit?limit=50").text
+    assert "PROVISIONING_TASK_FAILED" in admin.get("/admin/audit?count=50").text
     assert admin.post(f"/admin/provisioning-apps/{app['id']}/tasks/{failed.id}/retry").status_code == 403
     assert super_admin.post(f"/admin/provisioning-apps/{app['id']}/tasks/{failed.id}/retry").status_code == 200
     run()
@@ -428,8 +428,8 @@ def test_preview_links_and_tasks_endpoints(db, admin, super_admin, remote):
     assign_user(admin, app, u["id"])
     run()
     got = admin.get(f"/admin/provisioning-apps/{app['id']}/links?q=rae").json()
-    assert got["total"] == 1 and got["items"][0]["state"] == "synced"
-    assert admin.get(f"/admin/provisioning-apps/{app['id']}/links?q=zzz").json()["total"] == 0
+    assert got["totalResults"] == 1 and got["Resources"][0]["state"] == "synced"
+    assert admin.get(f"/admin/provisioning-apps/{app['id']}/links?q=zzz").json()["totalResults"] == 0
     assert admin.get(f"/admin/provisioning-apps/{app['id']}/tasks?status=succeeded").json()["items"][0]["result"] == "created"
     d = admin.get(f"/admin/provisioning-apps/{app['id']}").json()
     assert d["provisioned"] == 1 and d["assigned_users"] == 1

@@ -45,11 +45,11 @@ def test_audit_trail_records_actions_without_secrets(admin):
     admin.post("/admin/users", {"email": "n@example.com", "first_name": "N", "last_name": "N", "password": STRONG})
     gid = admin.post("/admin/groups", {"name": "G"}).json()["id"]
     admin.delete(f"/admin/groups/{gid}")
-    ev = admin.get("/admin/audit?page_size=100").json()
-    actions = [e["action"] for e in ev["items"]]
+    ev = admin.get("/admin/audit?count=100").json()
+    actions = [e["action"] for e in ev["Resources"]]
     for a in ("LOGIN_SUCCESS", "USER_CREATED", "GROUP_CREATED", "GROUP_DELETED"):
         assert a in actions
-    created = admin.get("/admin/audit?action=USER_CREATED").json()["items"][0]
+    created = admin.get("/admin/audit?action=USER_CREATED").json()["Resources"][0]
     assert created["actor_email"] == "admin@example.com" and created["target_type"] == "user"
     assert STRONG not in str(ev)
     assert admin.get("/admin/audit?action=BOGUS").status_code == 422
@@ -58,7 +58,7 @@ def test_audit_trail_records_actions_without_secrets(admin):
 def test_failed_login_is_audited(db, admin):
     make_user(db, "v@example.com")
     Api().login("v@example.com", "WrongPassw0rd!!")
-    assert admin.get("/admin/audit?action=LOGIN_FAILURE").json()["total"] == 1
+    assert admin.get("/admin/audit?action=LOGIN_FAILURE").json()["totalResults"] == 1
 
 
 def test_stats_are_real(admin, db):

@@ -108,7 +108,7 @@ def test_bulk_delete_cannot_reach_other_tenants(db, tenant_b):
 
 def test_admin_api_cannot_see_or_touch_other_tenant_users(db, tenant_b, super_admin):
     other = user_in(tenant_b, "victim@example.com")
-    assert all(u["email"] != "victim@example.com" for u in super_admin.get("/admin/users").json()["items"])
+    assert all(u["email"] != "victim@example.com" for u in super_admin.get("/admin/users").json()["Resources"])
     assert super_admin.get(f"/admin/users/{other.id}").status_code == 404
     assert super_admin.patch(f"/admin/users/{other.id}", {"status": "deprovisioned"}).status_code == 404
     assert super_admin.delete(f"/admin/users/{other.id}").status_code == 404

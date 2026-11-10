@@ -16,7 +16,9 @@ from backend.app.audit.service import record
 from backend.app.auth.deps import require_admin
 from backend.app.config import settings
 from backend.app.db import get_db
+from backend.app.listing import ListParams, list_params, paginate, sortable
 from backend.app.recipes import lookup
+from backend.app.scim import filter as flt
 from backend.app.recipes.models import LookupRow, LookupTable, Recipe, RecipeVersion
 from backend.app.users.model import User
 
@@ -28,6 +30,8 @@ def _enabled():
 
 router = APIRouter(prefix="/admin/lookup-tables", tags=["lookup-tables"], dependencies=[Depends(_enabled)])
 MAX_CSV_BYTES = 1_000_000
+ROW_LIST_ATTRS = {"key_value": flt.Attr("str", LookupRow.key_value), "updated_at": flt.Attr("date", LookupRow.updated_at)}
+ROW_SORT = sortable(ROW_LIST_ATTRS, id=LookupRow.id)
 
 
 class TableBody(BaseModel):
@@ -169,16 +173,15 @@ def delete_table(tid: int, request: Request, db: Session = Depends(get_db), acto
 # ---- rows --------------------------------------------------------------------------------------------------------
 
 @router.get("/{tid}/rows")
-def list_rows(tid: int, q: Optional[str] = Query(None, max_length=100), limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0, le=100_000),
+def list_rows(tid: int, q: Optional[str] = Query(None, max_length=100), p: ListParams = Depends(list_params),
               db: Session = Depends(get_db), _: User = Depends(require_admin)):
     t = _table(db, tid)
     query = db.query(LookupRow).filter(LookupRow.table_id == t.id)
     if q:
         like = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
         query = query.filter(cast(LookupRow.data, String).ilike(like, escape="\\"))
-    total = query.count()
-    rows = query.order_by(LookupRow.id).offset(offset).limit(limit).all()
-    return {"items": [_row_dict(r) for r in rows], "total": total, "limit": limit, "offset": offset}
+    return paginate(query, p, sort=ROW_SORT, default_order=[LookupRow.id], tiebreak=LookupRow.id, filter_attrs=ROW_LIST_ATTRS,
+                    render=lambda rows: [_row_dict(r) for r in rows])
 
 
 @router.post("/{tid}/rows", status_code=201)

@@ -104,9 +104,9 @@ def test_search_paging_and_the_row_limit(admin, monkeypatch):
     tid = mk(admin)
     for c in ("ALPHA", "BETA", "GAMMA_1"):
         add(admin, tid, code=c)
-    assert [r["values"]["code"] for r in admin.get(f"/admin/lookup-tables/{tid}/rows?q=et").json()["items"]] == ["BETA"]
-    assert admin.get(f"/admin/lookup-tables/{tid}/rows?q=%25").json()["total"] == 0              # a wildcard is not a wildcard
-    assert len(admin.get(f"/admin/lookup-tables/{tid}/rows?limit=2").json()["items"]) == 2
+    assert [r["values"]["code"] for r in admin.get(f"/admin/lookup-tables/{tid}/rows?q=et").json()["Resources"]] == ["BETA"]
+    assert admin.get(f"/admin/lookup-tables/{tid}/rows?q=%25").json()["totalResults"] == 0              # a wildcard is not a wildcard
+    assert len(admin.get(f"/admin/lookup-tables/{tid}/rows?count=2").json()["Resources"]) == 2
     monkeypatch.setattr(lookup, "MAX_ROWS", 3)
     assert admin.post(f"/admin/lookup-tables/{tid}/rows", {"values": {"code": "DELTA"}}).status_code == 422
 

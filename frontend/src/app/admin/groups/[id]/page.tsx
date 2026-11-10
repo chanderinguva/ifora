@@ -32,7 +32,7 @@ export default function GroupDetail() {
 
   useEffect(() => {
     http<Group>(`/admin/groups/${id}`).then(apply).catch((e) => setMsg({ ok: false, text: e.message }));
-    http<Page<User>>(`/admin/users${qs({ page_size: 100, status: "active" })}`).then((p) => setCandidates(p.items)).catch(() => {});
+    http<Page<User>>(`/admin/users${qs({ count: 100, status: "active" })}`).then((p) => setCandidates(p.Resources)).catch(() => {});
   }, [id, apply]);
 
   async function run(fn: () => Promise<unknown>, ok: string) {

@@ -8,7 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { PageHeader, Pager, fieldClass, fmt, td, th } from "@/components/bits";
 import { API_URL } from "@/lib/api";
-import { http, qs, type Page } from "@/lib/http";
+import { http, pageQs, qs, type Page } from "@/lib/http";
 import type { AuditEvent } from "@/lib/types";
 
 const PAGE_SIZE = 25;
@@ -45,7 +45,7 @@ export default function AuditPage() {
 
   const load = useCallback(() => {
     setError(null);
-    http<Page<AuditEvent>>(`/admin/audit${qs({ ...params(f), page, page_size: PAGE_SIZE })}`).then(setData).catch((e) => setError(e.message));
+    http<Page<AuditEvent>>(`/admin/audit${qs({ ...params(f), ...pageQs(page, PAGE_SIZE) })}`).then(setData).catch((e) => setError(e.message));
   }, [f, page]);
   useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); }, [load]);
 
@@ -124,7 +124,7 @@ export default function AuditPage() {
               <tr><th className={th}>When</th><th className={th}>Actor</th><th className={th}>Action</th><th className={th}>Target</th><th className={th}>IP</th></tr>
             </thead>
             <tbody>
-              {data?.items.map((e) => (
+              {data?.Resources.map((e) => (
                 <tr key={e.id} className="cursor-pointer border-b align-top last:border-0 hover:bg-accent/30" onClick={() => setOpen(e)}>
                   <td className={td}>{fmt(e.timestamp)}</td>
                   <td className={td}>{e.actor_email ?? (e.actor_id ? `#${e.actor_id}` : "system")}</td>
@@ -133,12 +133,12 @@ export default function AuditPage() {
                   <td className={td}>{e.actor_ip_address ?? "—"}</td>
                 </tr>
               ))}
-              {data && data.items.length === 0 && <tr><td className={td} colSpan={5}>No events match.</td></tr>}
+              {data && data.Resources.length === 0 && <tr><td className={td} colSpan={5}>No events match.</td></tr>}
             </tbody>
           </table>
         </CardContent>
       </Card>
-      {data && <Pager page={page} pageSize={PAGE_SIZE} total={data.total} onPage={setPage} />}
+      {data && <Pager page={page} pageSize={PAGE_SIZE} total={data.totalResults} onPage={setPage} />}
 
       {open && (
         <div className="fixed inset-0 z-40 flex justify-end bg-black/30" onClick={() => setOpen(null)}>

@@ -177,7 +177,7 @@ def test_counter_rollback_is_rejected_and_audited(pk, admin, db):
     passkey_login(pk.auth)  # counter 1
     passkey_login(pk.auth)  # counter 2
     passkey_login(pk.auth, expect=401, counter=1)  # cloned authenticator signature
-    assert admin.get("/admin/audit?action=PASSKEY_COUNTER_ANOMALY").json()["total"] == 1
+    assert admin.get("/admin/audit?action=PASSKEY_COUNTER_ANOMALY").json()["totalResults"] == 1
 
 
 def test_inactive_user_cannot_use_passkey(pk, db):
@@ -278,5 +278,5 @@ def test_admin_reset_clears_passkeys_and_policy(pk, admin, db):
     assert admin.post(f"/admin/users/{pk.user.id}/mfa/reset").status_code == 200
     assert db.query(Passkey).count() == 0
     assert Api().login("member@example.com").json()["success"] is True  # back to password login
-    ev = admin.get("/admin/audit?action=MFA_RESET").json()["items"][0]
+    ev = admin.get("/admin/audit?action=MFA_RESET").json()["Resources"][0]
     assert ev["metadata"]["passkeys_removed"] == 2

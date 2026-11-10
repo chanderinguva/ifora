@@ -49,7 +49,7 @@ export function SamlCard({ appId, onChange }: { appId: number; onChange: () => v
   useEffect(load, [load]);
   useEffect(() => {
     http<{ items: Preset[] }>("/admin/applications/saml/presets").then((r) => setPresets(r.items)).catch(() => {});
-    http<Page<User>>(`/admin/users${qs({ page_size: 100 })}`).then((p) => setUsers(p.items)).catch(() => {});
+    http<Page<User>>(`/admin/users${qs({ count: 100 })}`).then((p) => setUsers(p.Resources)).catch(() => {});
   }, []);
 
   async function run(fn: () => Promise<unknown>, ok: string) {

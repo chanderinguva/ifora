@@ -50,7 +50,7 @@ def test_zone_crud_validation_and_access(super_admin, member):
 def test_zone_changes_are_audited(super_admin):
     zid = zone(super_admin, "Audited", "10.0.0.0/8")
     super_admin.delete(f"/admin/network-zones/{zid}")
-    actions = {e["action"] for e in super_admin.get("/admin/audit?page_size=50").json()["items"]}
+    actions = {e["action"] for e in super_admin.get("/admin/audit?count=50").json()["Resources"]}
     assert {"NETWORK_ZONE_CREATED", "NETWORK_ZONE_DELETED"} <= actions
 
 
@@ -109,7 +109,7 @@ def test_blocked_zone_beats_allowed_and_is_audited(monkeypatch, db, super_admin)
     at_ip(monkeypatch, "10.9.1.1")
     r = m.post(f"/swa/apps/{app_id}/launch")
     assert r.status_code == 403 and "cannot be used from your network" in r.json()["detail"]
-    ev = super_admin.get("/admin/audit?action=APPLICATION_POLICY_DENIED").json()["items"]
+    ev = super_admin.get("/admin/audit?action=APPLICATION_POLICY_DENIED").json()["Resources"]
     assert ev and ev[0]["target_id"] == str(app_id)
 
 
@@ -138,7 +138,7 @@ def test_stale_login_asks_for_reauthentication_and_is_not_audited_as_denial(db, 
     db.commit()
     r = m.post(f"/swa/apps/{app_id}/launch")
     assert r.status_code == 403 and r.json()["detail"] == "reauthentication_required"
-    assert super_admin.get("/admin/audit?action=APPLICATION_POLICY_DENIED").json()["total"] == 0
+    assert super_admin.get("/admin/audit?action=APPLICATION_POLICY_DENIED").json()["totalResults"] == 0
 
 
 # ---- the decision function on its own --------------------------------------------------------------------------------

@@ -118,6 +118,6 @@ def test_template_parameter_validation(db, admin, rkey):
     assert admin.post("/admin/recipes/from-template", {"template_id": "nope", "name": "n", "params": {}}).status_code == 404
     assert admin.post("/admin/recipes/from-template", {**base, "params": {"group": gid}}).status_code == 201
     assert admin.post("/admin/recipes/from-template", {**base, "params": {"group": gid}}).status_code == 409
-    sysgroup = [g for g in admin.get("/admin/groups?page_size=100").json()["items"] if g.get("is_system_group")]
+    sysgroup = [g for g in admin.get("/admin/groups?count=100").json()["Resources"] if g.get("is_system_group")]
     if sysgroup:
         assert admin.post("/admin/recipes/from-template", {**base, "name": "m", "params": {"group": sysgroup[0]["id"]}}).status_code == 422

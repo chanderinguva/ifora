@@ -24,7 +24,7 @@ def test_activation_is_queued_in_a_big_directory_and_the_worker_finishes_it(db, 
         batches += 1
         assert batches < 10
     assert batches >= 4 and len(members(admin, gid)) == 6
-    assert admin.get("/admin/groups").json()["items"][0]["member_count"] == 6
+    assert admin.get("/admin/groups").json()["Resources"][0]["member_count"] == 6
     assert svc.sync_pending_all() == 0
 
 

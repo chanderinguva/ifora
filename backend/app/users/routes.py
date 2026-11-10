@@ -24,7 +24,19 @@ from backend.app.profiles import catalog as profile_catalog
 from backend.app.recipes import events as recipe_events
 from backend.app.profiles.schemas import validate_attributes, validate_password
 from backend.app.config import settings
+from backend.app.listing import ListParams, list_params, paginate, sortable
+from backend.app.scim import filter as flt
 from backend.app.users.model import User
+
+# filterable / sortable attributes of GET /admin/users: the response field names (lower case)
+USER_LIST_ATTRS = {
+    "email": flt.Attr("str", User.email), "username": flt.Attr("str", User.username),
+    "first_name": flt.Attr("str", User.first_name), "last_name": flt.Attr("str", User.last_name),
+    "status": flt.Attr("str", User.status), "is_admin": flt.Attr("bool", User.is_admin),
+    "created_at": flt.Attr("date", User.created_at), "updated_at": flt.Attr("date", User.updated_at),
+    "last_login_at": flt.Attr("date", User.last_login_at),
+}
+USER_SORT = sortable(USER_LIST_ATTRS, id=User.id)
 
 
 def _least_privilege(db: Session, user: User, actor: User) -> None:
@@ -143,8 +155,7 @@ def suggest_identity(first_name: str = Query("", max_length=100), last_name: str
 def list_users(
     q: Optional[str] = Query(None, max_length=100),
     status: Optional[str] = Query(None, pattern=lifecycle.STATUS_PATTERN),
-    page: int = Query(1, ge=1, le=100000),
-    page_size: int = Query(25, ge=1, le=100),
+    p: ListParams = Depends(list_params),
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
@@ -163,9 +174,8 @@ def list_users(
         )
     if status:
         query = query.filter(User.status == status)
-    total = query.count()
-    items = query.order_by(User.id).offset((page - 1) * page_size).limit(page_size).all()
-    return {"items": [u.to_dict() for u in items], "total": total, "page": page, "page_size": page_size}
+    return paginate(query, p, sort=USER_SORT, default_order=[User.id], tiebreak=User.id, filter_attrs=USER_LIST_ATTRS,
+                    render=lambda rows: [u.to_dict() for u in rows])
 
 
 @router.post("", status_code=201)

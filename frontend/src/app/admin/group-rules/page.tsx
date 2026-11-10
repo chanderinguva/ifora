@@ -58,7 +58,7 @@ export default function GroupRulesPage() {
       if (!f.group_rules) return;
       http<{ items: GroupRule[] }>("/admin/group-rules").then((r) => setRules(r.items)).catch((e) => setMsg({ ok: false, text: e.message }));
       http<{ items: ProfileAttribute[] }>("/admin/profile-attributes").then((r) => setAttrs(r.items)).catch(() => {});
-      http<Page<Group>>(`/admin/groups${qs({ page: 1, page_size: 100 })}`).then((r) => setGroups(r.items.filter((g) => !g.is_system_group))).catch(() => {});
+      http<Page<Group>>(`/admin/groups${qs({ count: 100 })}`).then((r) => setGroups(r.Resources.filter((g) => !g.is_system_group))).catch(() => {});
     }).catch((e) => setMsg({ ok: false, text: e.message }));
   }, []);
   useEffect(load, [load]);

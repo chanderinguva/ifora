@@ -179,14 +179,14 @@ def test_administrators_list(db, admin, super_admin):
     db.commit()
     mint(admin)
     d = super_admin.get("/admin/administrators").json()
-    by = {i["email"]: i for i in d["items"]}
+    by = {i["email"]: i for i in d["Resources"]}
     assert {"admin@example.com", "root@example.com", "viagroup@example.com"} <= {e.lower() for e in by}
     via = next(i for e, i in by.items() if e.lower() == "viagroup@example.com")
     assert via["roles"][0]["role"] == "help_desk_admin" and via["roles"][0]["sources"][0]["via"] == "group"
     assert by["admin@example.com"]["active_api_tokens"] == 1 and by["root@example.com"]["is_super_admin"] is True
     assert by["admin@example.com"]["mfa"] is False
-    assert [i["email"] for i in super_admin.get("/admin/administrators?role=help_desk_admin").json()["items"]] == [via["email"]]
-    assert super_admin.get("/admin/administrators?mfa=none").json()["total"] >= 2
+    assert [i["email"] for i in super_admin.get("/admin/administrators?role=help_desk_admin").json()["Resources"]] == [via["email"]]
+    assert super_admin.get("/admin/administrators?mfa=none").json()["totalResults"] >= 2
 
 
 def test_administrators_list_needs_an_admin_who_may_see_security(db, member):

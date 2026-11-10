@@ -127,7 +127,7 @@ function TableView({ table, onChanged, onDeleted, setMsg }: { table: Table; onCh
   const [mode, setMode] = useState<"append" | "replace">("append");
 
   const load = useCallback(() => {
-    http<{ items: Row[]; total: number }>(`/admin/lookup-tables/${table.id}/rows${qs({ q, limit: PAGE, offset })}`).then((r) => { setRows(r.items); setTotal(r.total); }).catch((e) => setMsg({ ok: false, text: e.message }));
+    http<{ Resources: Row[]; totalResults: number }>(`/admin/lookup-tables/${table.id}/rows${qs({ q, startIndex: offset + 1, count: PAGE })}`).then((r) => { setRows(r.Resources); setTotal(r.totalResults); }).catch((e) => setMsg({ ok: false, text: e.message }));
   }, [table.id, q, offset, setMsg]);
   useEffect(() => { const t = setTimeout(load, 200); return () => clearTimeout(t); }, [load]);
 

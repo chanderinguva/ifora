@@ -164,7 +164,7 @@ def test_audit_never_contains_secrets(admin):
     c = mk(admin, client_type="confidential")
     admin.post(f"/admin/oidc/clients/{c['id']}/secrets", {})
     admin.patch(f"/admin/oidc/clients/{c['id']}", {"status": "disabled"})
-    body = admin.get("/admin/audit?page_size=100").text
+    body = admin.get("/admin/audit?count=100").text
     for a in ("OIDC_CLIENT_CREATED", "OIDC_CLIENT_SECRET_ROTATED", "OIDC_CLIENT_UPDATED"):
         assert a in body
     assert c["client_secret"] not in body and "idf_cs_" not in body
