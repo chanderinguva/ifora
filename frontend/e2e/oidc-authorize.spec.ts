@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { ADMIN_EMAIL, ADMIN_PASSWORD, loginAsAdmin } from "./helpers";
+import { ADMIN_EMAIL, ADMIN_PASSWORD, loginAsAdmin, passSecondStep } from "./helpers";
 
 const name = `E2E consent app ${Date.now()}`;
 // loopback http is a legal redirect URI and resolves, so the browser really follows the redirect
@@ -33,6 +33,7 @@ test("authorize: sign in on the way, consent screen, allow and deny return to th
   await p.locator("#email").fill(ADMIN_EMAIL);
   await p.locator("#password").fill(ADMIN_PASSWORD);
   await p.getByRole("button", { name: "Sign In", exact: true }).click();
+  await passSecondStep(p);   // the admin has a second factor; the code is single-use
   await expect(p.getByTestId("consent-card")).toContainText(`${name} wants access`);
   await expect(p.getByTestId("consent-scopes")).toContainText("Your email address");
   await p.getByRole("button", { name: "Allow" }).click();

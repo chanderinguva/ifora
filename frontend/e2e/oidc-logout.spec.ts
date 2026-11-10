@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "crypto";
 import { expect, test } from "@playwright/test";
-import { ADMIN_EMAIL, ADMIN_PASSWORD, loginAsAdmin } from "./helpers";
+import { ADMIN_EMAIL, ADMIN_PASSWORD, loginAsAdmin, passSecondStep } from "./helpers";
 
 const name = `E2E logout app ${Date.now()}`;
 const CB = "http://localhost:3000/e2e-callback";
@@ -9,7 +9,7 @@ const verifier = randomBytes(32).toString("base64url");
 const challenge = createHash("sha256").update(verifier).digest("base64url");
 
 test("prompt=login forces a new sign-in, and RP-initiated logout confirms, signs out and returns to the app", async ({ page, browser, request }) => {
-  test.setTimeout(150_000); // two real sign-ins plus client set-up
+  test.setTimeout(240_000); // three real sign-ins (each waits for a fresh TOTP step) plus client set-up
   page.on("dialog", (d) => d.accept());
   await loginAsAdmin(page);
   await page.goto("/admin/oidc-clients");
@@ -35,6 +35,7 @@ test("prompt=login forces a new sign-in, and RP-initiated logout confirms, signs
   await p.locator("#email").fill(ADMIN_EMAIL);
   await p.locator("#password").fill(ADMIN_PASSWORD);
   await p.getByRole("button", { name: "Sign In", exact: true }).click();
+  await passSecondStep(p);   // the admin has a second factor; the code is single-use
   await p.waitForURL(/dashboard/);
   await p.goto(authUrl({}));
   await p.waitForURL(/e2e-callback/);
@@ -46,6 +47,7 @@ test("prompt=login forces a new sign-in, and RP-initiated logout confirms, signs
   await p.locator("#email").fill(ADMIN_EMAIL);
   await p.locator("#password").fill(ADMIN_PASSWORD);
   await p.getByRole("button", { name: "Sign In", exact: true }).click();
+  await passSecondStep(p);   // the admin has a second factor; the code is single-use
   await p.waitForURL(/e2e-callback/);
   const back = new URL(p.url());
   expect(back.searchParams.get("state")).toBe("s2");

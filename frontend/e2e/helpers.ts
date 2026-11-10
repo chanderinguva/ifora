@@ -17,7 +17,7 @@ export const ADMIN_TOTP_SECRET = process.env.ADMIN_TOTP_SECRET ?? "";
 let lastTotpStep = -1;
 
 /** Answer the second step if the account asks for it. A code is single-use, so wait for a fresh 30 s step. */
-async function passSecondStep(page: Page) {
+export async function passSecondStep(page: Page) {
   const field = page.locator("#mfa-code");
   const asked = await field.waitFor({ state: "visible", timeout: 4000 }).then(() => true, () => false);
   if (!asked) return;
