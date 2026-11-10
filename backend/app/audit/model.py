@@ -16,6 +16,8 @@ class AuditAction(str, Enum):
     """Types of audit actions."""
 
     USER_CREATED = "USER_CREATED"
+    USERS_EXPORTED = "USERS_EXPORTED"
+    USERS_IMPORTED = "USERS_IMPORTED"
     USER_UPDATED = "USER_UPDATED"
     USER_DEACTIVATED = "USER_DEACTIVATED"
     USER_ACTIVATED = "USER_ACTIVATED"
@@ -258,6 +260,8 @@ class AuditEvent(TenantOwned, Base):
         }
         user_actions = {
             AuditAction.USER_CREATED,
+            AuditAction.USERS_EXPORTED,
+            AuditAction.USERS_IMPORTED,
             AuditAction.USER_UPDATED,
             AuditAction.USER_DEACTIVATED,
             AuditAction.USER_ACTIVATED,

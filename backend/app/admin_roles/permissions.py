@@ -58,6 +58,7 @@ ROLE_IDS = tuple(ROLES)
 _NEVER = {
     ("help_desk_admin", "POST", "/admin/users"),
     ("help_desk_admin", "DELETE", "/admin/users/{user_id}"),
+    ("help_desk_admin", "POST", "/admin/users/import"),
 }
 
 

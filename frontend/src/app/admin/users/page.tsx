@@ -13,6 +13,7 @@ import { Badge, PageHeader, Pager, fieldClass, fmt, td, th } from "@/components/
 import { useCurrentUser } from "@/components/auth-guard";
 import { http, qs, type Page } from "@/lib/http";
 import { AttrField, toApi } from "@/components/attr-field";
+import { ImportPanel, UserCsvButtons } from "@/components/user-csv";
 import { UserLifecycle } from "@/components/user-lifecycle";
 import { USER_STATUSES, statusTone, type Group, type ProfileAttribute, type User } from "@/lib/types";
 
@@ -26,6 +27,7 @@ export default function UsersPage() {
   const [page, setPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [picked, setPicked] = useState<Set<number>>(new Set());
   const [note, setNote] = useState<string | null>(null);
   const toggle = (id: number) => setPicked((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
@@ -59,11 +61,13 @@ export default function UsersPage() {
   return (
     <div>
       <PageHeader title="Users">
+        <UserCsvButtons q={q} status={status} onToggleImport={() => setImporting((v) => !v)} onError={(m) => setError(m)} />
         <Button onClick={() => setCreating((v) => !v)}>
           <Plus className="mr-1 h-4 w-4" /> New user
         </Button>
       </PageHeader>
 
+      {importing && <ImportPanel onClose={() => setImporting(false)} onImported={load} onError={(m) => setError(m)} />}
       {creating && (
         <CreateUser
           canMakeAdmin={me.is_super_admin}
