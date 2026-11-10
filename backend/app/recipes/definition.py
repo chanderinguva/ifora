@@ -26,6 +26,7 @@ from backend.app.recipes.models import RecipeConnection
 
 MAX_STEPS = 30
 MAX_NESTING = 3
+MAX_ELSE_IF = 10  # "else if" links in one chain; they do not count toward MAX_NESTING
 MAX_DEFINITION_BYTES = 65536
 _ID = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 
@@ -418,7 +419,7 @@ def validate_definition(db: Session, definition: Any, *, for_publish: bool = Fal
     variables: set = set()
     mode = {"handler": False, "loop": False}
 
-    def walk(steps: Any, depth: int) -> List[dict]:
+    def walk(steps: Any, depth: int, chain: int = 0) -> List[dict]:
         if not isinstance(steps, list):
             raise DefinitionError("steps must be a list")
         out = []
@@ -426,7 +427,7 @@ def validate_definition(db: Session, definition: Any, *, for_publish: bool = Fal
             count[0] += 1
             if count[0] > MAX_STEPS:
                 raise DefinitionError(f"at most {MAX_STEPS} steps")
-            if not isinstance(st, dict) or set(st) - {"id", "type", "name", "note", "config", "on_error", "max_attempts", "then", "else"}:
+            if not isinstance(st, dict) or set(st) - {"id", "type", "name", "note", "config", "on_error", "max_attempts", "then", "else", "else_if"}:
                 raise DefinitionError("a step has unknown fields")
             sid, stype = st.get("id"), st.get("type")
             if not isinstance(sid, str) or not _ID.match(sid):
@@ -484,7 +485,17 @@ def validate_definition(db: Session, definition: Any, *, for_publish: bool = Fal
                     raise DefinitionError(f"{where}: {e}")
             if stype == "wait" and cfg["amount"] * WAIT_UNIT_MINUTES[cfg["unit"]] > MAX_WAIT_MINUTES:
                 raise DefinitionError(f"{where}: wait at most 7 days")
+            if st.get("else_if") is not None and st.get("else_if") is not True:
+                raise DefinitionError(f"{where}: else_if must be true or omitted")
+            link = st.get("else_if") is True
+            if link and (stype != "condition" or chain < 1 or len(steps) != 1):
+                raise DefinitionError(f"{where}: an 'else if' must be the only step in the 'otherwise' lane of a condition")
+            if link and chain > MAX_ELSE_IF:
+                raise DefinitionError(f"an else-if chain can have at most {MAX_ELSE_IF} links")
             if stype == "condition":
+                if link:
+                    depth -= 1  # a link sits at its parent's level: chains do not eat the nesting budget
+                    node["else_if"] = True
                 if depth >= MAX_NESTING:
                     raise DefinitionError(f"conditions can be nested at most {MAX_NESTING} deep")
                 try:
@@ -498,7 +509,7 @@ def validate_definition(db: Session, definition: Any, *, for_publish: bool = Fal
                 except tpl.TemplateError as e:
                     raise DefinitionError(f"{where}: {e}")
                 node["then"] = walk(st.get("then") or [], depth + 1)
-                node["else"] = walk(st.get("else") or [], depth + 1)
+                node["else"] = walk(st.get("else") or [], depth + 1, chain + 1 if link else 1)
             elif stype == "handle_errors":
                 if depth >= MAX_NESTING:
                     raise DefinitionError(f"blocks can be nested at most {MAX_NESTING} deep")

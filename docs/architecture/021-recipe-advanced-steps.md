@@ -199,3 +199,9 @@ A `handle_errors` step wraps part of the flow: `then` holds the **monitored step
 - **Rules.** `error.message` / `error.step_id` only in on-error steps (still untrusted text: the ADR 008 taint rule applies). On-error steps follow the recipe-level handler restrictions (no approvals, loops, waits, throttles, calls). Outputs and variables of the monitored steps are not visible after the block or in the on-error steps (they may not have run); what ran before the block stays visible. Blocks nest within the existing nesting limit; publishing needs at least one monitored step.
 - **UI.** Studio only (add menu "Handle errors"; the classic editor does not offer it). Flow diagram shows "Monitored" / "On error".
 - Tests: `backend/tests/test_recipe_scoped_errors.py` (7), `frontend/e2e/recipe-studio-scoped-errors.spec.ts`.
+
+## Implemented: else-if chains (WP-010)
+A condition's "Otherwise" lane may hold exactly one condition flagged `else_if: true`; that is one link of a chain (`if / else if / else if / else`). No new step type and no engine change: the chain compiles as nested conditions, so exactly one branch runs and the first match wins.
+- Validation: the flag is only legal on a condition that is the sole step of another condition's `else` lane; at most 10 links per chain. A link sits at its parent's nesting level, so a long chain does not use up the nesting limit (3).
+- Studio: the "Otherwise" lane has an **+ Else if** button; links render flat under their condition, each selectable (same condition form) and deletable (deleting a link removes the links after it). A link cannot be dragged out, and nothing else can be dropped into a lane that holds one.
+- As with any condition, steps inside a branch are not removed from view of later steps by the validator (pre-existing behaviour, unchanged here).

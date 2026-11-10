@@ -135,7 +135,7 @@ const pathOf = (def: Definition, id: string) => pathTo(def.steps, id) ?? pathTo(
 export function laneDepth(def: Definition, ref: LaneRef): number {
   if (!ref.owner) return 0;
   const p = pathOf(def, ref.owner);
-  return p ? p.filter((x) => isBranching(x) || x.type === "for_each_member").length : 0;
+  return p ? p.filter((x) => !x.else_if && (isBranching(x) || x.type === "for_each_member")).length : 0;  // an else-if sits at its parent's level
 }
 /** Is this lane one of a Handle errors block's "on error" lanes, or nested inside one? (Same rules as the recipe-level error steps.) */
 export function laneInCatch(def: Definition, ref: LaneRef): boolean {
@@ -152,8 +152,8 @@ export function laneInLoop(def: Definition, ref: LaneRef): boolean {
 
 /** How many levels below this step the deepest if/else or approval sits (0 = the step itself is one; -1 = there is none). */
 function branchHeight(s: StepNode): number {
-  const kids = [...(s.then ?? []), ...(s.else ?? [])].map(branchHeight).filter((h) => h >= 0);
-  const inner = kids.length ? Math.max(...kids) + 1 : -1;
+  const kids = [...(s.then ?? []), ...(s.else ?? [])].map((k) => [branchHeight(k), k.else_if ? 0 : 1]).filter(([h]) => h >= 0).map(([h, up]) => h + up);  // an else-if adds no level
+  const inner = kids.length ? Math.max(...kids) : -1;
   return isBranching(s) ? Math.max(0, inner) : isLoop(s) ? inner : -1;
 }
 
@@ -190,6 +190,8 @@ export function moveProblem(def: Definition, id: string, ref: LaneRef, index: nu
   if (!me) return "That step no longer exists";
   const step = me[me.length - 1];
   if (ref.owner && (ref.owner === id || flat([step]).some((s) => s.id === ref.owner))) return "A step cannot be moved inside itself";
+  if (step.else_if) return "An else-if belongs to its condition; delete it there instead";
+  if (laneSteps(def, ref).some((x) => x.else_if)) return "That lane holds an else-if; add steps inside the else-if instead";
   const d = laneDepth(def, ref);
   const h = branchHeight(step);
   if (h >= 0 && d + h >= maxNesting) return `Steps can be nested ${maxNesting} levels deep at most`;
