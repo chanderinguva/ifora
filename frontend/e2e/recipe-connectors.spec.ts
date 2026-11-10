@@ -105,3 +105,41 @@ test("the editor offers the connector action step and its outputs become datapil
   await page.getByTestId("connections-table").locator("tr", { hasText: name }).getByRole("button", { name: "Delete" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Connection deleted" })).toBeVisible();
 });
+
+test("a Slack bot-token connection is offered as Slack actions, and the older webhook step explains why it is not listed", async ({ page }) => {
+  const name = `E2E Slack ${stamp}`;
+  const recipeName = `E2E slack step ${stamp}`;
+  await loginAsAdmin(page);
+  page.on("dialog", (d) => d.accept());
+
+  await page.goto("/admin/recipes/connections");
+  await page.getByRole("button", { name: "Connect Slack" }).click();
+  const form = page.getByTestId("connector-connection-editor");
+  await form.getByLabel("Name", { exact: true }).fill(name);
+  await form.getByLabel(/Bot token/).fill("xoxb-e2e-fake-token-value");
+  await form.getByRole("button", { name: "Save connection" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Connection saved" })).toBeVisible();
+
+  await page.goto("/admin/recipes");
+  await page.getByRole("button", { name: "New recipe" }).click();
+  await page.locator("#rc-name").fill(recipeName);
+  await page.getByRole("button", { name: "Create and open builder" }).click();
+  await page.getByRole("button", { name: "Add a step", exact: true }).first().click();
+
+  // the connection's actions are in the menu, under the connection's name
+  const menu = page.getByTestId("studio-menu");
+  await expect(menu.getByRole("menuitem", { name: `${name}: Post a message`, exact: true })).toBeVisible();
+
+  // the older step is labelled as the webhook one, and tells you where the bot-token connection went
+  await menu.getByRole("menuitem", { name: "Send a Slack message (incoming webhook)", exact: true }).click();
+  const hint = page.getByTestId("slack-webhook-hint");
+  await expect(hint).toContainText("incoming webhook");
+  await expect(hint).toContainText("Slack → Post a message");
+
+  await page.goto("/admin/recipes");
+  await page.getByTestId("recipes-table").locator("tr", { hasText: recipeName }).getByRole("button", { name: "Delete" }).click();
+  await expect(page.getByTestId("recipes-table")).not.toContainText(recipeName);
+  await page.goto("/admin/recipes/connections");
+  await page.getByTestId("connections-table").locator("tr", { hasText: name }).getByRole("button", { name: "Delete" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Connection deleted" })).toBeVisible();
+});
