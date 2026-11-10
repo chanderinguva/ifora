@@ -1,6 +1,6 @@
 "use client";
 
-import { LayoutDashboard, Users, Shield, ScrollText, Home, Settings, Workflow, AppWindow, SlidersHorizontal, RefreshCw, Send, Zap, LayoutGrid, Globe, Palette, Mail, KeyRound, Inbox, ShieldCheck } from "lucide-react";
+import { UserCog, LayoutDashboard, Users, Shield, ScrollText, Home, Settings, Workflow, AppWindow, SlidersHorizontal, RefreshCw, Send, Zap, LayoutGrid, Globe, Palette, Mail, KeyRound, Inbox, ShieldCheck } from "lucide-react";
 import { AppShell, type NavGroup } from "./app-shell";
 import { useCurrentUser } from "./auth-guard";
 import { inAdminView } from "@/lib/roles";
@@ -15,6 +15,7 @@ export const ADMIN_NAV: NavGroup[] = [
     items: [
       { href: "/admin/users", area: "users", label: "Users", icon: Users },
       { href: "/admin/groups", area: "groups", label: "Groups", icon: Shield },
+      { href: "/admin/roles", area: "roles", label: "Roles", icon: UserCog },   // the "roles" area is only ever held by super administrators
       { href: "/admin/profile-editor", area: "directory_settings", label: "Profile editor", icon: SlidersHorizontal },
       { href: "/admin/group-rules", area: "groups", label: "Group rules", icon: Workflow },
     ],
