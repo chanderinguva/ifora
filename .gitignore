@@ -81,3 +81,10 @@ frontend/test-results/
 frontend/playwright-report/
 .next/
 *.tsbuildinfo
+
+# Project docs stay local. The repo tracks only README.md and the release notes.
+docs/
+/*.md
+!/README.md
+!/RELEASE_NOTES.md
+!/CHANGELOG.md
