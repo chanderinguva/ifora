@@ -12,7 +12,7 @@ MAX_RESULTS = 200
 def service_provider_config() -> Dict[str, Any]:
     return {
         "schemas": [SPC_URN],
-        "documentationUri": "https://github.com/chanderinguva/identityforge/blob/main/docs/architecture/007-scim-server.md",
+        "documentationUri": "https://github.com/chanderinguva/ifora/blob/main/docs/architecture/007-scim-server.md",
         "patch": {"supported": True},
         "bulk": {"supported": True, "maxOperations": 100, "maxPayloadSize": 1048576},
         "filter": {"supported": True, "maxResults": MAX_RESULTS},
