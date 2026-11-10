@@ -20,6 +20,7 @@ from backend.app.recipes.http_client import EgressBlocked, EgressPolicy, HttpFai
 from backend.app.recipes.redact import redact, scrub
 
 _CTRL = re.compile(r"[\x00-\x1f\x7f]")
+_CTRL_TEXT = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")   # multiline text may also hold \t \n \r
 _FULL = re.compile(r"^\{([a-z][a-z0-9_]*)\}$")
 _HOST = re.compile(r"^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$")
 MAX_JSON_BYTES = 65536
@@ -103,7 +104,9 @@ def _coerce(i: Input, v: Any) -> Any:
         return n
     if isinstance(v, bool) or not isinstance(v, (str, int)):
         raise ConnectorError(f"'{i.label}' must be text")
-    s = _clean(str(v), f"'{i.label}'")
+    s = str(v)
+    if (_CTRL_TEXT if i.multiline else _CTRL).search(s):
+        raise ConnectorError(f"'{i.label}' contains control characters")
     if len(s) > i.max_length:
         raise ConnectorError(f"'{i.label}' is longer than {i.max_length} characters")
     if i.type == "select":

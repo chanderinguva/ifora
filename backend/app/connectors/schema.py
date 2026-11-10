@@ -56,6 +56,7 @@ class Input(_Strict):
     minimum: Optional[int] = None
     maximum: Optional[int] = None
     options: List[str] = Field(default_factory=list, max_length=50)
+    multiline: bool = False   # free text that may hold newlines and tabs; only allowed for inputs used in the JSON body
 
 
 class Output(_Strict):
@@ -220,6 +221,8 @@ def validate_connector(raw: Any) -> Connector:
                 raise DefinitionInvalid(f"{where}: input '{p}' is used in the path, so it must be required")
         for i in a.inputs:
             iw = f"{where} input '{i.key}'"
+            if i.multiline and (i.type != "string" or any(i.key in placeholders(t) for t in [a.path, *a.query.values()])):
+                raise DefinitionInvalid(f"{iw}: multiline is only for string inputs used in the body")
             if i.type == "string" and not i.pattern:
                 raise DefinitionInvalid(f"{iw}: string inputs need a pattern")
             if i.pattern:

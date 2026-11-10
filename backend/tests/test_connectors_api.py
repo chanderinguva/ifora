@@ -166,6 +166,21 @@ def test_step_is_hidden_from_the_editor_palette(admin):
         assert "connector_action" not in dump(r.json())
 
 
+def test_jira_connection_uses_basic_auth_against_its_site_host(admin, db, _remote):
+    import base64
+
+    r = admin.post("/admin/connectors/jira/connections", {"name": "jira", "config": {"site": "acme", "username": "bot@example.com"}, "secrets": {"password": "ATATT_TOKEN_1"}})
+    assert r.status_code == 201, r.text
+    assert r.json()["allowed_host"] == "acme.atlassian.net" and "ATATT_TOKEN_1" not in r.text
+    assert admin.post(f"/admin/recipe-connections/{r.json()['id']}/test").json()["ok"] is True
+    (req,) = _remote.requests
+    assert req.headers["host"] == "acme.atlassian.net" and str(req.url.path) == "/rest/api/3/myself"
+    assert req.headers["authorization"] == "Basic " + base64.b64encode(b"bot@example.com:ATATT_TOKEN_1").decode()
+    assert "ATATT_TOKEN_1" not in dump([a.event_metadata for a in db.query(AuditEvent).all()])
+    bad = admin.post("/admin/connectors/jira/connections", {"name": "j2", "config": {"site": "evil.com/x", "username": "bot@example.com"}, "secrets": {"password": "t"}})
+    assert bad.status_code == 422
+
+
 def test_members_cannot_reach_the_connector_api(member):
     assert member.get("/admin/connectors").status_code in (401, 403)
     assert member.post("/admin/connectors/github/connections", {"name": "x", "config": {"org": "acme"}, "secrets": {"token": "t"}}).status_code in (401, 403)

@@ -65,6 +65,7 @@ def test_public_view_has_no_secrets_or_credentials():
     ("authorization static header", lambda d: d["headers"].update(Authorization="x"), "header"),
     ("placeholder in static header", lambda d: d["headers"].update({"X-Org": "{org}"}), "header"),
     ("error code out of range", lambda d: action(d, "get_user")["errors"].update({200: "x"}), "error codes"),
+    ("multiline input in path", lambda d: action(d, "get_user")["inputs"][0].update(multiline=True), "multiline"),
     ("unknown field", lambda d: d.update(webhook="https://evil.example"), "extra"),
 ])
 def test_validator_rejects_unsafe_definitions(name, fn, fragment):
