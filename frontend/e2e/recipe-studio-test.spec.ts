@@ -11,7 +11,6 @@ test("test results on the cards, step notes, handle-errors section and restoring
   await page.getByRole("button", { name: "New recipe" }).click();
   await page.locator("#rc-name").fill(recipeName);
   await page.getByRole("button", { name: "Create and open builder" }).click();
-  await page.getByTestId("try-studio").click();
 
   const cards = page.getByTestId("studio-card");
   const msg = page.getByLabel("Message", { exact: true });

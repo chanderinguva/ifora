@@ -12,7 +12,6 @@ test("build a recipe in the studio editor: add, nest, duplicate, undo, delete, t
   await page.locator("#rc-name").fill(recipeName);
   await page.getByRole("button", { name: "Create and open builder" }).click();
   await expect(page.getByRole("heading", { name: recipeName })).toBeVisible();
-  await page.getByTestId("try-studio").click();
   await expect(page.getByTestId("studio")).toBeVisible();
 
   const cards = page.getByTestId("studio-card");

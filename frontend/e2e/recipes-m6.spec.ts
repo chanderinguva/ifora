@@ -2,12 +2,12 @@ import { readFileSync } from "fs";
 import { expect, test } from "@playwright/test";
 import { loginAsAdmin } from "./helpers";
 
-// R-M6: start from a template, look at the flow diagram, export the recipe and import it again.
+// R-M6: start from a template, look at it in the studio, export the recipe and import it again.
 const run = Date.now();
 const groupName = `E2E Tpl Group ${run}`;
 const recipeName = `E2E template recipe ${run}`;
 
-test("template -> flow diagram -> export -> import", async ({ page }) => {
+test("template -> studio -> export -> import", async ({ page }) => {
   test.setTimeout(120_000);
   page.on("dialog", (d) => d.accept());
   await loginAsAdmin(page);
@@ -27,16 +27,8 @@ test("template -> flow diagram -> export -> import", async ({ page }) => {
   await page.getByRole("button", { name: "Create draft from template" }).click();
   await expect(page.getByRole("heading", { name: recipeName })).toBeVisible();
 
-  // flow diagram shows the trigger, the approval and both branches
-  await page.getByRole("tab", { name: "Flow diagram" }).click();
-  const flow = page.getByTestId("flow-diagram");
-  await expect(flow).toContainText("When: A user is created");
-  await expect(flow).toContainText("Wait for approval");
-  await expect(flow).toContainText("Approved");
-  await expect(flow).toContainText("Denied / no answer");
-  // clicking a node returns to the editable step
-  await flow.getByRole("button", { name: "Open step s2" }).click();
-  await expect(page.locator("#step-s2")).toBeVisible();
+  // the template opens straight in the studio editor, with its approval step on the canvas
+  await expect(page.getByTestId("studio")).toContainText("Wait for approval");
 
   // export downloads a secret-free file
   const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Export" }).click()]);

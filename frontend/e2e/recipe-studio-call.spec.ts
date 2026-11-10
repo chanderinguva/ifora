@@ -11,7 +11,6 @@ async function createRecipe(page: import("@playwright/test").Page, name: string)
   await page.getByRole("button", { name: "New recipe" }).click();
   await page.locator("#rc-name").fill(name);
   await page.getByRole("button", { name: "Create and open builder" }).click();
-  await page.getByTestId("try-studio").click();
   // next dev compiles the studio page on first use and then reloads it, which drops edits made meanwhile: reload once so it is warm
   await expect(page.getByTestId("studio-trigger")).toBeVisible();
   await page.reload();

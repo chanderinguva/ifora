@@ -12,7 +12,7 @@ import { ConnectorActionForm, connectorStartingConfig } from "@/components/recip
 import { OPERATOR_LABELS, decisionPills, stepPills, stepsBefore, type Comparison, type Connection, type Definition, type Pill, type RecipeMeta, type StepNode } from "@/lib/recipes";
 import type { Group } from "@/lib/types";
 
-// Forms shared by the classic builder and the studio editor.
+// Step and trigger forms used by the studio editor.
 
 export type Ctx = {
   meta: RecipeMeta; groups: Group[]; connections: Connection[]; connectionsAvailable: boolean; trigger: string; root: StepNode[]; other?: StepNode[]; handler?: boolean; inLoop?: boolean; callOutputs?: string[];

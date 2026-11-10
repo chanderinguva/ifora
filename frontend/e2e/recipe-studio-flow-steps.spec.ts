@@ -11,7 +11,6 @@ test("set a variable, use it later, add a wait and a throttle, and run a test wi
   await page.getByRole("button", { name: "New recipe" }).click();
   await page.locator("#rc-name").fill(recipeName);
   await page.getByRole("button", { name: "Create and open builder" }).click();
-  await page.getByTestId("try-studio").click();
 
   // each new step goes into the first slot of the main flow, so add them last-to-first
   const add = async (label: string) => {

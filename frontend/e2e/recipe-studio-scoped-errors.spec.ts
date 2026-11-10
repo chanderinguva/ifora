@@ -10,7 +10,6 @@ test("wrap steps in a Handle errors block, give it error steps, and see the erro
   await page.getByRole("button", { name: "New recipe" }).click();
   await page.locator("#rc-name").fill(recipeName);
   await page.getByRole("button", { name: "Create and open builder" }).click();
-  await page.getByTestId("try-studio").click();
   await page.getByTestId("studio-trigger").waitFor();
   await page.waitForLoadState("networkidle");
   await page.waitForTimeout(1500);   // the dev server remounts the page once; edits made before that are lost

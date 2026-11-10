@@ -11,7 +11,6 @@ test("datapills: type {{ to search, click a tray chip, drag a chip onto a field,
   await page.getByRole("button", { name: "New recipe" }).click();
   await page.locator("#rc-name").fill(recipeName);
   await page.getByRole("button", { name: "Create and open builder" }).click();
-  await page.getByTestId("try-studio").click();
   await page.getByRole("button", { name: "Add a step", exact: true }).first().click();
   await page.getByRole("menuitem", { name: "Write to the job log", exact: true }).click();
 

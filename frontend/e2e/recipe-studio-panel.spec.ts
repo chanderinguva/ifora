@@ -10,7 +10,6 @@ test("the step panel can be resized by dragging or keyboard, and remembers its w
   await page.getByRole("button", { name: "New recipe" }).click();
   await page.locator("#rc-name").fill(recipeName);
   await page.getByRole("button", { name: "Create and open builder" }).click();
-  await page.getByTestId("try-studio").click();
   await page.getByTestId("studio-trigger").waitFor();
   await page.waitForLoadState("networkidle");
   await page.waitForTimeout(1500);
