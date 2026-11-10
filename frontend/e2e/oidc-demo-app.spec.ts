@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { ADMIN_EMAIL, ADMIN_PASSWORD, loginAsAdmin } from "./helpers";
+import { ADMIN_EMAIL, ADMIN_PASSWORD, loginAsAdmin, passSecondStep } from "./helpers";
 
 // Needs the demo relying party (separate origin, :4000) started with DEMO_ALLOW_CONFIG=1:
 //   DEMO_ALLOW_CONFIG=1 docker compose -f docker/docker-compose.yml --profile demo up -d --build demo-app
@@ -40,6 +40,7 @@ test("a separate third-party app: consent, deny, refresh, withdraw access, revok
   await p.locator("#email").fill(ADMIN_EMAIL);
   await p.locator("#password").fill(ADMIN_PASSWORD);
   await p.getByRole("button", { name: "Sign In", exact: true }).click();
+  await passSecondStep(p);   // the admin has a second factor; the code is single-use
   await expect(p.getByTestId("consent-card")).toContainText(`${name} wants access`);
   await p.getByRole("button", { name: "Allow" }).click();
   await p.waitForURL(`${DEMO}/`);
@@ -72,6 +73,7 @@ test("a separate third-party app: consent, deny, refresh, withdraw access, revok
   await p.locator("#email").fill(ADMIN_EMAIL);
   await p.locator("#password").fill(ADMIN_PASSWORD);
   await p.getByRole("button", { name: "Sign In", exact: true }).click();
+  await passSecondStep(p);   // the admin has a second factor; the code is single-use
   await expect(p.getByTestId("consent-card")).toContainText(`${name} wants access`);
   await p.getByRole("button", { name: "Deny" }).click();
   await p.waitForURL(`${DEMO}/callback**`);
