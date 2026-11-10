@@ -4,8 +4,8 @@ import base64
 import binascii
 import hashlib
 import uuid
-from datetime import datetime, timezone
-from typing import List, Optional
+from datetime import date, datetime, timezone
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode, urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -21,6 +21,7 @@ from backend.app.audit.service import record
 from backend.app.auth.deps import get_current_user, require_admin
 from backend.app.config import settings
 from backend.app.db import get_db
+from backend.app.groups import standards
 from backend.app.groups.model import Group
 from backend.app.oidc.models import OIDCClient
 from backend.app.provisioning.models import ProvisioningApp
@@ -51,6 +52,30 @@ class AppBody(BaseModel):
     status: str = Field("active", pattern="^(active|inactive)$")
     visible: bool = True
     require_assignment: bool = True
+    # Governance metadata. Omitted on update = left as it is (older clients send only the fields above).
+    owner_user_id: Optional[int] = None
+    sensitivity: Optional[str] = None
+    review_by: Optional[date] = None
+    tags: List[str] = Field(default_factory=list)
+    attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+def _apply_meta(db: Session, a: Application, body: AppBody, only_sent: bool) -> None:
+    sent = body.model_fields_set
+    if body.sensitivity is not None and body.sensitivity not in standards.SENSITIVITY:
+        raise HTTPException(status_code=422, detail="sensitivity must be low, medium or high")
+    if body.owner_user_id is not None and db.get(User, body.owner_user_id) is None:
+        raise HTTPException(status_code=422, detail="Owner not found")
+    if not only_sent or "owner_user_id" in sent:
+        a.owner_user_id = body.owner_user_id
+    if not only_sent or "sensitivity" in sent:
+        a.sensitivity = body.sensitivity
+    if not only_sent or "review_by" in sent:
+        a.review_by = body.review_by
+    if not only_sent or "tags" in sent:
+        a.tags = standards.clean_tags(body.tags)
+    if not only_sent or "attributes" in sent:
+        a.attributes = standards.clean_attributes(body.attributes)
 
 
 def _checked(body: AppBody) -> Optional[str]:
@@ -75,6 +100,8 @@ def _dict(db: Session, a: Application) -> dict:
         "saml": {"sp_entity_id": saml.sp_entity_id, "acs_url": saml.acs_url} if saml else None,
         "swa": {"login_url": swa.login_url} if swa else None,
         "provisioning": {"id": prov.id, "kind": prov.kind, "enabled": prov.enabled} if prov else None,
+        "owner_user_id": a.owner_user_id, "sensitivity": a.sensitivity, "review_by": a.review_by.isoformat() if a.review_by else None,
+        "tags": list(a.tags or []), "attributes": dict(a.attributes or {}),
         "has_icon": db.get(ApplicationIcon, a.id) is not None,
         "assigned_users": n(db.query(func.count(ApplicationAssignment.id)).filter(ApplicationAssignment.application_id == a.id, ApplicationAssignment.user_id.is_not(None))),
         "assigned_groups": n(db.query(func.count(ApplicationAssignment.id)).filter(ApplicationAssignment.application_id == a.id, ApplicationAssignment.group_id.is_not(None))),
@@ -90,11 +117,18 @@ def _get(db: Session, app_id: int) -> Application:
 
 
 @router.get("")
-def list_applications(q: str = Query("", max_length=100), db: Session = Depends(get_db), _: User = Depends(require_admin)):
+def list_applications(q: str = Query("", max_length=100), owner_user_id: Optional[int] = Query(None), sensitivity: str = Query("", max_length=8),
+                      tag: str = Query("", max_length=30), db: Session = Depends(get_db), _: User = Depends(require_admin)):
     query = db.query(Application)
     if q.strip():
         like = "%" + q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
         query = query.filter(Application.name.ilike(like, escape="\\"))
+    if owner_user_id is not None:
+        query = query.filter(Application.owner_user_id == owner_user_id)
+    if sensitivity:
+        query = query.filter(Application.sensitivity == sensitivity)
+    if tag:
+        query = query.filter(Application.tags.contains([tag.lower()]))
     return {"items": [_dict(db, a) for a in query.order_by(Application.name).limit(MAX_APPLICATIONS).all()]}
 
 
@@ -105,6 +139,7 @@ def create_application(body: AppBody, request: Request, db: Session = Depends(ge
         raise HTTPException(status_code=409, detail=f"At most {MAX_APPLICATIONS} applications")
     a = Application(public_id=str(uuid.uuid4()), name=body.name.strip(), description=body.description, sign_on_mode=body.sign_on_mode,
                     launch_url=url, status=body.status, visible=body.visible, require_assignment=body.require_assignment, created_by=actor.id)
+    _apply_meta(db, a, body, only_sent=False)
     db.add(a)
     try:
         db.flush()
@@ -186,6 +221,7 @@ def update_application(app_id: int, body: AppBody, request: Request, db: Session
         raise HTTPException(status_code=409, detail="Remove the Secure Web Authentication configuration (and the stored credentials) before changing the sign-on mode")
     a.name, a.description, a.sign_on_mode, a.launch_url = body.name.strip(), body.description, body.sign_on_mode, url
     a.status, a.visible, a.require_assignment, a.updated_at = body.status, body.visible, body.require_assignment, datetime.now(timezone.utc)
+    _apply_meta(db, a, body, only_sent=True)
     try:
         db.flush()
     except IntegrityError:
