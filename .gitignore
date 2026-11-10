@@ -82,10 +82,11 @@ frontend/playwright-report/
 .next/
 *.tsbuildinfo
 
-# Project docs stay local. The repo tracks only README.md and the release notes.
+# Project docs stay local. The repo tracks only README.md, CLAUDE.md and the release notes.
 docs/
-/*.md
+*.md
 !/README.md
+!/CLAUDE.md
 !/RELEASE_NOTES.md
 !/CHANGELOG.md
 
