@@ -190,6 +190,7 @@ cd frontend
 npx playwright test                                 # everything
 npx playwright test e2e/recipe-connectors.spec.ts   # one spec
 ```
+The suite assumes two server modes. Specs that sign in as a freshly created administrator (`admin-roles`, `delegated-resets`, `group-roles`, `nav`, `role-switch`) need the backend started with `ADMIN_MFA_REQUIRED=false`; otherwise that admin is sent to enrol MFA and the spec ends on `/settings#security`. `admin-mfa-policy` needs the default (`true`). Run them in separate passes. Specs sign in as the same admin many times, so run with `--workers=1` when you see "Invalid or expired code" (a TOTP code is single-use).
 Coverage includes sign-in and MFA, admin roles, API tokens, OIDC flows, provisioning, access requests and the recipe studio (drag and drop, else-if, loops, formulas, lookup tables, callable recipes, connectors). The connector spec creates and deletes its own `E2E ...` connection and recipe, using a fake token.
 
 ## Security
