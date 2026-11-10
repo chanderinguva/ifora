@@ -1,12 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
-  <title>IdentityForge</title>
+  <title>Ifora</title>
   <style>
-    .s { stroke: #020817; }
-    .f { fill: #020817; }
-    @media (prefers-color-scheme: dark) { .s { stroke: #F8FAFC; } .f { fill: #F8FAFC; } }
+    .a { fill: #4F46E5; stroke: #4F46E5; }
+    .b { fill: #2563EB; stroke: #2563EB; }
+    .c { fill: #8B5CF6; }
+    @media (prefers-color-scheme: dark) { .a { fill: #818CF8; stroke: #818CF8; } .b { fill: #60A5FA; stroke: #60A5FA; } .c { fill: #A78BFA; } }
   </style>
-  <path class="s" d="M48 14H22V52" stroke-width="9" stroke-linejoin="miter" stroke-linecap="butt"/>
-  <path class="s" d="M22 33H40" stroke-width="9" stroke-linecap="butt"/>
-  <circle class="f" cx="46" cy="47" r="6.5"/>
+  <path class="a" d="M8.5 8.5H38.5V18.5H18.5V38.5H8.5Z" stroke-width="3" stroke-linejoin="round"/>
+  <path class="b" d="M25.5 55.5H55.5V25.5H45.5V45.5H25.5Z" stroke-width="3" stroke-linejoin="round"/>
+  <circle class="c" cx="32" cy="32" r="7.5"/>
 </svg>

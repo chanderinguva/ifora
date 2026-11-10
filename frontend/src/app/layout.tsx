@@ -1,10 +1,16 @@
-/** Root layout for IdentityForge frontend. */
+/** Root layout for the Ifora frontend. */
 
 import type { Metadata, Viewport } from "next";
-import { Lora } from "next/font/google";
+import { Inter, Lora } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { BrandingProvider } from "@/lib/branding";
+
+const inter = Inter({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-inter",
+});
 
 const lora = Lora({
   subsets: ["latin"],
@@ -13,14 +19,14 @@ const lora = Lora({
 });
 
 export const metadata: Metadata = {
-  title: "IdentityForge",
-  description: "Identity and Access Management Platform",
+  title: "Ifora",
+  description: "Identity, secure access and automation in one platform.",
 };
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#020817" },
+    { media: "(prefers-color-scheme: light)", color: "#F8FAFC" },
+    { media: "(prefers-color-scheme: dark)", color: "#0B1220" },
   ],
 };
 
@@ -30,7 +36,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={lora.variable} suppressHydrationWarning>
+    <html lang="en" className={`${inter.variable} ${lora.variable}`} suppressHydrationWarning>
       <body className="font-sans antialiased" suppressHydrationWarning>
         <ThemeProvider
           attribute="class"

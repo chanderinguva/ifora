@@ -32,12 +32,14 @@ test("admin signs in, sees real stats, session cookie is HttpOnly, and logs out"
   await expect(page).toHaveURL(/\/login/);
 });
 
-test("the whole app renders in Lora", async ({ page }) => {
+test("the app UI renders in Inter and the wordmark in Lora", async ({ page }) => {
   await loginAsAdmin(page);
   for (const sel of ["body", "h1", "button"]) {
     const family = await page.locator(sel).first().evaluate((el) => getComputedStyle(el).fontFamily);
-    expect(family).toContain("Lora");
+    expect(family).toContain("Inter");
   }
-  const loaded = await page.evaluate(() => [...document.fonts].some((f) => f.family.includes("Lora") && f.status === "loaded"));
+  const wordmark = await page.getByTestId("logo-wordmark").first().evaluate((el) => getComputedStyle(el).fontFamily);
+  expect(wordmark).toContain("Lora");
+  const loaded = await page.evaluate(() => ["Inter", "Lora"].every((n) => [...document.fonts].some((f) => f.family.includes(n) && f.status === "loaded")));
   expect(loaded).toBe(true);
 });
