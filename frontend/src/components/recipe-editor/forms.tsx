@@ -396,9 +396,8 @@ export function TriggerCard({ def, meta, groups, setTrigger }: { def: Definition
   const filterPills = decisionPills(meta, def.trigger.type, []);
   const isGroupTrig = def.trigger.type.startsWith("group.member_");
   return (
-    <Card className="mb-4" data-testid="trigger-card">
-        <CardHeader className="py-3"><CardTitle className="text-base">When this happens (trigger)</CardTitle></CardHeader>
-        <CardContent className="space-y-3">
+    <Card className="border-0 shadow-none" data-testid="trigger-card">
+        <CardContent className="space-y-3 p-0">
           <Select label="Trigger" value={def.trigger.type} onChange={(v) => setTrigger({ type: v, config: v === "schedule" ? { interval_minutes: 60 } : v === "call" ? { inputs: [], outputs: [] } : v === "login.failed" ? { min_failures: 3 } : v === "user.attribute_changed" ? { attribute: meta.managed_attributes[0]?.key ?? "" } : {}, filter: [] })}>
             {meta.triggers.map((t) => <option key={t.type} value={t.type}>{t.label}</option>)}
           </Select>

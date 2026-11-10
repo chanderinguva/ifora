@@ -14,6 +14,32 @@ import { isLoop, isLoopType, laneSteps } from "@/components/recipe-editor/tree";
 import { statusTone, type Definition, type Job, type JobStep, type RecipeMeta, type StepNode } from "@/lib/recipes";
 import type { Group } from "@/lib/types";
 
+const PANEL_KEY = "recipe-studio-panel-width";
+const PANEL_DEFAULT = 448;
+const PANEL_MIN = 340;
+const clampPanel = (w: number) => Math.round(Math.max(PANEL_MIN, Math.min(w, 960, (typeof window === "undefined" ? 960 : window.innerWidth) - 380)));
+
+/** Drag handle on the panel's left edge: pointer drag, arrow keys, double-click to reset. */
+function PanelResizer({ width, onResize }: { width: number; onResize: (w: number, save?: boolean) => number }) {
+  const start = useRef<{ x: number; w: number } | null>(null);
+  return (
+    <div role="separator" aria-orientation="vertical" aria-label="Resize step settings" aria-valuenow={width} aria-valuemin={PANEL_MIN} tabIndex={0} data-testid="panel-resizer"
+      className="group absolute -left-3 top-0 z-10 hidden h-full w-3 cursor-col-resize touch-none items-center justify-center focus:outline-none lg:flex"
+      onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); start.current = { x: e.clientX, w: width }; }}
+      onPointerMove={(e) => { if (start.current) onResize(start.current.w + (start.current.x - e.clientX)); }}
+      onPointerUp={(e) => { if (start.current) { onResize(start.current.w + (start.current.x - e.clientX), true); start.current = null; } e.currentTarget.releasePointerCapture(e.pointerId); }}
+      onDoubleClick={() => onResize(PANEL_DEFAULT, true)}
+      onKeyDown={(e) => {
+        const step = e.shiftKey ? 96 : 24;
+        if (e.key === "ArrowLeft") { e.preventDefault(); onResize(width + step, true); }
+        else if (e.key === "ArrowRight") { e.preventDefault(); onResize(width - step, true); }
+        else if (e.key === "Home") { e.preventDefault(); onResize(PANEL_DEFAULT, true); }
+      }}>
+      <span className="h-12 w-1 rounded-full bg-border transition-colors group-hover:bg-primary group-focus-visible:bg-primary" />
+    </div>
+  );
+}
+
 type Props = {
   def: Definition; meta: RecipeMeta; ctx: Ctx; groups: Group[]; canEdit: boolean;
   edit: (d: Definition, merge?: boolean) => void; setTrigger: (patch: Partial<Definition["trigger"]>) => void;
@@ -200,6 +226,9 @@ export function Studio(props: Props) {
   const [dragging, setDragging] = useState<string | null>(null);
   const [dragPill, setDragPill] = useState<string | null>(null);
   const [dragWidth, setDragWidth] = useState<number | null>(null);
+  const [panelW, setPanelW] = useState<number>(PANEL_DEFAULT);
+  useEffect(() => { try { const v = Number(localStorage.getItem(PANEL_KEY)); if (v) setPanelW(clampPanel(v)); } catch { /* storage unavailable */ } }, []);
+  const resizePanel = (w: number, save = false) => { const c = clampPanel(w); setPanelW(c); if (save) { try { localStorage.setItem(PANEL_KEY, String(c)); } catch { /* ignore */ } } return c; };
   const registry = useRef<PillRegistry>({ fields: new Map(), active: { current: null } });
   const [note, setNote] = useState<string | null>(null);
   const focusAfter = useRef<string | null>(null);
@@ -363,7 +392,7 @@ export function Studio(props: Props) {
   return (
     <DndContext sensors={sensors} collisionDetection={collide} autoScroll={{ threshold: { x: 0, y: 0.2 }, acceleration: 18 }} onDragStart={(e) => { const id = String(e.active.id); if (id.startsWith("pill:")) { setDragPill(id.slice(5)); return; } setDragging(id); setSel(id); setNote(null); setDragWidth(e.active.rect.current.initial?.width ?? null); }} onDragEnd={dropOn} onDragCancel={() => { setDragging(null); setDragPill(null); }}>
     <PillFieldsContext.Provider value={registry.current}>
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_26rem]" data-testid="studio"
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_var(--panel-w)] lg:gap-6" style={{ "--panel-w": `${panelW}px` } as React.CSSProperties} data-testid="studio"
       onKeyDown={(e) => {
         const t = e.target as HTMLElement;
         if (["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName)) return;
@@ -393,49 +422,61 @@ export function Studio(props: Props) {
         </div>
       </div>
 
-      <aside className="lg:sticky lg:top-4 lg:self-start" aria-label="Step settings" data-testid="studio-panel">
-        <fieldset disabled={!canEdit} className="min-w-0 border-0 p-0">
-          {sel === "trigger" || !located || !panelCtx ? (
-            <TriggerCard def={def} meta={meta} groups={groups} setTrigger={props.setTrigger} />
-          ) : (
-            <Card>
-              <CardHeader className="py-3"><CardTitle className="text-base">{meta.steps.find((m) => m.type === located.step.type)?.label ?? located.step.type}
-                <code className="ml-2 text-xs font-normal text-muted-foreground">{located.step.id}</code></CardTitle></CardHeader>
-              <CardContent className="space-y-3">
-                <StepForm step={located.step} ctx={panelCtx} onChange={(n) => edit(replaceStep(def, n), true)} />
-                {canEdit && located.step.type !== "condition" && <PillTray pills={pillsFor(panelCtx, located.step.id)} />}
-                <FormulaPreview templates={formulasIn(located.step.config)} run={props.previewFormulas} />
-                <div className="space-y-1 border-t pt-3"><Label htmlFor="step-note">Note (optional)</Label>
-                  <textarea id="step-note" rows={2} maxLength={300} placeholder="Why this step exists. Shown on the card; never used when the recipe runs." value={located.step.note ?? ""}
-                    onChange={(e) => edit(replaceStep(def, { ...located.step, note: e.target.value || null }), true)} className="w-full rounded-md border bg-background px-3 py-2 text-sm" /></div>
-                {isAction && (
-                  <div className="grid gap-3 border-t pt-3">
-                    <div className="space-y-1"><Label>If this step fails</Label>
-                      <Select label="On error" value={located.step.on_error ?? "fail"} onChange={(v) => edit(replaceStep(def, { ...located.step, on_error: v as "fail" | "continue" }))}><option value="fail">Fail the job</option><option value="continue">Continue with the next step</option></Select></div>
-                    <div className="space-y-1"><Label>Attempts (retries use exponential back-off)</Label>
-                      <Select label="Attempts" value={located.step.max_attempts ?? 3} onChange={(v) => edit(replaceStep(def, { ...located.step, max_attempts: Number(v) }))}>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}</Select></div>
-                  </div>
-                )}
-                {props.result && (() => {
-                  const rows = rowsByStep.get(located.step.id);
-                  const o = outcomeOf(rows, props.result);
-                  return (
-                    <div className="space-y-2 border-t pt-3" data-testid="step-result-panel">
-                      <div className="flex items-center gap-2 text-sm font-medium">Test result <ResultDot {...o} /> <span className="font-normal text-muted-foreground">{o.text}{props.stale ? " (earlier draft)" : ""}</span></div>
-                      {(rows ?? []).map((r) => (
-                        <div key={`${r.seq}-${r.attempt}`} className="space-y-1 text-xs">
-                          {r.error && <p className="text-destructive">{r.error}</p>}
-                          <div className="text-muted-foreground">Input (redacted)</div><pre className="max-h-40 overflow-auto rounded bg-muted p-2">{JSON.stringify(r.input, null, 2)}</pre>
-                          <div className="text-muted-foreground">Output (redacted)</div><pre className="max-h-40 overflow-auto rounded bg-muted p-2">{JSON.stringify(r.output, null, 2)}</pre>
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })()}
-              </CardContent>
-            </Card>
-          )}
-        </fieldset>
+      <aside className="relative lg:sticky lg:top-4 lg:self-start" aria-label="Step settings" data-testid="studio-panel">
+        <PanelResizer width={panelW} onResize={resizePanel} />
+        <div className="flex max-h-[calc(100vh-2rem)] flex-col overflow-hidden rounded-xl border bg-card shadow-sm">
+          <header className="flex items-center gap-3 border-b px-4 py-3">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">{sel === "trigger" || !located ? <Zap className="h-4 w-4" /> : <FlaskConical className="h-4 w-4" />}</span>
+            <div className="min-w-0">
+              <h2 className="truncate text-sm font-semibold">{sel === "trigger" || !located ? `When: ${trigInfo?.label ?? def.trigger.type}` : (meta.steps.find((m) => m.type === located.step.type)?.label ?? located.step.type)}</h2>
+              <p className="text-xs text-muted-foreground">{sel === "trigger" || !located ? "Trigger" : <>Step <code>{located.step.id}</code></>}</p>
+            </div>
+          </header>
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4">
+            <fieldset disabled={!canEdit} className="min-w-0 space-y-4 border-0 p-0">
+              {sel === "trigger" || !located || !panelCtx ? (
+                <TriggerCard def={def} meta={meta} groups={groups} setTrigger={props.setTrigger} />
+              ) : (
+                <>
+                  <section aria-label="Setup" className="space-y-3">
+                    <StepForm step={located.step} ctx={panelCtx} onChange={(n) => edit(replaceStep(def, n), true)} />
+                    <FormulaPreview templates={formulasIn(located.step.config)} run={props.previewFormulas} />
+                  </section>
+                  {canEdit && located.step.type !== "condition" && <PillTray pills={pillsFor(panelCtx, located.step.id)} />}
+                  <section aria-label="Step options" className="space-y-3 border-t pt-4">
+                    <div className="space-y-1"><Label htmlFor="step-note">Note (optional)</Label>
+                      <textarea id="step-note" rows={2} maxLength={300} placeholder="Why this step exists. Shown on the card; never used when the recipe runs." value={located.step.note ?? ""}
+                        onChange={(e) => edit(replaceStep(def, { ...located.step, note: e.target.value || null }), true)} className="w-full rounded-md border bg-background px-3 py-2 text-sm" /></div>
+                    {isAction && (
+                      <div className="grid gap-3">
+                        <div className="space-y-1"><Label>If this step fails</Label>
+                          <Select label="On error" value={located.step.on_error ?? "fail"} onChange={(v) => edit(replaceStep(def, { ...located.step, on_error: v as "fail" | "continue" }))}><option value="fail">Fail the job</option><option value="continue">Continue with the next step</option></Select></div>
+                        <div className="space-y-1"><Label>Attempts (retries use exponential back-off)</Label>
+                          <Select label="Attempts" value={located.step.max_attempts ?? 3} onChange={(v) => edit(replaceStep(def, { ...located.step, max_attempts: Number(v) }))}>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}</Select></div>
+                      </div>
+                    )}
+                  </section>
+                  {props.result && (() => {
+                    const rows = rowsByStep.get(located.step.id);
+                    const o = outcomeOf(rows, props.result);
+                    return (
+                      <section aria-label="Test result" className="space-y-2 border-t pt-4" data-testid="step-result-panel">
+                        <div className="flex items-center gap-2 text-sm font-medium">Test result <ResultDot {...o} /> <span className="font-normal text-muted-foreground">{o.text}{props.stale ? " (earlier draft)" : ""}</span></div>
+                        {(rows ?? []).map((r) => (
+                          <div key={`${r.seq}-${r.attempt}`} className="space-y-1 text-xs">
+                            {r.error && <p className="text-destructive">{r.error}</p>}
+                            <div className="text-muted-foreground">Input (redacted)</div><pre className="max-h-40 overflow-auto rounded bg-muted p-2">{JSON.stringify(r.input, null, 2)}</pre>
+                            <div className="text-muted-foreground">Output (redacted)</div><pre className="max-h-40 overflow-auto rounded bg-muted p-2">{JSON.stringify(r.output, null, 2)}</pre>
+                          </div>
+                        ))}
+                      </section>
+                    );
+                  })()}
+                </>
+              )}
+            </fieldset>
+          </div>
+        </div>
       </aside>
     </div>
     <DragOverlay dropAnimation={{ duration: 120, easing: "ease-out" }}>
