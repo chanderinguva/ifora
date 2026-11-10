@@ -40,7 +40,7 @@ ACTION_TYPES = (
     "add_to_group", "remove_from_group", "set_attribute", "activate_user", "deactivate_user", "http_request", "log",
     "send_slack", "send_email", "lookup_row", "lookup_write",
 )
-STEP_TYPES = ACTION_TYPES + ("condition", "stop", "for_each_member", "for_each_item", "approval", "set_variable", "wait", "throttle", "call_recipe", "return_data")
+STEP_TYPES = ACTION_TYPES + ("condition", "stop", "for_each_member", "for_each_item", "approval", "set_variable", "wait", "throttle", "call_recipe", "return_data", "handle_errors")
 BRANCHING = ("condition", "approval")  # then/else steps
 MAX_LOOP_MEMBERS = 100
 LOOP_TYPES = ("for_each_member", "for_each_item")
@@ -179,6 +179,10 @@ class _Approval(_Cfg):
     timeout_hours: int = Field(24, ge=1, le=168)  # no decision in time = "denied" branch
 
 
+class _Try(_Cfg):
+    pass
+
+
 class _Stop(_Cfg):
     outcome: Literal["success", "failed"] = "success"
     message: str = Field("", max_length=500)
@@ -231,7 +235,7 @@ STEP_CFG = {
     "add_to_group": _AddRemove, "remove_from_group": _AddRemove, "set_attribute": _SetAttr,
     "activate_user": _UserOnly, "deactivate_user": _UserOnly, "http_request": _Http, "log": _Log,
     "send_slack": _Slack, "send_email": _Email,
-    "condition": _Condition, "stop": _Stop, "for_each_member": _Loop, "for_each_item": _ItemLoop, "approval": _Approval,
+    "condition": _Condition, "handle_errors": _Try, "stop": _Stop, "for_each_member": _Loop, "for_each_item": _ItemLoop, "approval": _Approval,
 }
 
 # datapill catalog ------------------------------------------------------------------------------
@@ -272,7 +276,7 @@ STEP_OUTPUTS = {
     "set_attribute": ["user_id", "attribute", "value", "changed"],
     "activate_user": ["user_id", "changed"], "deactivate_user": ["user_id", "changed"],
     "http_request": ["status_code", "ok", "body", "json"], "log": ["message"],
-    "send_slack": ["ok"], "send_email": ["to", "sent"], "condition": ["result"], "stop": [],
+    "send_slack": ["ok"], "send_email": ["to", "sent"], "condition": ["result"], "handle_errors": [], "stop": [],
     "for_each_member": ["total", "processed"], "for_each_item": ["total", "processed"], "approval": ["decision", "decided_by"],
     "lookup_row": ["found", "count", "row"], "lookup_write": ["action", "changed"],
     "set_variable": ["value"], "wait": ["waited_seconds"], "throttle": ["waited_seconds"], "call_recipe": ["result"], "return_data": [],
@@ -495,6 +499,23 @@ def validate_definition(db: Session, definition: Any, *, for_publish: bool = Fal
                     raise DefinitionError(f"{where}: {e}")
                 node["then"] = walk(st.get("then") or [], depth + 1)
                 node["else"] = walk(st.get("else") or [], depth + 1)
+            elif stype == "handle_errors":
+                if depth >= MAX_NESTING:
+                    raise DefinitionError(f"blocks can be nested at most {MAX_NESTING} deep")
+                # the monitored steps may or may not have run when an error is caught, so neither they nor the on-error
+                # steps can read each other's outputs or variables; what ran before the block stays visible
+                before = dict(seen)
+                node["then"] = walk(st.get("then") or [], depth + 1)
+                if for_publish and not node["then"]:
+                    raise DefinitionError(f"{where}: add at least one step to monitor")
+                seen.clear(); seen.update(before)
+                was = mode["handler"]
+                mode["handler"] = True   # error datapills available; no approvals, loops, waits or calls here
+                try:
+                    node["else"] = walk(st.get("else") or [], depth + 1)
+                finally:
+                    mode["handler"] = was
+                    seen.clear(); seen.update(before)
             elif stype == "approval":
                 if depth >= MAX_NESTING:
                     raise DefinitionError(f"branches can be nested at most {MAX_NESTING} deep")
@@ -517,7 +538,7 @@ def validate_definition(db: Session, definition: Any, *, for_publish: bool = Fal
                 if for_publish and not node["then"]:
                     raise DefinitionError(f"{where}: add at least one step inside the loop")
             elif st.get("then") or st.get("else"):
-                raise DefinitionError(f"{where}: only conditions, approvals and loops have nested steps")
+                raise DefinitionError(f"{where}: only conditions, approvals, loops and error blocks have nested steps")
             out.append(node)
         return out
 
@@ -632,6 +653,16 @@ def compile_program(steps: List[dict]) -> List[dict]:
                 emit(st.get("then", []))
                 prog.append({"type": "loop_next", "id": "", "loop_pc": head_pc})
                 head["end_to"] = len(prog)
+                continue
+            if st["type"] == "handle_errors":
+                head = {**st, "catch_to": 0, "end_to": 0}
+                prog.append(head)
+                emit(st.get("then", []))
+                jump = {"type": "jump", "id": "", "to": 0}
+                prog.append(jump)
+                head["catch_to"] = len(prog)
+                emit(st.get("else", []))
+                jump["to"] = head["end_to"] = len(prog)
                 continue
             if st["type"] not in BRANCHING:
                 prog.append(st)

@@ -152,6 +152,12 @@ export function stepsBefore(steps: StepNode[], targetId: string | null): StepNod
       if (done) return;
       if (s.id === targetId) { done = true; return; }
       out.push(s);
+      if (s.type === "handle_errors") {   // what a block's steps produce is unknown after it, and its lanes cannot see each other
+        const has = (l: StepNode[]): boolean => l.some((x) => x.id === targetId || has(x.then ?? []) || has(x.else ?? []));
+        if (has(s.then ?? [])) walk(s.then ?? []);
+        else if (has(s.else ?? [])) walk(s.else ?? []);
+        continue;
+      }
       walk(s.then ?? []);
       walk(s.else ?? []);
     }

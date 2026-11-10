@@ -239,6 +239,13 @@ export function StepForm({ step, ctx, onChange }: { step: StepNode; ctx: Ctx; on
             <Input aria-label="Loop limit" type="number" min={1} max={100} className="h-10" value={cfg.limit ?? 50} onChange={(e) => set({ limit: Number(e.target.value) })} /></div>
         </div>
       );
+    case "handle_errors":
+      return (
+        <p className="text-sm text-muted-foreground" data-testid="handle-errors-help">
+          If any step in <strong>Monitored steps</strong> fails for good (after its retries), the rest of those steps are skipped and the <strong>If any of them fails</strong> steps run
+          with <code>error.message</code> and <code>error.step_id</code>. The job then carries on after this block and is not marked failed. Errors outside the block still go to the recipe-level handler.
+        </p>
+      );
     case "approval":
       return (
         <div className="grid gap-3 md:grid-cols-[1fr_12rem]">

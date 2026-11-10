@@ -10,7 +10,7 @@ import { Select, StepForm, TriggerCard, defaultConfig, pillsFor, type Ctx } from
 import { PillFieldsContext, type PillRegistry } from "@/components/recipe-editor/pill-context";
 import { PillTray } from "@/components/recipe-editor/pill-tray";
 import { allIds, countSteps, duplicateStep, gapKey, insertAt, locate, moveProblem, moveStep, newId, nextGap, parseGap, removeStep, replaceStep, allGaps, type Gap, type LaneRef } from "@/components/recipe-editor/tree";
-import { isLoop, isLoopType, laneSteps } from "@/components/recipe-editor/tree";
+import { isLoop, isLoopType, laneInCatch, laneSteps } from "@/components/recipe-editor/tree";
 import { statusTone, type Definition, type Job, type JobStep, type RecipeMeta, type StepNode } from "@/lib/recipes";
 import type { Group } from "@/lib/types";
 
@@ -92,6 +92,7 @@ function summary(s: StepNode, props: Props): string {
   const c = s.config ?? {};
   const group = (id: unknown) => props.groups.find((g) => g.id === id)?.name ?? "no group chosen";
   switch (s.type) {
+    case "handle_errors": return `Catches errors in ${(s.then ?? []).length} step${(s.then ?? []).length === 1 ? "" : "s"}`;
     case "add_to_group": return `Add to ${group(c.group_id)}`;
     case "remove_from_group": return `Remove from ${group(c.group_id)}`;
     case "set_attribute": return c.attribute ? `Set ${c.attribute}` : "Choose an attribute";
@@ -291,20 +292,20 @@ export function Studio(props: Props) {
     edit(moveStep(def, id, g.ref, g.index)); setSel(id); focusAfter.current = id; setNote(`Moved “${label(id)}” ${dir < 0 ? "up" : "down"}.`);
   }
 
-  const ctxFor = (section: "steps" | "on_error", inLoop = false): Ctx => ({
+  const ctxFor = (section: "steps" | "on_error", inLoop = false, inCatch = false): Ctx => ({
     ...props.ctx, root: section === "steps" ? def.steps : def.on_error ?? [], other: section === "steps" ? def.on_error ?? [] : def.steps,
-    handler: section === "on_error", inLoop, callOutputs: def.trigger.config?.outputs ?? [],
+    handler: section === "on_error" || inCatch, inLoop, callOutputs: def.trigger.config?.outputs ?? [],
   });
 
   const optionsFor = (ref: LaneRef, depth: number): StepMenuItem[] =>
-    meta.steps.filter((s) => (s.type !== "condition" && s.type !== "approval") || depth < meta.limits.max_nesting)
+    meta.steps.filter((s) => (s.type !== "condition" && s.type !== "approval" && s.type !== "handle_errors") || depth < meta.limits.max_nesting)
       .filter((s) => s.type !== "return_data" || (def.trigger.type === "call" && ref.section === "steps"))
-      .filter((s) => !(s.type === "call_recipe" && ref.section === "on_error"))
-      .filter((s) => !(isLoopType(s.type) && (depth > 0 || ref.section === "on_error")) && !((s.type === "approval" || s.type === "wait" || s.type === "throttle") && ref.section === "on_error"));
+      .filter((s) => !(s.type === "call_recipe" && (ref.section === "on_error" || laneInCatch(def, ref))))
+      .filter((s) => !(isLoopType(s.type) && (depth > 0 || ref.section === "on_error" || laneInCatch(def, ref))) && !((s.type === "approval" || s.type === "wait" || s.type === "throttle") && (ref.section === "on_error" || laneInCatch(def, ref))));
 
   function add(ref: LaneRef, index: number, type: string, inLoop: boolean) {
-    const n: StepNode = { id: newId(allIds(def)), type, config: defaultConfig(type, ctxFor(ref.section, inLoop)), on_error: "fail", max_attempts: 3 };
-    if (type === "condition" || type === "approval") { n.then = []; n.else = []; }
+    const n: StepNode = { id: newId(allIds(def)), type, config: defaultConfig(type, ctxFor(ref.section, inLoop, laneInCatch(def, ref))), on_error: "fail", max_attempts: 3 };
+    if (type === "condition" || type === "approval" || type === "handle_errors") { n.then = []; n.else = []; }
     if (isLoopType(type)) n.then = [];
     edit(insertAt(def, ref, index, n));
     setSel(n.id);
@@ -363,11 +364,11 @@ export function Studio(props: Props) {
             </div>
           )}
         </div>
-        {(step.type === "condition" || step.type === "approval") && (
+        {(step.type === "condition" || step.type === "approval" || step.type === "handle_errors") && (
           <div className="space-y-2 border-t p-3">
-            <div className="text-xs font-medium uppercase text-muted-foreground">{step.type === "approval" ? "If approved" : "If yes"}</div>
+            <div className="text-xs font-medium uppercase text-muted-foreground">{step.type === "approval" ? "If approved" : step.type === "handle_errors" ? "Monitored steps" : "If yes"}</div>
             {renderLane({ section, owner: step.id, branch: "then" }, depth + 1, inLoop)}
-            <div className="text-xs font-medium uppercase text-muted-foreground">{step.type === "approval" ? "If denied or no answer" : "Otherwise"}</div>
+            <div className="text-xs font-medium uppercase text-muted-foreground">{step.type === "approval" ? "If denied or no answer" : step.type === "handle_errors" ? "If any of them fails" : "Otherwise"}</div>
             {renderLane({ section, owner: step.id, branch: "else" }, depth + 1, inLoop)}
           </div>
         )}
@@ -386,7 +387,7 @@ export function Studio(props: Props) {
   useEffect(() => { if (sel !== "trigger" && !located) setSel("trigger"); }, [sel, located]);
 
   const trigInfo = meta.triggers.find((t) => t.type === def.trigger.type);
-  const panelCtx = useMemo(() => (located ? ctxFor(located.section, located.inLoop) : null), [located, def, props.ctx]); // eslint-disable-line react-hooks/exhaustive-deps
+  const panelCtx = useMemo(() => (located ? ctxFor(located.section, located.inLoop, located.inCatch) : null), [located, def, props.ctx]); // eslint-disable-line react-hooks/exhaustive-deps
   const isAction = located ? meta.steps.find((m) => m.type === located.step.type)?.kind === "action" : false;
 
   return (

@@ -18,7 +18,7 @@ from backend.app.audit.model import AuditAction, AuditEvent
 from backend.app.config import settings
 from backend.app.recipes import actions, calls, conditions as cond, lookup
 from backend.app.recipes import templates as tpl
-from backend.app.recipes.definition import ACTION_TYPES, WAIT_UNIT_MINUTES, compile_program, taint_checker
+from backend.app.recipes.definition import ACTION_TYPES, LOOP_TYPES, WAIT_UNIT_MINUTES, compile_program, taint_checker
 from backend.app.recipes.models import Recipe, RecipeJob, RecipeJobStep, RecipeOutbox, RecipeVersion
 from backend.app.recipes.redact import redact
 from backend.app.groups.model import Group, user_group_association
@@ -261,6 +261,15 @@ def _end(db: Session, job: RecipeJob, status: str, now: datetime, error: Optiona
         status, error = "failed", job.error or error
     _finish(db, job, status, now, error)
     return status
+
+
+def _enclosing_block(program: List[dict], pc: int) -> Optional[int]:
+    """Program counter of the innermost Handle errors block whose monitored steps contain `pc`, if any."""
+    found = None
+    for i, x in enumerate(program[:pc]):
+        if x["type"] == "handle_errors" and i < pc < x["catch_to"] - 1:
+            found = i
+    return found
 
 
 def _loop_ctx(db: Session, job: RecipeJob) -> dict:
@@ -557,6 +566,8 @@ def execute_job(db: Session, job_id: int, now: datetime) -> str:
                         waiting, quiet_wait = True, w is not None
                     else:
                         finished_wait = w is not None
+                elif instr["type"] == "handle_errors":
+                    inp, out = {}, {}
                 elif instr["type"] == "stop":
                     msg = rc.render(instr["config"].get("message", ""), tainted_ok=True)
                     inp, out = {"outcome": instr["config"]["outcome"], "message": msg}, {}
@@ -621,6 +632,23 @@ def execute_job(db: Session, job_id: int, now: datetime) -> str:
             continue
         job.executed_steps = seq
         msg = f"step '{instr['id']}': {err.message}"
+        scope = _enclosing_block(program, job.pc)
+        if scope is not None:
+            # a Handle errors block caught it: run its on-error steps, then carry on after the block; the job is not failed
+            outputs = dict(job.step_outputs or {})
+            outputs["_error"] = {"message": err.message, "step_id": instr["id"]}
+            loops = dict(outputs.get("_loops") or {})
+            body = program[scope + 1:program[scope]["catch_to"]]
+            for b in body:
+                if b["type"] in LOOP_TYPES:
+                    loops.pop(b["id"], None)
+            outer = [i for i, x in enumerate(program[:scope]) if x["type"] in LOOP_TYPES and x["end_to"] > scope]
+            loops["active"] = program[outer[-1]]["id"] if outer else None
+            outputs["_loops"] = loops
+            job.step_outputs = outputs
+            job.pc, job.attempt = program[scope]["catch_to"], 0
+            db.commit()
+            continue
         if job.in_handler:
             _finish(db, job, "failed", now, f"{job.error or ''} | error handler {msg}")
             return "failed"
