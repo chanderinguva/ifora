@@ -37,7 +37,7 @@ export function GroupMetadataFields({ value, onChange, disabled = false }: { val
   const [owners, setOwners] = useState<User[]>([]);
   useEffect(() => {
     http<{ types: GroupType[] }>("/admin/groups/standards").then((d) => setTypes(d.types)).catch(() => {});
-    http<Page<User>>(`/admin/users${qs({ page_size: 100, status: "active" })}`).then((p) => setOwners(p.items)).catch(() => {});
+    http<Page<User>>(`/admin/users${qs({ count: 100, status: "active" })}`).then((p) => setOwners(p.Resources)).catch(() => {});
   }, []);
   const t = types.find((x) => x.id === value.type);
   const set = (p: Partial<Meta>) => onChange({ ...value, ...p });

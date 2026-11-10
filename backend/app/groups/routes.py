@@ -15,9 +15,20 @@ from backend.app.db import get_db
 from backend.app.admin_roles import resolve as role_resolve
 from backend.app.groups import standards
 from backend.app.groups.model import Group, user_group_association
+from backend.app.listing import ListParams, list_params, paginate, sortable
+from backend.app.scim import filter as flt
 from backend.app.users.model import User
 
 router = APIRouter(prefix="/admin/groups", tags=["groups"])
+
+# filterable / sortable attributes of GET /admin/groups: the response field names (lower case)
+GROUP_LIST_ATTRS = {
+    "name": flt.Attr("str", Group.name), "description": flt.Attr("str", Group.description),
+    "type": flt.Attr("str", Group.type), "sensitivity": flt.Attr("str", Group.sensitivity),
+    "is_system_group": flt.Attr("bool", Group.is_system_group),
+    "created_at": flt.Attr("date", Group.created_at), "updated_at": flt.Attr("date", Group.updated_at),
+}
+GROUP_SORT = sortable(GROUP_LIST_ATTRS, id=Group.id, member_count=Group.member_count, review_by=Group.review_by)
 
 
 class GroupCreate(BaseModel):
@@ -133,8 +144,7 @@ def list_groups(
     sensitivity: Optional[str] = Query(None, max_length=8),
     tag: Optional[str] = Query(None, max_length=30),
     q: Optional[str] = Query(None, max_length=100),
-    page: int = Query(1, ge=1, le=100000),
-    page_size: int = Query(25, ge=1, le=100),
+    p: ListParams = Depends(list_params),
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
@@ -151,9 +161,8 @@ def list_groups(
         query = query.filter(Group.tags.contains([tag.lower()]))
     if q:
         query = query.filter(func.lower(Group.name).like(f"%{q.lower().replace('%', '').replace('_', '')}%"))
-    total = query.count()
-    items = query.order_by(Group.id).offset((page - 1) * page_size).limit(page_size).all()
-    return {"items": [g.to_dict() for g in items], "total": total, "page": page, "page_size": page_size}
+    return paginate(query, p, sort=GROUP_SORT, default_order=[Group.id], tiebreak=Group.id, filter_attrs=GROUP_LIST_ATTRS,
+                    render=lambda rows: [g.to_dict() for g in rows])
 
 
 @router.post("", status_code=201)

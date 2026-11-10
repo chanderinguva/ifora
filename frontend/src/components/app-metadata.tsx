@@ -16,7 +16,7 @@ export function AppMetadataFields({ value, onChange }: { value: Meta; onChange: 
   const [attrs, setAttrs] = useState(Object.entries(value.attributes ?? {}).map(([k, v]) => `${k}=${v}`).join("\n"));
   const [tags, setTags] = useState((value.tags ?? []).join(", "));
   useEffect(() => {
-    http<Page<User>>(`/admin/users${qs({ page_size: 100, status: "active" })}`).then((p) => setOwners(p.items)).catch(() => {});
+    http<Page<User>>(`/admin/users${qs({ count: 100, status: "active" })}`).then((p) => setOwners(p.Resources)).catch(() => {});
   }, []);
   const setAttrText = (text: string) => {
     setAttrs(text);

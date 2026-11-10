@@ -260,7 +260,7 @@ def test_rotation_is_audited_and_emergency_needs_confirmation(super_admin):
     assert super_admin.post("/admin/oidc/keys/rotate", {"emergency": True}).status_code == 400
     assert super_admin.post("/admin/oidc/keys/rotate", {"emergency": True, "confirm": True}).status_code == 201
     r = super_admin.get("/admin/audit?action=OIDC_KEY_ROTATED").json()
-    assert r["total"] == 1 and r["items"][0]["metadata"]["emergency"] is True
+    assert r["totalResults"] == 1 and r["Resources"][0]["metadata"]["emergency"] is True
     assert "private" not in json.dumps(r).lower()
 
 

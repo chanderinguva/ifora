@@ -12,6 +12,7 @@ from backend.app.api_tokens.models import ApiToken
 from backend.app.auth.deps import require_admin
 from backend.app.db import get_db
 from backend.app.groups.model import user_group_association
+from backend.app.listing import ListParams, list_params, paginate_list
 from backend.app.users.model import User
 
 router = APIRouter(prefix="/admin/administrators", tags=["administrators"])
@@ -20,7 +21,7 @@ MAX_ROWS = 500
 
 @router.get("")
 def list_administrators(role: str = Query("", max_length=32), mfa: str = Query("", max_length=8), q: str = Query("", max_length=100),
-                        db: Session = Depends(get_db), _: User = Depends(require_admin)):
+                        p: ListParams = Depends(list_params), db: Session = Depends(get_db), _: User = Depends(require_admin)):
     direct = db.query(AdminRoleAssignment.user_id)
     via_group = db.query(user_group_association.c.user_id).join(GroupAdminRole, GroupAdminRole.group_id == user_group_association.c.group_id)
     query = db.query(User).filter(or_(User.is_admin.is_(True), User.id.in_(direct), User.id.in_(via_group)))
@@ -42,4 +43,6 @@ def list_administrators(role: str = Query("", max_length=32), mfa: str = Query("
             "roles": [{"role": r, "sources": s} for r, s in sorted(sources.items())], "mfa": has_factor,
             "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None, "active_api_tokens": tokens,
         })
-    return {"items": items, "total": len(items)}
+    # roles, MFA and token counts are computed per row, so this collection is paged in Python (no `filter` expression, see ADR 025)
+    return paginate_list(items, p, sort={"name": lambda x: x["name"], "email": lambda x: x["email"], "status": lambda x: x["status"],
+                                         "last_login_at": lambda x: x["last_login_at"], "active_api_tokens": lambda x: x["active_api_tokens"]})

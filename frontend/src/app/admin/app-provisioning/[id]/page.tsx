@@ -52,15 +52,15 @@ export default function AppDetail() {
   const refresh = useCallback(() => {
     http<ProvApp>(`/admin/provisioning-apps/${id}`).then(apply).catch((e) => setMsg({ ok: false, text: e.message }));
     http<{ items: Assignment[] }>(`/admin/provisioning-apps/${id}/assignments`).then((r) => setAssignments(r.items)).catch(() => {});
-    http<{ items: Link_[] }>(`/admin/provisioning-apps/${id}/links?limit=50`).then((r) => setLinks(r.items)).catch(() => {});
+    http<{ Resources: Link_[] }>(`/admin/provisioning-apps/${id}/links?count=50`).then((r) => setLinks(r.Resources)).catch(() => {});
     http<{ items: Task[] }>(`/admin/provisioning-apps/${id}/tasks`).then((r) => setTasks(r.items)).catch(() => {});
   }, [id, apply]);
 
   useEffect(() => {
     refresh();
     http<{ defaults: { target: string; source: string }[]; sources: string[] }>("/admin/provisioning-apps/mapping").then((r) => { setDefaults(r.defaults); setSources(r.sources); }).catch(() => {});
-    http<Page<User>>(`/admin/users${qs({ page_size: 100, status: "active" })}`).then((p) => setUsers(p.items)).catch(() => {});
-    http<Page<Group>>(`/admin/groups${qs({ page_size: 100 })}`).then((p) => setGroups(p.items)).catch(() => {});
+    http<Page<User>>(`/admin/users${qs({ count: 100, status: "active" })}`).then((p) => setUsers(p.Resources)).catch(() => {});
+    http<Page<Group>>(`/admin/groups${qs({ count: 100 })}`).then((p) => setGroups(p.Resources)).catch(() => {});
     const t = setInterval(refresh, 10000); // queued work finishes in the background
     return () => clearInterval(t);
   }, [refresh]);

@@ -132,13 +132,13 @@ export function RecipeBuilder({ studio = false }: { studio?: boolean }) {
   const load = useCallback(() => {
     http<RecipeSummary>(`/admin/recipes/${id}`).then(adopt).catch((e) => setMsg({ ok: false, text: e.message }));
     http<{ items: { version: number; published_at: string }[] }>(`/admin/recipes/${id}/versions`).then((v) => setVersions(v.items)).catch(() => {});
-    http<Page<Job>>(`/admin/recipes/jobs${qs({ recipe_id: id, page_size: 5 })}`).then((j) => setRecent(j.items)).catch(() => {});
+    http<Page<Job>>(`/admin/recipes/jobs${qs({ recipe_id: id, count: 5 })}`).then((j) => setRecent(j.Resources)).catch(() => {});
   }, [id]);
   useEffect(load, [load]);
   useEffect(() => {
     http<RecipeMeta>("/admin/recipes/meta").then(setMeta).catch(() => {});
-    http<Page<Group>>(`/admin/groups${qs({ page: 1, page_size: 100 })}`).then((r) => setGroups(r.items.filter((g) => !g.is_system_group))).catch(() => {});
-    http<Page<User>>(`/admin/users${qs({ page: 1, page_size: 100 })}`).then((r) => setUsers(r.items)).catch(() => {});
+    http<Page<Group>>(`/admin/groups${qs({ count: 100 })}`).then((r) => setGroups(r.Resources.filter((g) => !g.is_system_group))).catch(() => {});
+    http<Page<User>>(`/admin/users${qs({ count: 100 })}`).then((r) => setUsers(r.Resources)).catch(() => {});
     http<{ items: Connection[] }>("/admin/recipe-connections").then((r) => setConnections(r.items)).catch(() => {});
     http<{ connections_available: boolean }>("/admin/recipes/status").then((s) => setConnAvail(s.connections_available)).catch(() => {});
   }, []);

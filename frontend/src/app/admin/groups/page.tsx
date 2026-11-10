@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge, PageHeader, Pager, fieldClass, td, th } from "@/components/bits";
 import { GroupMetadataFields, EMPTY_META, metaBody, type Meta } from "@/components/group-metadata";
-import { http, qs, type Page } from "@/lib/http";
+import { http, pageQs, qs, type Page } from "@/lib/http";
 import type { Group } from "@/lib/types";
 
 const PAGE_SIZE = 15;
@@ -27,7 +27,7 @@ export default function GroupsPage() {
   const [stats, setStats] = useState<{ total: number; by_type: Record<string, number>; without_owner_count: number; review_overdue_count: number; empty: number; unclassified: number; with_admin_roles: number } | null>(null);
 
   const load = useCallback(() => {
-    http<Page<Group>>(`/admin/groups${qs({ q, type: typeFilter, page, page_size: PAGE_SIZE })}`).then(setData).catch((e) => setError(e.message));
+    http<Page<Group>>(`/admin/groups${qs({ q, type: typeFilter, ...pageQs(page, PAGE_SIZE) })}`).then(setData).catch((e) => setError(e.message));
     http<NonNullable<typeof stats>>("/admin/groups/analytics").then(setStats).catch(() => {});
   }, [q, page, typeFilter]);
   useEffect(() => {
@@ -105,7 +105,7 @@ export default function GroupsPage() {
               <tr><th className={th}>Name</th><th className={th}>Type</th><th className={th}>Description</th><th className={th}>Members</th></tr>
             </thead>
             <tbody>
-              {data?.items.map((g) => (
+              {data?.Resources.map((g) => (
                 <tr key={g.id} className="border-b last:border-0 hover:bg-accent/30">
                   <td className={td}>
                     <Link className="font-medium underline-offset-4 hover:underline" href={`/admin/groups/${g.id}`}>{g.name}</Link>{" "}
@@ -116,12 +116,12 @@ export default function GroupsPage() {
                   <td className={td}>{g.member_count}</td>
                 </tr>
               ))}
-              {data && data.items.length === 0 && <tr><td className={td} colSpan={4}>No groups yet.</td></tr>}
+              {data && data.Resources.length === 0 && <tr><td className={td} colSpan={4}>No groups yet.</td></tr>}
             </tbody>
           </table>
         </CardContent>
       </Card>
-      {data && <Pager page={page} pageSize={PAGE_SIZE} total={data.total} onPage={setPage} />}
+      {data && <Pager page={page} pageSize={PAGE_SIZE} total={data.totalResults} onPage={setPage} />}
     </div>
   );
 }

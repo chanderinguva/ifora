@@ -14,9 +14,18 @@ from backend.app.auth.session import Session as AuthSession
 from backend.app.auth.session import SessionStatus
 from backend.app.db import get_db
 from backend.app.groups.model import Group, user_group_association
+from backend.app.listing import ListParams, list_params, paginate, sortable
+from backend.app.scim import filter as flt
 from backend.app.users.model import User
 
 router = APIRouter(prefix="/admin", tags=["audit"])
+
+AUDIT_LIST_ATTRS = {
+    "action": flt.Attr("str", AuditEvent.action), "actor_id": flt.Attr("str", AuditEvent.actor_id),
+    "actor_type": flt.Attr("str", AuditEvent.actor_type), "target_type": flt.Attr("str", AuditEvent.target_type),
+    "target_id": flt.Attr("str", AuditEvent.target_id), "timestamp": flt.Attr("date", AuditEvent.timestamp),
+}
+AUDIT_SORT = sortable(AUDIT_LIST_ATTRS, id=AuditEvent.id)
 
 _ACTIONS = "^(" + "|".join(a.value for a in AuditAction) + ")$"
 
@@ -85,15 +94,13 @@ def list_audit(
     q: Optional[str] = _FILTERS["q"],
     since: Optional[datetime] = _FILTERS["since"],
     until: Optional[datetime] = _FILTERS["until"],
-    page: int = Query(1, ge=1, le=100000),
-    page_size: int = Query(25, ge=1, le=100),
+    p: ListParams = Depends(list_params),
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
     query = _filtered(db, action, actor_id, target_type, target_id, q, since, until)
-    total = query.count()
-    rows = query.order_by(AuditEvent.timestamp.desc(), AuditEvent.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
-    return {"items": _with_actor_email(db, rows), "total": total, "page": page, "page_size": page_size}
+    return paginate(query, p, sort=AUDIT_SORT, default_order=[AuditEvent.timestamp.desc(), AuditEvent.id.desc()], tiebreak=AuditEvent.id,
+                    filter_attrs=AUDIT_LIST_ATTRS, render=lambda rows: _with_actor_email(db, rows))
 
 
 @router.get("/audit/actions")

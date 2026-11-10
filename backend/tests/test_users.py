@@ -33,7 +33,7 @@ def test_create_get_list_update_delete(admin):
     assert u["username"] == "new.person" and "password" not in u and "password_hash" not in u
     uid = u["id"]
     assert admin.get(f"/admin/users/{uid}").json()["email"] == "new@example.com"
-    assert admin.get("/admin/users?q=person").json()["total"] == 1
+    assert admin.get("/admin/users?q=person").json()["totalResults"] == 1
     r = admin.patch(f"/admin/users/{uid}", {"first_name": "Renamed", "profile_attributes": {"department": "IT"}})
     assert r.json()["first_name"] == "Renamed" and r.json()["profile_attributes"] == {"department": "IT"}
     assert admin.delete(f"/admin/users/{uid}").status_code == 200
@@ -67,8 +67,8 @@ def test_mutations_require_csrf(admin):
 
 
 def test_pagination_bounds(admin):
-    assert admin.get("/admin/users?page_size=1000").status_code == 422
-    assert admin.get("/admin/users?page=0").status_code == 422
+    big = admin.get("/admin/users?count=1000").json()           # out-of-range paging is clamped (SCIM style), not rejected
+    assert big["itemsPerPage"] <= 100 and admin.get("/admin/users?startIndex=0").json()["startIndex"] == 1
 
 
 def test_admin_cannot_grant_or_touch_admins(admin, super_admin, db):

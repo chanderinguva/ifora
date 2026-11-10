@@ -39,7 +39,7 @@ def test_branding_is_validated_saved_public_and_audited(admin, anon):
     assert ok.status_code == 200 and ok.json()["display_name"] == "Acme Corp" and ok.json()["primary_color"] == "#1a73e8"
     pub = anon.get("/branding").json()
     assert pub["display_name"] == "Acme Corp" and pub["custom_name"] is True and pub["tagline"] == "Sign in to Acme"
-    assert any(e["action"] == "BRANDING_UPDATED" for e in admin.get("/admin/audit").json()["items"])
+    assert any(e["action"] == "BRANDING_UPDATED" for e in admin.get("/admin/audit").json()["Resources"])
     assert admin.put("/admin/branding", {}).json()["display_name"] == "Ifora"     # clearing returns to the default
 
 

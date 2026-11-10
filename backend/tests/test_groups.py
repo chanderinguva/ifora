@@ -9,7 +9,7 @@ def test_group_crud(admin):
     gid = r.json()["id"]
     assert admin.post("/admin/groups", {"name": "engineering"}).status_code == 409
     assert admin.patch(f"/admin/groups/{gid}", {"description": "Makers"}).json()["description"] == "Makers"
-    assert admin.get("/admin/groups?q=engi").json()["total"] == 1
+    assert admin.get("/admin/groups?q=engi").json()["totalResults"] == 1
     assert admin.delete(f"/admin/groups/{gid}").status_code == 200
     assert admin.get(f"/admin/groups/{gid}").status_code == 404
 

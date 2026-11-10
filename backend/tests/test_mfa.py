@@ -198,7 +198,7 @@ def test_login_mfa_rejects_foreign_origin(db, enrolled):
 
 def test_failed_mfa_is_audited(db, enrolled, admin):
     mfa_login(db, code="123456")
-    assert admin.get("/admin/audit?action=MFA_CHALLENGE_FAILED").json()["total"] == 1
+    assert admin.get("/admin/audit?action=MFA_CHALLENGE_FAILED").json()["totalResults"] == 1
 
 
 # ---- recovery codes -------------------------------------------------------------
@@ -209,7 +209,7 @@ def test_recovery_code_works_once(db, enrolled, admin):
     assert ok.status_code == 200
     _, _, again = mfa_login(db, code=code)
     assert again.status_code == 401
-    assert admin.get("/admin/audit?action=MFA_RECOVERY_USED").json()["total"] == 1
+    assert admin.get("/admin/audit?action=MFA_RECOVERY_USED").json()["totalResults"] == 1
     api, _, _ = mfa_login(db, code=enrolled.codes[1])
     assert api.get("/me/mfa").json()["recovery_codes_remaining"] == 8
 
@@ -246,7 +246,7 @@ def test_admin_can_reset_lost_device(db, enrolled, admin):
     assert enrolled.get("/me").status_code == 401  # sessions revoked
     assert Api().login("mfa@example.com").json()["success"] is True
     assert admin.post(f"/admin/users/{uid}/mfa/reset").status_code == 409  # nothing left to reset
-    assert admin.get("/admin/audit?action=MFA_RESET").json()["total"] == 1
+    assert admin.get("/admin/audit?action=MFA_RESET").json()["totalResults"] == 1
 
 
 def test_admin_reset_follows_target_protections(db, admin, super_admin, member):

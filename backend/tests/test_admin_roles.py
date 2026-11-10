@@ -115,7 +115,7 @@ def test_role_assignment_rules_and_audit(db, super_admin, admin):
     give(super_admin, admin, "app_admin")
     got = super_admin.get(f"/admin/roles/users/{admin.user.id}").json()
     assert got["roles"] == ["app_admin"] and got["implicit"] is False
-    ev = super_admin.get("/admin/audit?action=ADMIN_ROLES_UPDATED").json()["items"]
+    ev = super_admin.get("/admin/audit?action=ADMIN_ROLES_UPDATED").json()["Resources"]
     assert ev and ev[0]["metadata"]["to"] == ["app_admin"]
 
 

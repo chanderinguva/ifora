@@ -22,7 +22,7 @@ def test_deactivating_removes_the_user_from_every_group(admin):
     assert group_ids(admin, uid) >= {g1, g2}
     assert admin.patch(f"/admin/users/{uid}", {"status": "deprovisioned"}).status_code == 200
     assert not (group_ids(admin, uid) & {g1, g2})
-    counts = {g["id"]: g["member_count"] for g in admin.get("/admin/groups").json()["items"]}
+    counts = {g["id"]: g["member_count"] for g in admin.get("/admin/groups").json()["Resources"]}
     assert counts[g1] == 0 and counts[g2] == 0
     audit = admin.get("/admin/audit?action=GROUP_MEMBER_REMOVED").json()
     assert "deactivated" in str(audit)

@@ -23,7 +23,7 @@ export function TemplatePicker({ meta, onCreated, onError, onCancel }: { meta: R
 
   useEffect(() => {
     http<{ items: Template[] }>("/admin/recipes/templates").then((r) => setTemplates(r.items)).catch((e) => onError(e.message));
-    http<Page<Group>>(`/admin/groups${qs({ page: 1, page_size: 100 })}`).then((r) => setGroups(r.items.filter((g) => !g.is_system_group))).catch(() => {});
+    http<Page<Group>>(`/admin/groups${qs({ count: 100 })}`).then((r) => setGroups(r.Resources.filter((g) => !g.is_system_group))).catch(() => {});
     http<{ items: Connection[] }>("/admin/recipe-connections").then((r) => setSlack(r.items.filter((c) => c.kind === "slack_webhook"))).catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

@@ -120,7 +120,7 @@ def test_activation_adds_only_matching_active_users(db, admin):
     rid = make_rule(admin, gid)
     m = members(admin, gid)
     assert set(m) == {"s1@example.com", "s2@example.com"} and set(m.values()) == {rid}
-    assert admin.get("/admin/groups").json()["items"][0]["member_count"] == 2
+    assert admin.get("/admin/groups").json()["Resources"][0]["member_count"] == 2
 
 
 def test_membership_follows_user_changes(db, admin):
@@ -220,7 +220,7 @@ def test_deactivate_and_delete_remove_only_rule_memberships(db, admin):
     assert set(members(admin, gid)) == {"m@example.com", "s@example.com"}
     assert admin.delete(f"/admin/group-rules/{rid}").json()["removed"] == 1
     assert set(members(admin, gid)) == {"m@example.com"}
-    assert admin.get("/admin/groups").json()["items"][0]["member_count"] == 1
+    assert admin.get("/admin/groups").json()["Resources"][0]["member_count"] == 1
 
 
 def test_active_rules_must_be_deactivated_before_editing(db, admin):
@@ -261,8 +261,8 @@ def test_audit_trail(db, admin):
     rid = make_rule(admin, gid)
     admin.post(f"/admin/group-rules/{rid}/deactivate")
     for action in ("GROUP_RULE_CREATED", "GROUP_RULE_ACTIVATED", "GROUP_RULE_DEACTIVATED"):
-        assert admin.get(f"/admin/audit?action={action}").json()["total"] == 1
-    added = admin.get("/admin/audit?action=GROUP_MEMBER_ADDED").json()["items"][0]["metadata"]
+        assert admin.get(f"/admin/audit?action={action}").json()["totalResults"] == 1
+    added = admin.get("/admin/audit?action=GROUP_MEMBER_ADDED").json()["Resources"][0]["metadata"]
     assert added["via_rule"] == rid
 
 

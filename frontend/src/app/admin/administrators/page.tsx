@@ -48,7 +48,7 @@ function Admins() {
     if (role) p.set("role", role);
     if (noMfa) p.set("mfa", "none");
     if (q) p.set("q", q);
-    http<{ items: Admin[] }>(`/admin/administrators?${p}`).then((r) => setItems(r.items)).catch((e) => setError(msgOf(e)));
+    http<{ Resources: Admin[] }>(`/admin/administrators?${p}`).then((r) => setItems(r.Resources)).catch((e) => setError(msgOf(e)));
   }, [role, noMfa, q]);
   return (
     <>
