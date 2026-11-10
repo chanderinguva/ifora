@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, StepForm, TriggerCard, defaultConfig, pillsFor, type Ctx } from "@/components/recipe-editor/forms";
+import { presetConfig, type ConnectorPreset } from "@/components/recipe-editor/connector-form";
 import { PillFieldsContext, type PillRegistry } from "@/components/recipe-editor/pill-context";
 import { PillTray } from "@/components/recipe-editor/pill-tray";
 import { allIds, countSteps, duplicateStep, gapKey, insertAt, locate, moveProblem, moveStep, newId, nextGap, parseGap, removeStep, replaceStep, allGaps, type Gap, type LaneRef } from "@/components/recipe-editor/tree";
@@ -137,7 +138,7 @@ function ResultDot({ kind, text }: { kind: Outcome; text: string }) {
   );
 }
 
-function AddMenu({ options, onPick, disabled, label, empty }: { options: StepMenuItem[]; onPick: (type: string) => void; disabled: boolean; label: string; empty?: boolean }) {
+function AddMenu({ options, onPick, disabled, label, empty }: { options: StepMenuItem[]; onPick: (item: StepMenuItem) => void; disabled: boolean; label: string; empty?: boolean }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const box = useRef<HTMLDivElement>(null);
@@ -147,7 +148,8 @@ function AddMenu({ options, onPick, disabled, label, empty }: { options: StepMen
     document.addEventListener("mousedown", away);
     return () => document.removeEventListener("mousedown", away);
   }, [open]);
-  const shown = options.filter((o) => (o.label + " " + o.type).toLowerCase().includes(q.toLowerCase()));
+  const shown = options.filter((o) => ((o.group ?? "") + " " + o.label + " " + o.type).toLowerCase().includes(q.toLowerCase()));
+  const connectionGroups = [...new Set(shown.filter((o) => o.group).map((o) => o.group as string))];
   return (
     <div className="relative flex justify-center" ref={box}>
       <button type="button" aria-label={label} data-testid="studio-add" disabled={disabled} onClick={() => { setOpen(!open); setQ(""); }}
@@ -159,15 +161,19 @@ function AddMenu({ options, onPick, disabled, label, empty }: { options: StepMen
           <input autoFocus aria-label="Search steps" placeholder="Search steps…" value={q} onChange={(e) => setQ(e.target.value)}
             className="mb-2 h-8 w-full rounded border bg-background px-2 text-sm" />
           <div className="max-h-72 overflow-auto">
-            {(["action", "control"] as const).map((kind) => {
-              const rows = shown.filter((o) => o.kind === kind);
+            {([
+              { title: "Actions", rows: shown.filter((o) => o.kind === "action" && !o.group) },
+              ...connectionGroups.map((g) => ({ title: g, rows: shown.filter((o) => o.group === g) })),
+              { title: "Logic", rows: shown.filter((o) => o.kind === "control") },
+            ]).map(({ title, rows }) => {
               if (!rows.length) return null;
               return (
-                <div key={kind} className="mb-1">
-                  <div className="px-2 py-1 text-xs font-medium uppercase text-muted-foreground">{kind === "action" ? "Actions" : "Logic"}</div>
+                <div key={title} className="mb-1" data-testid="studio-menu-group">
+                  <div className="px-2 py-1 text-xs font-medium uppercase text-muted-foreground">{title}</div>
                   {rows.map((o) => (
-                    <button key={o.type} role="menuitem" type="button" className="block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
-                      onClick={() => { setOpen(false); onPick(o.type); }}>{o.label}</button>
+                    <button key={o.type + (o.group ?? "") + (o.preset?.action ?? "")} role="menuitem" type="button" aria-label={o.group ? `${o.group}: ${o.label}` : o.label}
+                      className="block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
+                      onClick={() => { setOpen(false); onPick(o); }}>{o.label}</button>
                   ))}
                 </div>
               );
@@ -214,7 +220,8 @@ function StepShell({ id, enabled, className, children }: { id: string; enabled: 
   return <div ref={setNodeRef} className={className} data-testid="studio-card" data-step-id={id}>{children(listeners ?? {})}</div>;
 }
 
-type StepMenuItem = { type: string; label: string; kind: "action" | "control" };
+/** `preset` + `group`: a connector action offered for one connection ("Jira Cloud: Create issue"); adding it pre-fills the step. */
+type StepMenuItem = { type: string; label: string; kind: "action" | "control"; group?: string; preset?: ConnectorPreset };
 
 export function Studio(props: Props) {
   const { def, meta, groups, canEdit, edit } = props;
@@ -298,14 +305,22 @@ export function Studio(props: Props) {
     handler: section === "on_error" || inCatch, inLoop, callOutputs: def.trigger.config?.outputs ?? [],
   });
 
-  const optionsFor = (ref: LaneRef, depth: number): StepMenuItem[] =>
-    meta.steps.filter((s) => (s.type !== "condition" && s.type !== "approval" && s.type !== "handle_errors") || depth < meta.limits.max_nesting)
+  // each connector connection offers its connector's actions directly; the generic step is only listed while there is nothing to connect to
+  const connectorItems: StepMenuItem[] = props.ctx.connections.filter((c) => c.kind === "connector" && c.can_use !== false).flatMap((conn) => {
+    const con = meta.connectors?.find((x) => x.id === conn.connector_id);
+    return con ? con.actions.map((a): StepMenuItem => ({ type: "connector_action", label: a.label, kind: "action", group: conn.name, preset: { connector: con.id, connection_id: conn.id, action: a.id } })) : [];
+  });
+  const optionsFor = (ref: LaneRef, depth: number): StepMenuItem[] => [
+    ...meta.steps.filter((s) => !(s.type === "connector_action" && connectorItems.length > 0)).filter((s) => (s.type !== "condition" && s.type !== "approval" && s.type !== "handle_errors") || depth < meta.limits.max_nesting)
       .filter((s) => s.type !== "return_data" || (def.trigger.type === "call" && ref.section === "steps"))
       .filter((s) => !(s.type === "call_recipe" && (ref.section === "on_error" || laneInCatch(def, ref))))
-      .filter((s) => !(isLoopType(s.type) && (depth > 0 || ref.section === "on_error" || laneInCatch(def, ref))) && !((s.type === "approval" || s.type === "wait" || s.type === "throttle") && (ref.section === "on_error" || laneInCatch(def, ref))));
+      .filter((s) => !(isLoopType(s.type) && (depth > 0 || ref.section === "on_error" || laneInCatch(def, ref))) && !((s.type === "approval" || s.type === "wait" || s.type === "throttle") && (ref.section === "on_error" || laneInCatch(def, ref)))),
+    ...connectorItems,
+  ];
 
-  function add(ref: LaneRef, index: number, type: string, inLoop: boolean) {
-    const n: StepNode = { id: newId(allIds(def)), type, config: defaultConfig(type, ctxFor(ref.section, inLoop, laneInCatch(def, ref))), on_error: "fail", max_attempts: 3 };
+  function add(ref: LaneRef, index: number, type: string, inLoop: boolean, preset?: ConnectorPreset) {
+    const config = preset ? presetConfig(meta, preset) : defaultConfig(type, ctxFor(ref.section, inLoop, laneInCatch(def, ref)));
+    const n: StepNode = { id: newId(allIds(def)), type, config, on_error: "fail", max_attempts: 3 };
     if (type === "condition" || type === "approval" || type === "handle_errors") { n.then = []; n.else = []; }
     if (isLoopType(type)) n.then = [];
     edit(insertAt(def, ref, index, n));
@@ -316,7 +331,7 @@ export function Studio(props: Props) {
     const steps = laneSteps(def, lane);
     const opts = optionsFor(lane, depth);
     const adder = (i: number, empty = false) => canEdit && (
-      <AddMenu options={opts} disabled={full} empty={empty} label={empty ? "Add a step" : `Add a step at position ${i + 1}`} onPick={(t) => add(lane, i, t, inLoop)} />
+      <AddMenu options={opts} disabled={full} empty={empty} label={empty ? "Add a step" : `Add a step at position ${i + 1}`} onPick={(o) => add(lane, i, o.type, inLoop, o.preset)} />
     );
     return (
       <div className={depth > 0 ? "ml-3 border-l-2 pl-3" : ""}>
