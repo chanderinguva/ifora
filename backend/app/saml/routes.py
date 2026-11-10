@@ -73,7 +73,7 @@ _USER_FIELDS = {"email", "username", "first_name", "last_name", "status"}
 
 def _el_lookup(user: User, attribute: str):
     """What `user.<attr>` reads inside an attribute expression. Unlike group rules, names are readable here: the value only goes
-    into the assertion, it does not grant access inside IdentityForge."""
+    into the assertion, it does not grant access inside Ifora."""
     v = getattr(user, attribute, None) if attribute in _USER_FIELDS else user.get_profile_attributes().get(attribute)
     return None if v == "" else v
 

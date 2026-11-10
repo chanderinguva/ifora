@@ -205,7 +205,7 @@ def set_credential(app_id: int, body: CredentialBody, request: Request, ctx=Depe
         raise HTTPException(status_code=422, detail="Invalid characters")
     if user.verify_password(body.password):
         # Handing the IdP password to every application would make this vault a single point of failure for all of them.
-        raise HTTPException(status_code=422, detail="Use this application's own password, not your IdentityForge password")
+        raise HTTPException(status_code=422, detail="Use this application's own password, not your Ifora password")
     try:
         blob, key_id = vault.encrypt(body.password, user.tenant_id, a.id, user.id)
     except vault.VaultUnavailable as e:

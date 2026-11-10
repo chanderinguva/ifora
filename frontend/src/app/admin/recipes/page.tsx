@@ -56,7 +56,7 @@ export default function RecipesPage() {
       </PageHeader>
       <RecipeTabs />
       <p className="mb-4 max-w-2xl text-sm text-muted-foreground">
-        A recipe reacts to something that happens in IdentityForge (or runs on a schedule, by hand, or from a signed webhook) and then runs
+        A recipe reacts to something that happens in Ifora (or runs on a schedule, by hand, or from a signed webhook) and then runs
         its steps in order. Only the published version runs; edit the draft freely and publish when it is ready.
       </p>
       {msg && <Alert variant={msg.ok ? "default" : "destructive"} className="mb-4" role="status"><AlertDescription>{msg.text}</AlertDescription></Alert>}

@@ -61,7 +61,7 @@ export default function ProvisioningApps() {
         {me.is_super_admin && available && <Button onClick={() => setPreset(presets[0] ?? null)} data-testid="add-app"><Plus className="mr-1 h-4 w-4" /> Add application</Button>}
       </PageHeader>
       <p className="mb-4 max-w-3xl text-sm text-muted-foreground">
-        Push users and groups from IdentityForge to the applications your people use. Applications with a SCIM 2.0 endpoint are provisioned directly;
+        Push users and groups from Ifora to the applications your people use. Applications with a SCIM 2.0 endpoint are provisioned directly;
         for applications with only a REST API, the gateway turns the same lifecycle (create, update, deactivate, delete) into the calls you describe.
         Assign users or groups to an application and it creates, updates and deactivates accounts automatically.
       </p>

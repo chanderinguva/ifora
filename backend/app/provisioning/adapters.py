@@ -313,7 +313,7 @@ def validate_rest_config(cfg: Any) -> Dict[str, Any]:
 
 
 class RestGateway(Adapter):
-    """Speaks SCIM semantics to the rest of IdentityForge and the app's own REST API to the outside."""
+    """Speaks SCIM semantics to the rest of Ifora and the app's own REST API to the outside."""
 
     def __init__(self, http: Http, config: dict):
         self.h, self.cfg = http, config or {}

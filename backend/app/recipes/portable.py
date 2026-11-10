@@ -59,7 +59,7 @@ def export_document(db: Session, r: Recipe) -> dict:
 def resolve_import(db: Session, doc: Any) -> Tuple[str, Optional[str], dict, List[str]]:
     """Validate the envelope and re-map group/connection references by name. Returns (name, description, definition, warnings)."""
     if not isinstance(doc, dict) or doc.get("format") != FORMAT:
-        raise ImportError_("this is not an IdentityForge recipe file")
+        raise ImportError_("this is not an Ifora recipe file")
     if doc.get("format_version") != FORMAT_VERSION:
         raise ImportError_(f"unsupported file version {doc.get('format_version')!r}")
     d = doc.get("definition")

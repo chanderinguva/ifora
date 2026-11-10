@@ -27,7 +27,7 @@ def outbox(monkeypatch):
 def test_public_branding_defaults_need_no_sign_in(anon):
     r = anon.get("/branding")
     assert r.status_code == 200
-    assert r.json() == {"display_name": "IdentityForge", "custom_name": False, "primary_color": None, "tagline": None, "has_logo": False, "logo_rev": None}
+    assert r.json() == {"display_name": "Ifora", "custom_name": False, "primary_color": None, "tagline": None, "has_logo": False, "logo_rev": None}
     assert anon.get("/branding/logo").status_code == 404
 
 
@@ -40,7 +40,7 @@ def test_branding_is_validated_saved_public_and_audited(admin, anon):
     pub = anon.get("/branding").json()
     assert pub["display_name"] == "Acme Corp" and pub["custom_name"] is True and pub["tagline"] == "Sign in to Acme"
     assert any(e["action"] == "BRANDING_UPDATED" for e in admin.get("/admin/audit").json()["items"])
-    assert admin.put("/admin/branding", {}).json()["display_name"] == "IdentityForge"     # clearing returns to the default
+    assert admin.put("/admin/branding", {}).json()["display_name"] == "Ifora"     # clearing returns to the default
 
 
 def test_logo_accepts_only_validated_raster_images(admin, anon):
@@ -114,7 +114,7 @@ def test_custom_template_is_used_for_real_email_and_can_be_reset(db, admin, outb
 def test_defaults_match_the_pre_branding_wording(db, admin, outbox):
     admin.post("/admin/users", {"email": "plain@example.com", "first_name": "Pat", "last_name": "P", "send_invite": True})
     m = outbox[-1]
-    assert m["Subject"] == "You have been invited to IdentityForge"
+    assert m["Subject"] == "You have been invited to Ifora"
     assert "Hello Pat," in m.get_content() and "expires in 72 hours" in m.get_content()
 
 

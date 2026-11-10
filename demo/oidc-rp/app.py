@@ -1,4 +1,4 @@
-"""Demo OIDC relying party: a separate, third-party web app that signs users in with IdentityForge.
+"""Demo OIDC relying party: a separate, third-party web app that signs users in with Ifora.
 
 Confidential client, authorization code + PKCE (S256), state/nonce, ID token validation against the
 provider's JWKS, UserInfo, refresh, revocation and RP-initiated logout. Sessions live in memory: this is a
@@ -38,7 +38,7 @@ SESSIONS: dict[str, dict] = {}  # sid -> {user claims, tokens}
 TX: dict[str, dict] = {}        # state -> {verifier, nonce, created}
 TX_TTL = 600
 
-app = FastAPI(title="IdentityForge demo app", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="Ifora demo app", docs_url=None, redoc_url=None, openapi_url=None)
 
 
 def b64u(b: bytes) -> str:
@@ -112,11 +112,11 @@ async def set_config(request: Request):
 def home(request: Request):
     s = current(request)
     if not configured():
-        return page("<p data-testid=unconfigured>Not configured. Register this app as an application in IdentityForge "
+        return page("<p data-testid=unconfigured>Not configured. Register this app as an application in Ifora "
                     f"(redirect URI <code>{esc(BASE_URL)}/callback</code>, post-logout URI <code>{esc(BASE_URL)}/signed-out</code>) "
                     "and set <code>CLIENT_ID</code> and <code>CLIENT_SECRET</code>.</p>")
     if not s:
-        return page("<p data-testid=signed-out>You are not signed in.</p><p><a class=b data-testid=signin href='/login'>Sign in with IdentityForge</a></p>")
+        return page("<p data-testid=signed-out>You are not signed in.</p><p><a class=b data-testid=signin href='/login'>Sign in with Ifora</a></p>")
     notice = f"<p data-testid=notice>{esc(s.pop('notice'))}</p>" if s.get("notice") else ""
     return page(
         f"<p data-testid=welcome>Signed in as <strong>{esc(s['claims'].get('name') or s['claims']['sub'])}</strong></p>{notice}"
@@ -224,5 +224,5 @@ def logout(request: Request):
 
 @app.get("/signed-out", response_class=HTMLResponse)
 def signed_out():
-    return page("<p data-testid=signed-out-page>You have been signed out of this app and of IdentityForge.</p>"
+    return page("<p data-testid=signed-out-page>You have been signed out of this app and of Ifora.</p>"
                 "<p><a class=b href='/'>Home</a></p>")

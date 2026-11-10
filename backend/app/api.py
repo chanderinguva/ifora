@@ -30,7 +30,7 @@ def create_app() -> FastAPI:
     if prod and not settings.SESSION_COOKIE_SECURE:
         raise RuntimeError("ENVIRONMENT=production requires SESSION_COOKIE_SECURE=true (serve the API over HTTPS)")
     app = FastAPI(
-        title="IdentityForge API",
+        title="Ifora API",
         description="Identity and Access Management Platform",
         version="0.1.0",
         docs_url=None if prod else "/docs",

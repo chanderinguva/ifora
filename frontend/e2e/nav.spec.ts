@@ -14,7 +14,7 @@ test.describe("desktop shell", () => {
     await expect(page).toHaveURL(/\/admin\/dashboard/);
 
     // logo + name is a link home (NN/g: the top-left logo is the home link)
-    const home = page.getByRole("link", { name: "IdentityForge home" }).first();
+    const home = page.getByRole("link", { name: "Ifora home" }).first();
     await expect(home).toHaveAttribute("href", "/admin/dashboard");
     await expect(page.getByTestId("logo-wordmark").first()).toBeVisible();
 
@@ -55,7 +55,7 @@ test.describe("desktop shell", () => {
     // wordmark and group labels are gone, the mark stays, and every item keeps its accessible name
     await expect(aside.getByTestId("logo-wordmark")).toHaveCount(0);
     await expect(aside.getByTestId("logo-mark")).toBeVisible();
-    await expect(aside.getByRole("link", { name: "IdentityForge home" })).toBeVisible();
+    await expect(aside.getByRole("link", { name: "Ifora home" })).toBeVisible();
     const users = main(page).getByRole("link", { name: "Users" });
     await expect(users).toBeVisible();
 
@@ -107,7 +107,7 @@ test.describe("mobile shell", () => {
     await open.click();
     const drawer = page.getByTestId("mobile-drawer");
     await expect(drawer).toBeVisible();
-    await expect(drawer.getByRole("link", { name: "IdentityForge home" })).toBeFocused();
+    await expect(drawer.getByRole("link", { name: "Ifora home" })).toBeFocused();
     await expect(drawer.getByText("Directory")).toBeVisible();
     // Escape closes and returns focus to the button that opened it
     await page.keyboard.press("Escape");

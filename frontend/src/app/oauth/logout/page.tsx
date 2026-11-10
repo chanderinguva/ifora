@@ -53,7 +53,7 @@ export default function LogoutPage() {
           <Logo />
           <CardTitle>Sign out?</CardTitle>
           <CardDescription>
-            {info?.client_name ? `${info.client_name} asked to sign you out of IdentityForge.` : "Sign out of IdentityForge."}
+            {info?.client_name ? `${info.client_name} asked to sign you out of Ifora.` : "Sign out of Ifora."}
             {info?.signed_in_as ? ` You are signed in as ${info.signed_in_as}.` : ""}
           </CardDescription>
         </CardHeader>

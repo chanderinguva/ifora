@@ -16,7 +16,7 @@ def _now():
 
 
 class ProvisioningApp(TenantOwned, Base):
-    """An application IdentityForge pushes users (and optionally groups) to."""
+    """An application Ifora pushes users (and optionally groups) to."""
 
     __tablename__ = "provisioning_apps"
     __table_args__ = (UniqueConstraint("tenant_id", "name", name="uq_provisioning_apps_tenant_name"),

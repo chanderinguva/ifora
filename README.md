@@ -1,10 +1,10 @@
-# IdentityForge
+# Ifora
 
 Identity and Access Management Platform built from scratch, not a rebranded solution.
 
 ## Overview
 
-IdentityForge is a modular monolith (FastAPI + Next.js, PostgreSQL as the authoritative store) providing:
+Ifora is a modular monolith (FastAPI + Next.js, PostgreSQL as the authoritative store) providing:
 - User and Group management, profile attributes and group rules/roles
 - Secure authentication: Argon2id passwords, opaque sessions, TOTP and passkeys (WebAuthn)
 - Federation: OIDC provider, SAML IdP, Secure Web Authentication (SWA) apps
@@ -159,4 +159,4 @@ npx playwright test
 
 ## License
 
-Proprietary - IdentityForge Development
+Proprietary - Ifora Development

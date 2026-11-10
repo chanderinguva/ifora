@@ -1,4 +1,4 @@
-/** Utility functions for IdentityForge frontend. */
+/** Utility functions for Ifora frontend. */
 
 import clsx, { type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
