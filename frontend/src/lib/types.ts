@@ -16,7 +16,7 @@ export type User = {
   mfa_setup_required?: boolean;
   /** This session has dropped admin powers ("user view"); only present on /me. */
   acting_as_user?: boolean;
-  groups?: { id: number; name: string }[];
+  groups?: { id: number; name: string; type?: string }[];
   editable_attributes?: string[];
   attribute_schema?: ProfileAttribute[];
 };

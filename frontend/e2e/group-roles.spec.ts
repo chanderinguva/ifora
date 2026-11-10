@@ -44,6 +44,8 @@ test("administrator roles are granted through a team group", async ({ page }) =>
 
     // the user page shows where the role comes from
     await page.goto(`/admin/users/${user.id}`);
+    await page.getByTestId("utab-access").click();
+    await expect(page.getByTestId("user-groups")).toContainText(groupName);
     await expect(page.getByTestId("role-via-help_desk_admin")).toContainText(groupName);
     await logout(page);
 

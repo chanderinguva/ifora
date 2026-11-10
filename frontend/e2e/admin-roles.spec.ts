@@ -19,6 +19,9 @@ test("a super admin gives an administrator the report role; that admin sees only
   await page.getByLabel("Search users").fill(email);
   await page.getByRole("link", { name: /Report Admin/ }).first().click();
   // a new administrator starts with the least-privilege role, not full access
+  await page.getByTestId("utab-access").click();
+  await expect(page.getByTestId("effective-roles")).toContainText("Read-only administrator");
+  await expect(page.getByTestId("effective-roles")).toContainText("assigned directly");
   await expect(page.getByTestId("role-read_only_admin")).toBeChecked();
   await expect(page.getByTestId("role-org_admin")).not.toBeChecked();
   await page.getByTestId("role-report_admin").check();
