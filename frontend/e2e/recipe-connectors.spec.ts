@@ -55,3 +55,48 @@ test("connect a pre-built connector, see it listed, test it, edit without re-ent
   await expect(page.getByRole("status").filter({ hasText: "Connection deleted" })).toBeVisible();
   await expect(page.getByTestId("connections-table")).not.toContainText(connName);
 });
+
+test("the editor offers the connector action step and its outputs become datapills", async ({ page }) => {
+  const name = `E2E GitHub editor ${stamp}`;
+  const recipeName = `E2E connector step ${stamp}`;
+  await loginAsAdmin(page);
+  page.on("dialog", (d) => d.accept());
+
+  await page.goto("/admin/recipes/connections");
+  await page.getByRole("button", { name: "Connect GitHub" }).click();
+  const form = page.getByTestId("connector-connection-editor");
+  await form.getByLabel("Name", { exact: true }).fill(name);
+  await form.getByLabel("Organisation").fill("acme-e2e");
+  await form.getByLabel("Personal access token or app token").fill("ghp_e2e_fake_token_value");
+  await form.getByRole("button", { name: "Save connection" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Connection saved" })).toBeVisible();
+
+  await page.goto("/admin/recipes");
+  await page.getByRole("button", { name: "New recipe" }).click();
+  await page.locator("#rc-name").fill(recipeName);
+  await page.getByRole("button", { name: "Create and open builder" }).click();
+  await page.getByTestId("try-studio").click();
+  await page.getByRole("button", { name: "Add a step", exact: true }).first().click();
+  await page.getByRole("menuitem", { name: "Run a connector action", exact: true }).click();
+
+  const stepForm = page.getByTestId("connector-step-form");
+  await expect(stepForm.getByLabel("Connection")).toContainText(name);
+  await stepForm.getByLabel("Action").selectOption({ label: "Get user" });
+  await stepForm.getByLabel("GitHub username", { exact: true }).fill("octocat");
+  await expect(stepForm).toContainText("Later steps can use");
+  await expect(stepForm).toContainText("login");
+  await expect(stepForm).toContainText("Retried automatically");
+
+  // a later step can pick the action's outputs
+  await page.getByRole("button", { name: "Add a step at position 2", exact: true }).first().click();   // right after the connector step, in the main lane
+  await page.getByRole("menuitem", { name: "Write to the job log", exact: true }).click();
+  await page.getByTestId("pill-tray").getByLabel("Search data").fill("login");
+  await expect(page.locator('[data-testid="pill-chip"][data-path$="output.login"]')).toBeVisible();
+
+  await page.goto("/admin/recipes");
+  await page.getByTestId("recipes-table").locator("tr", { hasText: recipeName }).getByRole("button", { name: "Delete" }).click();
+  await expect(page.getByTestId("recipes-table")).not.toContainText(recipeName);
+  await page.goto("/admin/recipes/connections");
+  await page.getByTestId("connections-table").locator("tr", { hasText: name }).getByRole("button", { name: "Delete" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Connection deleted" })).toBeVisible();
+});
