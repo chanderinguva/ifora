@@ -25,6 +25,6 @@ PRESETS = [
      "description": "For applications that only accept PATCH for updates and manage membership through SCIM groups.",
      "options": {"update_style": "patch", "deactivate": "patch", "push_groups": True}},
     {"key": "rest-gateway", "name": "REST application (SCIM gateway)", "kind": "rest", "auth_type": "bearer",
-     "description": "An application with its own REST API. IdentityForge turns provisioning into the calls you describe.",
+     "description": "An application with its own REST API. Ifora turns provisioning into the calls you describe.",
      "options": {"deactivate": "patch", "push_groups": False}, "rest_config": REST_EXAMPLE},
 ]

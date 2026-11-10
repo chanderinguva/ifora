@@ -71,7 +71,7 @@ def test_setup_requires_password(member):
 
 def test_enrolment_flow_and_secret_encrypted_at_rest(db, member):
     r = member.post("/me/mfa/setup", {"password": STRONG}).json()
-    assert r["otpauth_uri"].startswith("otpauth://totp/") and "IdentityForge" in r["otpauth_uri"]
+    assert r["otpauth_uri"].startswith("otpauth://totp/") and "Ifora" in r["otpauth_uri"]
     stored = db.query(UserMFA).one().secret_encrypted
     assert r["secret"] not in stored and mfa.decrypt_secret(stored) == r["secret"]
     assert member.get("/me/mfa").json() == {"enabled": False, "pending": True, "recovery_codes_remaining": 0}

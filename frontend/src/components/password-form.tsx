@@ -82,7 +82,7 @@ export function SetPasswordForm({ invite }: { invite: boolean }) {
     setToken(t ?? "");
     if (t) history.replaceState(null, "", window.location.pathname); // keep the token out of history and screenshots
   }, []);
-  const title = invite ? "Welcome to IdentityForge" : "Choose a new password";
+  const title = invite ? "Welcome to Ifora" : "Choose a new password";
   const desc = invite ? "Set a password to activate your account." : "Pick a new password for your account.";
   if (token === null) return <Shell title={title} description={desc}><p className="text-sm text-muted-foreground">Loading…</p></Shell>;
   return (

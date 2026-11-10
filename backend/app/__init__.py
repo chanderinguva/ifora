@@ -1,1 +1,1 @@
-"""IdentityForge Backend Application."""
+"""Ifora Backend Application."""

@@ -55,7 +55,7 @@ export default function OidcClientsPage() {
         <Button onClick={() => setDraft(empty())}><Plus className="mr-1 h-4 w-4" /> Add application</Button>
       </PageHeader>
       <p className="mb-4 max-w-2xl text-sm text-muted-foreground">
-        Applications that sign users in with IdentityForge. Every client uses the authorization code flow with PKCE; redirect URIs are
+        Applications that sign users in with Ifora. Every client uses the authorization code flow with PKCE; redirect URIs are
         matched exactly and must be https (http is allowed for localhost only). Sign-in endpoints arrive in a later release.
       </p>
 

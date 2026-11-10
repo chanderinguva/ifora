@@ -1,4 +1,4 @@
-/** Authenticated JSON client for the IdentityForge API (cookie session + CSRF header). */
+/** Authenticated JSON client for the Ifora API (cookie session + CSRF header). */
 
 import { API_URL } from "./api";
 import { ensureCsrfToken } from "./auth-client";

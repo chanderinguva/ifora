@@ -32,7 +32,7 @@ test("a separate third-party app: consent, deny, refresh, withdraw access, revok
   const p = await ctx.newPage();
   p.on("dialog", (d) => d.accept());
 
-  // not signed in -> sign in at IdentityForge -> consent names the app -> back on the app's own origin
+  // not signed in -> sign in at Ifora -> consent names the app -> back on the app's own origin
   await p.goto(DEMO);
   await expect(p.getByTestId("signed-out")).toBeVisible();
   await p.getByTestId("signin").click();
@@ -53,7 +53,7 @@ test("a separate third-party app: consent, deny, refresh, withdraw access, revok
   await p.getByTestId("refresh").click();
   await expect(p.getByTestId("notice")).toHaveText("Tokens refreshed.");
 
-  // the user withdraws access in IdentityForge -> the app's refresh token is dead
+  // the user withdraws access in Ifora -> the app's refresh token is dead
   await p.goto("http://localhost:3000/settings");
   await p.getByRole("button", { name: `Withdraw access for ${name}` }).click();
   await expect(p.getByText(`${name} can no longer access your account`)).toBeVisible();

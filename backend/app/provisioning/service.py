@@ -2,7 +2,7 @@
 
 A user is *entitled* to an app when assigned directly or through a group. The desired state of (app, user) is
 "present and active" iff entitled AND the user's status is `active`; anything else means deprovision per the app's
-policy. Every task is an idempotent "make the app match IdentityForge" for one user or group, so repeated, late or
+policy. Every task is an idempotent "make the app match Ifora" for one user or group, so repeated, late or
 duplicated tasks are harmless.
 """
 

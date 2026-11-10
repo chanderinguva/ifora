@@ -95,7 +95,7 @@ export default function SwaContinue() {
           <CardTitle>{manage && st ? (st.has_credential ? `Change your sign-in for ${st.name}` : `Connect your ${st.name} account`) : st ? `Signing you in to ${st.name}…` : "Signing you in…"}</CardTitle>
           {manage && st && (
             <CardDescription>
-              Enter the account you use at <strong>{st.login_host}</strong>. IdentityForge stores the password encrypted and sends it only to that site's sign-in page when you open this app.
+              Enter the account you use at <strong>{st.login_host}</strong>. Ifora stores the password encrypted and sends it only to that site's sign-in page when you open this app.
             </CardDescription>
           )}
         </CardHeader>
@@ -110,7 +110,7 @@ export default function SwaContinue() {
               )}
               <div className="space-y-1"><Label htmlFor="swa-pass">Password at {st.login_host}</Label>
                 <Input id="swa-pass" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} required maxLength={256} />
-                <p className="text-xs text-muted-foreground">Use the application's own password, not your IdentityForge password.</p></div>
+                <p className="text-xs text-muted-foreground">Use the application's own password, not your Ifora password.</p></div>
               <div className="flex gap-2">
                 <Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save and sign in"}</Button>
                 {st.has_credential && <Button type="button" variant="outline" onClick={forget}>Remove saved sign-in</Button>}

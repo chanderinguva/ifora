@@ -40,7 +40,7 @@ export function SwaCard({ appId, onChange }: { appId: number; onChange: () => vo
       <CardHeader>
         <CardTitle>Secure Web Authentication</CardTitle>
         <CardDescription>
-          For applications that only have a username and password form. Each user stores their own account once; IdentityForge keeps the password encrypted and posts it
+          For applications that only have a username and password form. Each user stores their own account once; Ifora keeps the password encrypted and posts it
           to the login URL below when they open the tile. Only use this for applications that cannot do SAML or OpenID Connect.
         </CardDescription>
       </CardHeader>
@@ -58,8 +58,8 @@ export function SwaCard({ appId, onChange }: { appId: number; onChange: () => vo
           <div className="space-y-1"><Label htmlFor="swa-src">Username</Label>
             <select id="swa-src" className={fieldClass} value={f.username_source} onChange={(e) => set({ username_source: e.target.value })}>
               <option value="user">Each user enters it</option>
-              <option value="email">Their IdentityForge email</option>
-              <option value="username">Their IdentityForge username</option>
+              <option value="email">Their Ifora email</option>
+              <option value="username">Their Ifora username</option>
             </select></div>
         </div>
         <div className="space-y-2">

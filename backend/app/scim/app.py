@@ -16,7 +16,7 @@ logger = structlog.get_logger(__name__)
 
 
 def create_scim_app() -> FastAPI:
-    app = FastAPI(title="IdentityForge SCIM 2.0", docs_url=None, redoc_url=None, openapi_url=None)
+    app = FastAPI(title="Ifora SCIM 2.0", docs_url=None, redoc_url=None, openapi_url=None)
 
     @app.exception_handler(ScimError)
     async def scim_error(request, exc: ScimError):

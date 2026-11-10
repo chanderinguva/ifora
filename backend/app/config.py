@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     # Fernet key (urlsafe base64, 32 bytes) used to encrypt TOTP secrets at rest.
     # Generate: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     MFA_ENCRYPTION_KEY: str = Field(...)
-    MFA_ISSUER: str = Field(default="IdentityForge")
+    MFA_ISSUER: str = Field(default="Ifora")
     # Admins must have an authenticator app or a passkey before the admin API works for them.
     ADMIN_MFA_REQUIRED: bool = Field(default=True)
     # OIDC provider (ADR 005). The signing-key encryption key must be a *different* Fernet key from MFA_ENCRYPTION_KEY.
@@ -104,7 +104,7 @@ class Settings(BaseSettings):
     # browser sees (e.g. "localhost", or "example.com" for https://app.example.com);
     # origins must match exactly (scheme + host + port).
     WEBAUTHN_RP_ID: str = Field(default="localhost")
-    WEBAUTHN_RP_NAME: str = Field(default="IdentityForge")
+    WEBAUTHN_RP_NAME: str = Field(default="Ifora")
     WEBAUTHN_ORIGINS: List[str] = Field(default=["http://localhost:3000"])
     WEBAUTHN_CEREMONY_SECONDS: int = Field(default=300)
     ENVIRONMENT: str = Field(default="development")
