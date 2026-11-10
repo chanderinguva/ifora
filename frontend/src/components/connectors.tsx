@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/bits";
+import { SaveButton } from "@/components/save-button";
 import type { ConnectorInfo } from "@/lib/recipes";
 import type { User } from "@/lib/types";
 
@@ -48,8 +49,10 @@ export function ConnectorCatalog({ items, disabled, onConnect }: { items: Connec
   );
 }
 
-export function ConnectorConnectionForm({ draft, setDraft, admins, onSave, onCancel }: {
+export function ConnectorConnectionForm({ draft, setDraft, admins, onSave, onCancel, dirty }: {
   draft: ConnectorDraft; setDraft: (d: ConnectorDraft) => void; admins: User[]; onSave: () => void; onCancel: () => void;
+  /** Is there something to save? A new connection always is; an existing one only once it was changed. */
+  dirty: boolean;
 }) {
   const editing = draft.id !== undefined;
   const problem = draftProblem(draft);
@@ -86,7 +89,7 @@ export function ConnectorConnectionForm({ draft, setDraft, admins, onSave, onCan
       </div>
       {problem && <p className="text-xs text-muted-foreground" data-testid="connector-problem">{problem}</p>}
       <div className="flex gap-2">
-        <Button disabled={problem !== null} onClick={onSave}>Save connection</Button>
+        <SaveButton dirty={dirty} disabled={problem !== null} onClick={onSave}>Save connection</SaveButton>
         <Button variant="ghost" onClick={onCancel}>Cancel</Button>
       </div>
     </CardContent></Card>

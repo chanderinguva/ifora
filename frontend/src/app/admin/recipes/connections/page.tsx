@@ -10,6 +10,8 @@ import { Label } from "@/components/ui/label";
 import { Badge, PageHeader, fieldClass, td, th } from "@/components/bits";
 import { RecipeTabs } from "@/components/recipe-bits";
 import { http, qs, type Page } from "@/lib/http";
+import { useDirty } from "@/lib/use-dirty";
+import { SaveButton } from "@/components/save-button";
 import type { Connection, ConnectorInfo } from "@/lib/recipes";
 import { ConnectorCatalog, ConnectorConnectionForm, newConnectorDraft, type ConnectorDraft } from "@/components/connectors";
 import type { User } from "@/lib/types";
@@ -27,6 +29,8 @@ export default function ConnectionsPage() {
   const [connectors, setConnectors] = useState<ConnectorInfo[]>([]);
   const [cdraft, setCdraft] = useState<ConnectorDraft | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const conn = useDirty(draft, draft !== null);
+  const connector = useDirty(cdraft, cdraft !== null);
 
   const load = useCallback(() => {
     http<{ connections_available: boolean }>("/admin/recipes/status").then((s) => setAvailable(s.connections_available)).catch(() => {});
@@ -79,7 +83,7 @@ export default function ConnectionsPage() {
       {!available && <Alert className="mb-4"><AlertDescription>Connections are unavailable: set <code>RECIPE_ENCRYPTION_KEY</code> (a dedicated Fernet key) and restart the API.</AlertDescription></Alert>}
       {msg && <Alert variant={msg.ok ? "default" : "destructive"} className="mb-4" role="status"><AlertDescription>{msg.text}</AlertDescription></Alert>}
 
-      {cdraft && <ConnectorConnectionForm draft={cdraft} setDraft={setCdraft} admins={admins} onSave={() => saveConnector(cdraft)} onCancel={() => setCdraft(null)} />}
+      {cdraft && <ConnectorConnectionForm dirty={cdraft.id === undefined || connector.dirty} draft={cdraft} setDraft={setCdraft} admins={admins} onSave={() => saveConnector(cdraft)} onCancel={() => setCdraft(null)} />}
       {!cdraft && !draft && <ConnectorCatalog items={connectors} disabled={!available} onConnect={(c) => setCdraft(newConnectorDraft(c))} />}
 
       {draft && (
@@ -119,14 +123,14 @@ export default function ConnectionsPage() {
               <Input id="c-secret" type="password" autoComplete="off" value={draft.secret} onChange={(e) => setDraft({ ...draft, secret: e.target.value })} /></div>
           </div>
           <div className="flex gap-2">
-            <Button disabled={!draft.name.trim() || (draft.kind !== "slack_webhook" && !draft.allowed_host.trim()) || (!draft.id && !draft.secret)} onClick={() => run(async () => {
+            <SaveButton dirty={!draft.id || conn.dirty} disabled={!draft.name.trim() || (draft.kind !== "slack_webhook" && !draft.allowed_host.trim()) || (!draft.id && !draft.secret)} onClick={() => run(async () => {
               const body = { name: draft.name, kind: draft.kind, header_name: draft.kind === "header" ? draft.header_name : null, allowed_host: draft.allowed_host,
                 allowed_paths: draft.kind === "slack_webhook" ? null : draft.paths.split("\n").map((p) => p.trim()).filter(Boolean),
                 client_id: draft.kind === "oauth2_client_credentials" ? draft.client_id : null, token_url: draft.kind === "oauth2_client_credentials" ? draft.token_url : null,
                 scope: draft.kind === "oauth2_client_credentials" ? draft.scope || null : null, secret: draft.secret || null, allowed_users: draft.allowed_users };
               if (draft.id) await http(`/admin/recipe-connections/${draft.id}`, { method: "PUT", body }); else await http("/admin/recipe-connections", { method: "POST", body });
               setDraft(null);
-            }, "Connection saved")}>Save connection</Button>
+            }, "Connection saved")}>Save connection</SaveButton>
             <Button variant="ghost" onClick={() => setDraft(null)}>Cancel</Button>
           </div>
         </CardContent></Card>

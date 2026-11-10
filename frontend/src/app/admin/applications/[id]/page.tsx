@@ -16,6 +16,8 @@ import { SwaCard } from "@/components/swa-card";
 import { AuthPolicyCard } from "@/components/auth-policy-card";
 import { SelfServiceCard } from "@/components/self-service-card";
 import { http, qs, type Page } from "@/lib/http";
+import { useDirty } from "@/lib/use-dirty";
+import { SaveButton } from "@/components/save-button";
 import { appBody, SIGN_ON_LABEL, type AppSummary } from "@/lib/applications";
 import type { Group, User } from "@/lib/types";
 
@@ -41,14 +43,15 @@ export default function ApplicationDetail() {
   const [initiate, setInitiate] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [tab, setTab] = useState<Tab>("general");
+  const { dirty, markClean } = useDirty(form, form !== null);
   useEffect(() => { const h = window.location.hash.slice(1) as Tab; if (TABS.some(([k]) => k === h)) setTab(h); }, []);
   const pickTab = (k: Tab) => { setTab(k); window.history.replaceState(null, "", `#${k}`); };
 
   const refresh = useCallback(() => {
-    http<AppSummary>(`/admin/applications/${id}`).then((a) => { setApp(a); setForm(a); }).catch((e) => setMsg({ ok: false, text: e.message }));
+    http<AppSummary>(`/admin/applications/${id}`).then((a) => { setApp(a); setForm(a); markClean(); }).catch((e) => setMsg({ ok: false, text: e.message }));
     http<{ items: Assignment[] }>(`/admin/applications/${id}/assignments`).then((r) => setAssignments(r.items)).catch(() => {});
     http<{ items: ClientRow[] }>("/admin/oidc/clients").then((r) => setClients(r.items)).catch(() => {});
-  }, [id]);
+  }, [id, markClean]);
   useEffect(() => {
     refresh();
     http<Page<User>>(`/admin/users${qs({ count: 100 })}`).then((p) => setUsers(p.Resources)).catch(() => {});
@@ -106,7 +109,7 @@ export default function ApplicationDetail() {
           <label className="flex items-center gap-2 text-sm sm:col-span-2"><input type="checkbox" checked={form.require_assignment} onChange={(e) => set({ require_assignment: e.target.checked })} /> Only assigned users may sign in with this application</label>
           <div className="sm:col-span-2"><h3 className="mb-2 text-sm font-medium">Governance</h3><AppMetadataFields value={form} onChange={(m) => set(m)} /></div>
           <div className="flex gap-2 sm:col-span-2">
-            <Button onClick={() => run(() => http(`/admin/applications/${id}`, { method: "PUT", body: appBody(form) }), "Saved")}>Save</Button>
+            <SaveButton dirty={dirty} onClick={() => run(() => http(`/admin/applications/${id}`, { method: "PUT", body: appBody(form) }), "Saved")}>Save</SaveButton>
             <Button variant="destructive" onClick={() => { if (confirm(`Delete ${app.name}?`)) run(async () => { await http(`/admin/applications/${id}`, { method: "DELETE" }); router.push("/admin/applications"); }); }}>Delete</Button>
           </div>
         </CardContent>

@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { http } from "@/lib/http";
+import { useDirty } from "@/lib/use-dirty";
+import { SaveButton } from "@/components/save-button";
 
 type Role = { id: string; label: string; description: string };
 type Source = { via: string; group_name?: string };
@@ -15,10 +16,12 @@ export function AdminRolesCard({ userId }: { userId: number }) {
   const [roles, setRoles] = useState<string[]>([]);
   const [sources, setSources] = useState<Record<string, Source[]>>({});
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const { dirty, markClean } = useDirty([...roles].sort(), loaded);
 
   useEffect(() => {
     http<{ items: Role[] }>("/admin/roles").then((r) => setCatalog(r.items)).catch(() => {});
-    http<{ roles: string[]; sources: Record<string, Source[]> }>(`/admin/roles/users/${userId}`).then((r) => { setRoles(r.roles); setSources(r.sources); }).catch((e) => setMsg({ ok: false, text: e.message }));
+    http<{ roles: string[]; sources: Record<string, Source[]> }>(`/admin/roles/users/${userId}`).then((r) => { setRoles(r.roles); setSources(r.sources); setLoaded(true); }).catch((e) => setMsg({ ok: false, text: e.message }));
   }, [userId]);
 
   // every role the person holds, in catalog order, with where it comes from (what is ticked below counts as direct even before it is saved)
@@ -31,7 +34,7 @@ export function AdminRolesCard({ userId }: { userId: number }) {
     setMsg(null);
     try {
       const r = await http<{ roles: string[] }>(`/admin/roles/users/${userId}`, { method: "PUT", body: { roles } });
-      setRoles(r.roles); setMsg({ ok: true, text: "Roles saved; they apply on the administrator's next request" });
+      setRoles(r.roles); markClean(); setMsg({ ok: true, text: "Roles saved; they apply on the administrator's next request" });
     } catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : "Failed" }); }
   }
 
@@ -62,7 +65,7 @@ export function AdminRolesCard({ userId }: { userId: number }) {
             <span><span className="font-medium">{r.label}</span><span className="block text-xs text-muted-foreground">{r.description}</span></span>
           </label>
         ))}
-        <Button size="sm" onClick={save} data-testid="roles-save">Save roles</Button>
+        <SaveButton dirty={dirty} size="sm" onClick={save} data-testid="roles-save">Save roles</SaveButton>
       </CardContent>
     </Card>
   );

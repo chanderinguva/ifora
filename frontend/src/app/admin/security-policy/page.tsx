@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/bits";
 import { http } from "@/lib/http";
+import { useDirty } from "@/lib/use-dirty";
+import { SaveButton } from "@/components/save-button";
 
 type Policy = { min_length: number; require_mixed_case: boolean; require_digit: boolean; require_symbol: boolean; no_user_info: boolean; history_count: number;
   max_age_days: number; max_failed_attempts: number; lockout_minutes: number; session_lifetime_hours: number; idle_timeout_minutes: number };
@@ -35,11 +37,12 @@ export default function SecurityPolicyPage() {
   const [data, setData] = useState<Resp | null>(null);
   const [p, setP] = useState<Policy | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const { dirty, markClean } = useDirty(p, p !== null);
   const started = useRef(false);
   useEffect(() => {
     if (started.current) return;
     started.current = true;
-    http<Resp>("/admin/security-policy").then((r) => { setData(r); setP(r.policy); }).catch((e) => setMsg({ ok: false, text: e.message }));
+    http<Resp>("/admin/security-policy").then((r) => { setData(r); setP(r.policy); markClean(); }).catch((e) => setMsg({ ok: false, text: e.message }));
   }, []);
 
   if (!p || !data) return msg ? <Alert variant="destructive"><AlertDescription>{msg.text}</AlertDescription></Alert> : <div className="text-sm text-muted-foreground">Loading…</div>;
@@ -50,7 +53,7 @@ export default function SecurityPolicyPage() {
     setMsg(null);
     try {
       const r = await http<Resp>("/admin/security-policy", { method: "PUT", body: p });
-      setData(r); setP(r.policy); setMsg({ ok: true, text: "Policy saved. It applies from now on, including to sessions that are already open." });
+      setData(r); setP(r.policy); markClean(); setMsg({ ok: true, text: "Policy saved. It applies from now on, including to sessions that are already open." });
     } catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not save" }); }
   }
 
@@ -93,7 +96,7 @@ export default function SecurityPolicyPage() {
           </CardContent>
         </Card>
         <div className="flex gap-2">
-          <Button type="submit" disabled={invalid} data-testid="sp-save">Save policy</Button>
+          <SaveButton dirty={dirty} type="submit" disabled={invalid} data-testid="sp-save">Save policy</SaveButton>
           <Button type="button" variant="outline" onClick={() => setP(data.defaults)} data-testid="sp-defaults">Restore defaults</Button>
         </div>
       </form>

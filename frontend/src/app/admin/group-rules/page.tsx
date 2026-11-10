@@ -10,6 +10,8 @@ import { Label } from "@/components/ui/label";
 import { ExpressionEditor } from "@/components/expression-editor";
 import { Badge, PageHeader, fieldClass, td, th } from "@/components/bits";
 import { http, qs, type Page } from "@/lib/http";
+import { useDirty } from "@/lib/use-dirty";
+import { SaveButton } from "@/components/save-button";
 import { API_URL } from "@/lib/api";
 import type { Group, GroupRule, ProfileAttribute, RuleCondition } from "@/lib/types";
 
@@ -51,6 +53,7 @@ export default function GroupRulesPage() {
   const [preview, setPreview] = useState<{ count: number; sample: { email: string }[] } | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [createGroups, setCreateGroups] = useState(true);
+  const { dirty } = useDirty(draft, draft !== null);
 
   const load = useCallback(() => {
     http<{ group_rules: boolean }>("/admin/features").then((f) => {
@@ -228,7 +231,7 @@ export default function GroupRulesPage() {
                 onClick={() => run(async () => setPreview(await http("/admin/group-rules/preview", { method: "POST", body: { kind: draft.kind, match: draft.match, conditions: draft.conditions, expression: draft.expression } })), "Preview updated")}>
                 Preview matches
               </Button>
-              <Button type="button" disabled={!draft.name.trim() || draft.group_ids.length === 0}
+              <SaveButton type="button" dirty={!draft.id || dirty} disabled={!draft.name.trim() || draft.group_ids.length === 0}
                 onClick={() => run(async () => {
                   const body = { name: draft.name, kind: draft.kind, match: draft.match, conditions: draft.kind === "basic" ? draft.conditions : [], expression: draft.kind === "expression" ? draft.expression : null, group_ids: draft.group_ids };
                   if (draft.id) await http(`/admin/group-rules/${draft.id}`, { method: "PUT", body });
@@ -236,7 +239,7 @@ export default function GroupRulesPage() {
                   setDraft(null);
                 }, "Rule saved. It is inactive until you activate it.")}>
                 Save rule
-              </Button>
+              </SaveButton>
               <Button type="button" variant="ghost" onClick={() => setDraft(null)}>Cancel</Button>
             </div>
           </CardContent>

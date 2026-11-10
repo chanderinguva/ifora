@@ -12,6 +12,8 @@ import { Label } from "@/components/ui/label";
 import { Badge, PageHeader, fmt } from "@/components/bits";
 import { useCurrentUser } from "@/components/auth-guard";
 import { http } from "@/lib/http";
+import { compact, useDirty } from "@/lib/use-dirty";
+import { SaveButton } from "@/components/save-button";
 import { UserActivity, UserApplications } from "@/components/user-tabs";
 import { UserGroupsAndRoles } from "@/components/user-access";
 import { AttrField, fromApi, toApi } from "@/components/attr-field";
@@ -34,11 +36,13 @@ export default function UserDetail() {
   const [newPw, setNewPw] = useState("");
   const [requireChange, setRequireChange] = useState(false);
 
+  const { dirty, markClean } = useDirty({ form, attrs: compact(attrs) }, user !== null);
   const apply = useCallback((u: User) => {
     setUser(u);
+    markClean();
     setForm({ first_name: u.first_name, last_name: u.last_name, email: u.email });
     setAttrs(Object.fromEntries(Object.entries(u.profile_attributes ?? {}).map(([k, v]) => [k, fromApi(v)])));
-  }, []);
+  }, [markClean]);
 
   useEffect(() => {
     http<{ items: ProfileAttribute[] }>("/admin/profile-attributes").then((r) => setSchema(r.items)).catch(() => {});
@@ -160,7 +164,7 @@ export default function UserDetail() {
       </Card>
 
       <div className="mb-8 flex flex-wrap gap-3">
-        <Button onClick={save} disabled={protectedTarget && !isSelf}>Save changes</Button>
+        <SaveButton dirty={dirty} onClick={save} disabled={protectedTarget && !isSelf}>Save changes</SaveButton>
         {!isSelf && !user.is_super_admin && (
           <Button
             variant="outline"

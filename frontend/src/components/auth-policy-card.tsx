@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { fieldClass } from "@/components/bits";
 import { http } from "@/lib/http";
+import { useDirty } from "@/lib/use-dirty";
+import { SaveButton } from "@/components/save-button";
 
 type Zone = { id: number; name: string };
 type Policy = { configured: boolean; require_mfa: boolean; reauth_minutes: number | null; allowed_zone_ids: number[]; blocked_zone_ids: number[] };
@@ -16,10 +18,11 @@ export function AuthPolicyCard({ appId }: { appId: number }) {
   const [p, setP] = useState<Policy | null>(null);
   const [zones, setZones] = useState<Zone[]>([]);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const { dirty, markClean } = useDirty(p && { require_mfa: p.require_mfa, reauth_minutes: p.reauth_minutes || null, allowed: [...p.allowed_zone_ids].sort(), blocked: [...p.blocked_zone_ids].sort() }, p !== null);
   const load = useCallback(() => {
-    http<Policy>(`/admin/applications/${appId}/policy`).then(setP).catch((e) => setMsg({ ok: false, text: e.message }));
+    http<Policy>(`/admin/applications/${appId}/policy`).then((x) => { setP(x); markClean(); }).catch((e) => setMsg({ ok: false, text: e.message }));
     http<{ items: Zone[] }>("/admin/network-zones").then((r) => setZones(r.items)).catch(() => {});
-  }, [appId]);
+  }, [appId, markClean]);
   useEffect(load, [load]);
   if (!p) return null;
 
@@ -31,7 +34,7 @@ export function AuthPolicyCard({ appId }: { appId: number }) {
     setMsg(null);
     try {
       const r = await http<Policy>(`/admin/applications/${appId}/policy`, { method: "PUT", body: { require_mfa: p!.require_mfa, reauth_minutes: p!.reauth_minutes || null, allowed_zone_ids: p!.allowed_zone_ids, blocked_zone_ids: p!.blocked_zone_ids } });
-      setP(r); setMsg({ ok: true, text: "Policy saved" });
+      setP(r); markClean(); setMsg({ ok: true, text: "Policy saved" });
     } catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : "Failed" }); }
   }
   async function remove() {
@@ -63,7 +66,7 @@ export function AuthPolicyCard({ appId }: { appId: number }) {
           {checks("allowed_zone_ids", "blocked_zone_ids", "Only allow these networks", "When none are ticked, any network is allowed.")}
           {checks("blocked_zone_ids", "allowed_zone_ids", "Always block these networks", "Blocking wins over allowing.")}
         </div>
-        <div className="flex gap-2"><Button onClick={save} data-testid="policy-save">Save policy</Button>{p.configured && <Button variant="outline" onClick={remove}>Remove policy</Button>}</div>
+        <div className="flex gap-2"><SaveButton dirty={dirty} onClick={save} data-testid="policy-save">Save policy</SaveButton>{p.configured && <Button variant="outline" onClick={remove}>Remove policy</Button>}</div>
       </CardContent>
     </Card>
   );

@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { fieldClass } from "@/components/bits";
 import { http } from "@/lib/http";
+import { useDirty } from "@/lib/use-dirty";
+import { SaveButton } from "@/components/save-button";
 
 type Extra = { name: string; value: string };
 type Cfg = { login_url: string; username_field: string; password_field: string; extra_fields: Extra[]; username_source: string };
@@ -22,10 +24,11 @@ export function SwaCard({ appId, onChange }: { appId: number; onChange: () => vo
   const [rows, setRows] = useState<Row[]>([]);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
+  const { dirty, markClean } = useDirty(f);   // the blank form is the baseline until saved settings replace it (see load)
   const load = useCallback(() => {
-    http<Info>(`/admin/applications/${appId}/swa`).then((i) => { setInfo(i); if (i.config) setF(i.config); }).catch((e) => setMsg({ ok: false, text: e.message }));
+    http<Info>(`/admin/applications/${appId}/swa`).then((i) => { setInfo(i); if (i.config) { setF(i.config); markClean(); } }).catch((e) => setMsg({ ok: false, text: e.message }));
     http<{ items: Row[] }>(`/admin/applications/${appId}/swa/credentials`).then((r) => setRows(r.items)).catch(() => {});
-  }, [appId]);
+  }, [appId, markClean]);
   useEffect(load, [load]);
 
   async function run(fn: () => Promise<unknown>, ok: string) {
@@ -74,7 +77,7 @@ export function SwaCard({ appId, onChange }: { appId: number; onChange: () => vo
           {f.extra_fields.length < 10 && <Button variant="outline" onClick={() => set({ extra_fields: [...f.extra_fields, { name: "", value: "" }] })}>Add field</Button>}
         </div>
         <div className="flex gap-2">
-          <Button onClick={() => run(() => http(`/admin/applications/${appId}/swa`, { method: "PUT", body: f }), "SWA settings saved")}>Save SWA settings</Button>
+          <SaveButton dirty={dirty} onClick={() => run(() => http(`/admin/applications/${appId}/swa`, { method: "PUT", body: f }), "SWA settings saved")}>Save SWA settings</SaveButton>
           {info?.config && <Button variant="destructive" onClick={() => { if (confirm("Remove the SWA settings and every stored password?")) run(() => http(`/admin/applications/${appId}/swa`, { method: "DELETE" }), "SWA settings removed"); }}>Remove</Button>}
         </div>
         {info?.config && (

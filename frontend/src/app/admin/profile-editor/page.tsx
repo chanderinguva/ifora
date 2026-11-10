@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge, PageHeader, fieldClass, td, th } from "@/components/bits";
 import { http } from "@/lib/http";
+import { useDirty } from "@/lib/use-dirty";
+import { SaveButton } from "@/components/save-button";
 import type { ProfileAttribute } from "@/lib/types";
 
 const TYPES: [string, string][] = [["string", "Text"], ["number", "Number"], ["boolean", "Yes / No"], ["enum", "Choice list"]];
@@ -21,6 +23,7 @@ export default function ProfileEditorPage() {
   const [draft, setDraft] = useState<typeof blank | null>(null);
   const [edit, setEdit] = useState<{ key: string; display_name: string; description: string; options: string; user_editable: boolean; data_type: string } | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const { dirty, markClean } = useDirty(edit, edit !== null);
 
   const load = useCallback(() => {
     http<{ items: ProfileAttribute[] }>("/admin/profile-attributes").then((r) => setItems(r.items)).catch((e) => setMsg({ ok: false, text: e.message }));
@@ -101,12 +104,12 @@ export default function ProfileEditorPage() {
               Users can edit this in their own Account settings
             </label>
             <div className="flex gap-2">
-              <Button onClick={() => run(async () => {
+              <SaveButton dirty={dirty} onClick={() => run(async () => {
                 await http(`/admin/profile-attributes/${edit.key}`, { method: "PATCH", body: {
                   display_name: edit.display_name, description: edit.description, user_editable: edit.user_editable,
                   ...(edit.data_type === "enum" ? { enum_options: opts(edit.options) } : {}) } });
                 setEdit(null);
-              }, "Attribute updated")}>Save changes</Button>
+              }, "Attribute updated")}>Save changes</SaveButton>
               <Button variant="ghost" onClick={() => setEdit(null)}>Cancel</Button>
             </div>
           </CardContent>
@@ -126,7 +129,7 @@ export default function ProfileEditorPage() {
                   <td className={td}>{typeLabel(a.data_type)}{a.enum_options && <div className="text-xs text-muted-foreground">{a.enum_options.join(", ")}</div>}</td>
                   <td className={td}>{a.user_editable ? <Badge tone="neutral">User</Badge> : <Badge tone="good">Admin only · rule-ready</Badge>}</td>
                   <td className={td + " space-x-2 text-right whitespace-nowrap"}>
-                    <Button size="sm" variant="outline" onClick={() => { setDraft(null); setEdit({ key: a.key, display_name: a.display_name, description: a.description ?? "", options: (a.enum_options ?? []).join("\n"), user_editable: a.user_editable, data_type: a.data_type }); }}>Edit</Button>
+                    <Button size="sm" variant="outline" onClick={() => { setDraft(null); setEdit({ key: a.key, display_name: a.display_name, description: a.description ?? "", options: (a.enum_options ?? []).join("\n"), user_editable: a.user_editable, data_type: a.data_type }); markClean(); }}>Edit</Button>
                     {!a.built_in && (
                       <Button size="sm" variant="outline" aria-label={`Delete ${a.key}`}
                         onClick={() => { if (confirm(`Delete "${a.display_name}"? The values stored on every user are removed.`)) run(() => http(`/admin/profile-attributes/${a.key}`, { method: "DELETE" }), "Attribute deleted"); }}>
