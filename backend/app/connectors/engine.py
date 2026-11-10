@@ -287,7 +287,7 @@ def map_outputs(a: Action, status: int, parsed: Any) -> dict:
 # sending -----------------------------------------------------------------------------------------------------------------------
 
 def _send(c: Connector, a_idempotent: bool, a_errors: Dict[int, str], p: Prepared, secret_values: List[str], policy: Optional[EgressPolicy],
-          resolver=None, transport=None) -> Tuple[int, Any]:
+          resolver=None, transport=None, body_errors: Optional[Dict[str, str]] = None) -> Tuple[int, Any]:
     try:
         _, host, _, path = validate_url(p.url, policy or EgressPolicy.from_settings())
         if host != p.host or not (path.split("?", 1)[0] == p.scope_prefix or path.startswith(p.scope_prefix + "/")):
@@ -306,6 +306,8 @@ def _send(c: Connector, a_idempotent: bool, a_errors: Dict[int, str], p: Prepare
         except ValueError:
             parsed = None
     if res.status < 300:
+        if c.reply is not None:
+            _check_reply(c, a_idempotent, parsed, body_errors or {})
         return res.status, parsed
     if res.status in a_errors:
         raise ConnectorError(a_errors[res.status], retryable=False)
@@ -314,6 +316,22 @@ def _send(c: Connector, a_idempotent: bool, a_errors: Dict[int, str], p: Prepare
     if res.status < 400:
         raise ConnectorError(f"{c.name} answered {res.status} (redirects are not followed)")
     raise ConnectorError(f"{c.name} answered {res.status}")
+
+
+_CODE = re.compile(r"[a-z][a-z0-9_]{1,60}")
+
+
+def _check_reply(c: Connector, retryable_ok: bool, parsed: Any, body_errors: Dict[str, str]) -> None:
+    """APIs that answer 200 and put failure in the body: success only when the definition's `ok` field is exactly true."""
+    if not isinstance(parsed, dict):
+        raise ConnectorError(f"{c.name} sent a reply that could not be read")
+    if extract(c.reply.ok, parsed) is True:
+        return
+    code = extract(c.reply.error, parsed)
+    code = code if isinstance(code, str) and _CODE.fullmatch(code) else "unknown_error"   # never echo free text from the remote
+    if code in body_errors:
+        raise ConnectorError(body_errors[code], retryable=retryable_ok and code in c.reply.retry_codes)
+    raise ConnectorError(f"{c.name} refused the request ({code}).", retryable=retryable_ok and code in c.reply.retry_codes)
 
 
 def _summary(c: Connector, a_id: str, p: Prepared, conn_name: str, secret_values: List[str]) -> dict:
@@ -330,7 +348,7 @@ def run_action(c: Connector, a: Action, conn_name: str, config: Dict[str, Any], 
     summary = _summary(c, a.id, p, conn_name, secret_values)
     if dry:
         return Result(summary, {"dry_run": True, "status_code": None, "ok": None, **{o.key: None for o in a.outputs}}, None)
-    status, parsed = _send(c, a.idempotent or a.read_only, a.errors, p, secret_values, policy, resolver, transport)
+    status, parsed = _send(c, a.idempotent or a.read_only, a.errors, p, secret_values, policy, resolver, transport, a.body_errors)
     out = redact(scrub(map_outputs(a, status, parsed), secret_values))
     return Result(summary, out, status)
 

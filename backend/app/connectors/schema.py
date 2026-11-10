@@ -75,6 +75,7 @@ class Action(_Strict):
     inputs: List[Input] = Field(default_factory=list, max_length=15)
     outputs: List[Output] = Field(default_factory=list, max_length=15)
     errors: Dict[int, str] = Field(default_factory=dict, max_length=10)
+    body_errors: Dict[str, str] = Field(default_factory=dict, max_length=20)   # messages for the error codes of a reply-level failure (see Connector.reply)
     idempotent: bool = False  # only idempotent actions are retried automatically
 
     @property
@@ -84,6 +85,13 @@ class Action(_Strict):
 
 class Test(_Strict):
     path: str = Field(..., min_length=2, max_length=300)
+
+
+class Reply(_Strict):
+    """For APIs that answer HTTP 200 and report failure in the body (Slack): success only when `ok` is true; `error` holds the code."""
+    ok: str = Field(..., max_length=120)
+    error: str = Field(..., max_length=120)
+    retry_codes: List[str] = Field(default_factory=list, max_length=10)   # error codes worth retrying (only for idempotent or read-only actions)
 
 
 class Connector(_Strict):
@@ -96,6 +104,7 @@ class Connector(_Strict):
     headers: Dict[str, str] = Field(default_factory=dict, max_length=10)  # static, non-secret request headers (Accept, API version)
     auth: Auth
     test: Test
+    reply: Optional[Reply] = None
     actions: List[Action] = Field(..., min_length=1, max_length=MAX_ACTIONS)
 
     @field_validator("hosts")
@@ -194,6 +203,12 @@ def validate_connector(raw: Any) -> Connector:
             raise DefinitionInvalid(f"headers: invalid static header {k!r}")
 
     # test + actions -----------------------------------------------------------------------------------------------------------
+    if c.reply is not None:
+        for path in (c.reply.ok, c.reply.error):
+            if not _OUT_PATH.match(path):
+                raise DefinitionInvalid(f"reply: {path!r} is not a valid path")
+        if any(not re.fullmatch(r"[a-z][a-z0-9_]{1,60}", x) for x in c.reply.retry_codes):
+            raise DefinitionInvalid("reply: retry_codes must be lowercase words")
     _static_prefix_ok(c.test.path, "test.path")
     for p in placeholders(c.test.path):
         if p not in config_keys:
@@ -245,6 +260,11 @@ def validate_connector(raw: Any) -> Connector:
             raise DefinitionInvalid(f"{where}: GET actions cannot have a body")
         if a.read_only and a.idempotent:
             pass  # reads are always safe to retry; the flag is allowed but redundant
+        for code in a.body_errors:
+            if not re.fullmatch(r"[a-z][a-z0-9_]{1,60}", code):
+                raise DefinitionInvalid(f"{where}: body error codes must be lowercase words like 'channel_not_found'")
+        if a.body_errors and c.reply is None:
+            raise DefinitionInvalid(f"{where}: body_errors need a connector-level reply block")
         for code in a.errors:
             if not 400 <= code <= 599:
                 raise DefinitionInvalid(f"{where}: error codes must be 4xx or 5xx")
