@@ -77,11 +77,17 @@ test("the editor offers the connector action step and its outputs become datapil
   await page.getByRole("button", { name: "Create and open builder" }).click();
   await page.getByTestId("try-studio").click();
   await page.getByRole("button", { name: "Add a step", exact: true }).first().click();
-  await page.getByRole("menuitem", { name: "Run a connector action", exact: true }).click();
 
+  // the menu lists each connection's actions directly, grouped under the connection (the generic step is not offered while a connection exists)
+  const menu = page.getByTestId("studio-menu");
+  await expect(menu.getByTestId("studio-menu-group").filter({ hasText: name })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Run a connector action", exact: true })).toHaveCount(0);
+  await menu.getByRole("menuitem", { name: `${name}: Get user`, exact: true }).click();
+
+  // the step arrives with the connection and action already chosen
   const stepForm = page.getByTestId("connector-step-form");
   await expect(stepForm.getByLabel("Connection")).toContainText(name);
-  await stepForm.getByLabel("Action").selectOption({ label: "Get user" });
+  await expect(stepForm.getByLabel("Action")).toHaveValue("get_user");
   await stepForm.getByLabel("GitHub username", { exact: true }).fill("octocat");
   await expect(stepForm).toContainText("Later steps can use");
   await expect(stepForm).toContainText("login");
