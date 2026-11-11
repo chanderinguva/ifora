@@ -230,7 +230,7 @@ Paste the `make check` output into the pull request (see `.github/pull_request_t
 - Python lint (`ruff`) fails on real errors repo-wide and on unused/undefined names in changed `backend/app` files; `mypy` runs on changed files only. Widening both is tracked as follow-up work.
 - `deps-py` and `deps-web` fail on any known advisory. Accept one only by adding `ID | reason | YYYY-MM-DD` (expiry required) to `.security-allowlist` after triage; never to silence a finding you have not read.
 - `make test-backend` needs the compose stack up (it reuses the `ifora-api` image, network and env). It runs `scripts/test_backend.sh`, which starts a throwaway container with this checkout mounted, so the running container's baked code is not what is tested. Pass pytest args with `make test-backend PYTEST_ARGS="tests/test_foo.py -x"`. Fixtures create a database on the shared dev Postgres, so never point it at production.
-- Branch protection (require PR review, no force-push to `main`) is applied by the repository owner in GitHub settings; it is not done by these scripts.
+- Server-side branch protection is not available on this repository's GitHub plan (the API returns 403 "Upgrade to GitHub Pro"). As a local substitute, `.githooks/pre-push` refuses any push to `main` or `master` (commits, force-pushes and deletions). It only protects machines that ran `make hooks`, and `git push --no-verify` bypasses it, so this is a guard against mistakes, not an enforced control. Changes reach `main` through a reviewed PR merged on GitHub.
 
 ## Security
 
