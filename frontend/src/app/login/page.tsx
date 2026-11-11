@@ -2,12 +2,12 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { getCurrentUser, login, loginMfa, loginWithPasskey } from "@/lib/auth-client";
+import { accessSsoEnabled, accessSsoSuppressed, clearAccessSsoSuppression, getCurrentUser, login, loginMfa, loginWithAccess, loginWithPasskey } from "@/lib/auth-client";
 import Link from "next/link";
 import { KeyRound } from "lucide-react";
 import { ExpiredPasswordForm } from "@/components/password-form";
@@ -48,6 +48,8 @@ export default function LoginPage() {
   const [mfaToken, setMfaToken] = useState<string | null>(null);
   const [code, setCode] = useState("");
   const [expired, setExpired] = useState<{ email: string; password: string } | null>(null);
+  // Invitation sign-in (Cloudflare Access): "checking" until we know, "offer" shows a button, "off" is the plain form.
+  const [sso, setSso] = useState<"checking" | "offer" | "off">("checking");
 
   const {
     register,
@@ -58,6 +60,7 @@ export default function LoginPage() {
   });
 
   const finish = async () => {
+    clearAccessSsoSuppression();
     const u = await getCurrentUser();
     // Return to an in-progress OIDC authorization, but only to a same-site relative path (never an open redirect).
     const next = new URLSearchParams(window.location.search).get("next");
@@ -67,6 +70,27 @@ export default function LoginPage() {
     }
     router.push(u?.mfa_setup_required ? "/settings#security" : u && inAdminView(u) ? "/admin/dashboard" : "/dashboard");
   };
+
+  const viaInvitation = async () => {
+    setError(null);
+    const r = await loginWithAccess();
+    if (!r) return false;
+    if (r.firstVisit) router.push("/welcome");
+    else await finish();
+    return true;
+  };
+
+  const ssoStarted = useRef(false); // React runs effects twice in development; sign in through the invitation once
+  useEffect(() => {
+    if (ssoStarted.current) return;
+    ssoStarted.current = true;
+    (async () => {
+      if (!(await accessSsoEnabled())) { setSso("off"); return; }
+      if (accessSsoSuppressed()) { setSso("offer"); return; } // just signed out: ask first
+      if (!(await viaInvitation())) setSso("off");
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const onPasskey = async () => {
     setIsSubmitting(true);
@@ -182,7 +206,27 @@ export default function LoginPage() {
           </CardContent>
         )}
 
-        <CardContent className={mfaToken || expired ? "hidden" : undefined}>
+        {sso === "checking" && (
+          <CardContent>
+            <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status" data-testid="sso-checking">
+              <Loader2 className="h-4 w-4 animate-spin" /> Signing you in…
+            </p>
+          </CardContent>
+        )}
+
+        {sso === "offer" && !mfaToken && !expired && (
+          <CardContent>
+            <Button type="button" className="w-full" data-testid="sso-continue" onClick={async () => {
+              setIsSubmitting(true);
+              if (!(await viaInvitation())) setError("This invitation could not sign you in. Use your password instead.");
+              setIsSubmitting(false);
+            }} disabled={isSubmitting || !hydrated}>
+              Continue with your invitation
+            </Button>
+          </CardContent>
+        )}
+
+        <CardContent className={mfaToken || expired || sso === "checking" ? "hidden" : undefined}>
           <form method="post" onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>

@@ -174,6 +174,11 @@ from a working tree. `scripts/demo.sh reset --yes` wipes the demo data. A Caddy 
 paths to the API and everything else to Next.js on one hostname, blocks `/metrics` and `/docs`, and passes
 Cloudflare's `CF-Connecting-IP` as the client IP (only the edge address is trusted via `FORWARDED_ALLOW_IPS`).
 
+With `ACCESS_SSO_ENABLED=true` (plus `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD`) a visitor who passed Cloudflare Access is
+signed in to Ifora without a second login: the API verifies the Access token itself, creates a non-admin account for a
+new invited email, and the first visit goes to `/welcome` (choose a password, optionally add a passkey). Administrators,
+accounts with TOTP and passkey-only accounts are never signed in this way; they use their password.
+
 ## Architecture
 
 ### Backend

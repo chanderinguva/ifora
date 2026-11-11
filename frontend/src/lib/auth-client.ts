@@ -40,6 +40,50 @@ export async function login(email: string, password: string): Promise<{ mfaToken
   return null;
 }
 
+const SKIP_SSO_KEY = "ifora:skip-access-sso";
+
+/** After signing out, do not silently sign straight back in through the invitation (the Access session outlives ours). */
+export function suppressAccessSsoOnce(): void {
+  try { sessionStorage.setItem(SKIP_SSO_KEY, "1"); } catch { /* storage unavailable: harmless */ }
+}
+
+export function accessSsoSuppressed(): boolean {
+  try {
+    return sessionStorage.getItem(SKIP_SSO_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/** Forget the sign-out marker once someone has signed in again (not on read: React may run the check twice). */
+export function clearAccessSsoSuppression(): void {
+  try { sessionStorage.removeItem(SKIP_SSO_KEY); } catch { /* ignore */ }
+}
+
+/** Whether this server can sign people in through their invitation (Cloudflare Access). Never throws. */
+export async function accessSsoEnabled(): Promise<boolean> {
+  try {
+    const r = await fetch(`${API_URL}/api/v1/login/access/enabled`, { credentials: "include", signal: AbortSignal.timeout(4000) });
+    return r.ok && (await r.json()).enabled === true;
+  } catch {
+    return false;
+  }
+}
+
+/** Start a session from the Access identity the browser already holds. Null when it is not available for this person. */
+export async function loginWithAccess(): Promise<{ firstVisit: boolean } | null> {
+  try {
+    const r = await fetch(`${API_URL}/api/v1/login/access`, { method: "POST", credentials: "include" });
+    if (!r.ok) return null;
+    const data = await r.json();
+    csrfToken = data.csrf_token ?? null;
+    clearAccessSsoSuppression();
+    return { firstVisit: data.first_visit === true };
+  } catch {
+    return null;
+  }
+}
+
 /** Passwordless, usernameless sign-in with a discoverable passkey. */
 export async function loginWithPasskey(): Promise<void> {
   const { startAuthentication } = await import("@simplewebauthn/browser");
@@ -98,6 +142,7 @@ export async function logout(): Promise<void> {
     response = await send();
   }
   csrfToken = null;
+  suppressAccessSsoOnce();
 
   // 401 means there is no session any more, which is exactly what the user asked for
   if (!response.ok && response.status !== 401) {
