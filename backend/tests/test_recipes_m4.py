@@ -207,6 +207,7 @@ def outbox(monkeypatch):
     sent = []
     monkeypatch.setattr(mailer, "overrides", {"send": sent.append})
     monkeypatch.setattr(settings, "SMTP_FROM", "noreply@idp.example")
+    monkeypatch.setattr(settings, "SMTP_FROM_NAME", "")   # the stack's own sender name must not leak into the From assertions
     monkeypatch.setattr(settings, "RECIPES_EMAIL_ALLOWED_DOMAINS", "")
     return sent
 

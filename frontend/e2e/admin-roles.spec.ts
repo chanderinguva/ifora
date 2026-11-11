@@ -17,7 +17,7 @@ test("a super admin gives an administrator the report role; that admin sees only
   await page.getByLabel(/administrator/i).first().check();
   await page.getByRole("button", { name: "Create user" }).click();
   await page.getByLabel("Search users").fill(email);
-  await page.getByRole("link", { name: /Report Admin/ }).first().click();
+  await page.getByRole("link", { name: new RegExp(`Report Admin${tag}`) }).click();   // this run's user, never a leftover from an earlier run
   // a new administrator starts with the least-privilege role, not full access
   await page.getByTestId("utab-access").click();
   await expect(page.getByTestId("effective-roles")).toContainText("Read-only administrator");
@@ -25,6 +25,7 @@ test("a super admin gives an administrator the report role; that admin sees only
   await expect(page.getByTestId("role-read_only_admin")).toBeChecked();
   await expect(page.getByTestId("role-org_admin")).not.toBeChecked();
   await page.getByTestId("role-report_admin").check();
+  await page.getByTestId("role-read_only_admin").uncheck();   // roles combine as a union, so the report role alone is what limits this admin
   await page.getByTestId("roles-save").click();
   await expect(page.getByText(/Roles saved/)).toBeVisible();
   await logout(page);
@@ -44,7 +45,7 @@ test("a super admin gives an administrator the report role; that admin sees only
   await loginAsAdmin(page);
   await page.goto("/admin/users");
   await page.getByLabel("Search users").fill(email);
-  await page.getByRole("link", { name: /Report Admin/ }).first().click();
+  await page.getByRole("link", { name: new RegExp(`Report Admin${tag}`) }).click();   // this run's user, never a leftover from an earlier run
   page.once("dialog", (d) => d.accept());
   await page.getByRole("button", { name: "Delete user" }).click();
   await expect(page).toHaveURL(/\/admin\/users$/);
