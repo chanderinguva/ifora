@@ -3,6 +3,19 @@
 # Install with `make hooks`. Bypassing it (git push --no-verify) is allowed but leaves a gap the PR checklist
 # closes: the PR template requires pasted `make check` output.
 set -u
+
+# Local stand-in for server-side branch protection, which this repo's GitHub plan does not offer (IFORA-20).
+# git feeds the hook one line per ref: <local ref> <local sha> <remote ref> <remote sha>. Refuse any push to main/master
+# (direct commits, force-pushes and deletions alike); changes reach main only through a reviewed PR merged on GitHub.
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+  case "$remote_ref" in
+    refs/heads/main|refs/heads/master)
+      echo "pre-push: refusing to push to ${remote_ref#refs/heads/}. Open a PR from a feature/IFORA-<n>-... branch instead." >&2
+      exit 1
+      ;;
+  esac
+done
+
 root="$(git rev-parse --show-toplevel)"
 cd "$root" || exit 1
 echo "pre-push: running make check-fast ..."
