@@ -25,7 +25,7 @@ export function AuthGuard({
     let alive = true;
     getCurrentUser().then((u: User | null) => {
       if (!alive) return;
-      if (!u) router.replace("/login");
+      if (!u) router.replace(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`);
       else if (requireAdmin && u.mfa_setup_required) router.replace("/settings#security");
       else if (requireAdmin && !inAdminView(u)) router.replace("/dashboard");
       else {

@@ -47,8 +47,22 @@ export async function http<T = any>(
   } catch {
     /* empty body */
   }
+  if (res.status === 401 && endSession()) return new Promise<T>(() => {});   // the page is leaving; never resolve, so nothing flashes "Not authenticated"
   if (!res.ok) throw new ApiError(res.status, describe(data?.detail));
   return data as T;
+}
+
+let leaving = false;
+
+/** The session ended (timed out or signed out elsewhere): go to the login page and come back here afterwards. Every call here is an authenticated one, so a 401 always means this. */
+function endSession(): boolean {
+  if (typeof window === "undefined" || window.location.pathname.startsWith("/login")) return false;
+  if (!leaving) {
+    leaving = true;
+    const back = window.location.pathname + window.location.search;
+    window.location.assign(`/login?next=${encodeURIComponent(back)}`);
+  }
+  return true;
 }
 
 export function qs(params: Record<string, string | number | undefined | null>): string {
