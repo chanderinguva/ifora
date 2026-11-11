@@ -77,8 +77,9 @@ def test_starttls_verifies_the_certificate(monkeypatch):
 
 def test_production_requires_secure_cookies_and_hides_docs(monkeypatch):
     from backend.app.api import create_app
+    from tests.test_config_guards import make_production_valid
 
-    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    make_production_valid(monkeypatch)   # a full valid production config; only the cookie flag differs below
     monkeypatch.setattr(settings, "SESSION_COOKIE_SECURE", False)
     with pytest.raises(RuntimeError):
         create_app()

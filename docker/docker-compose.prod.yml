@@ -1,0 +1,35 @@
+# Production override. Use together with the base file:
+#   docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml --env-file docker/.env up -d --build
+#
+# What it does (IFORA-49 / SEC-A-5):
+#   - ENVIRONMENT=production for the API and the recipes worker; the API then refuses to start on an unsafe
+#     configuration (see backend/app/config_guards.py) and hides /docs.
+#   - Secure session cookies, https-only public URLs, the production frontend build.
+#   - Every published port is bound to loopback: put a TLS-terminating reverse proxy (outside this repo) in front.
+#   - Settings the proxy setup depends on must be set explicitly (no silent dev defaults).
+# Requires Docker Compose 2.24+ (uses !override).
+services:
+  backend-api:
+    environment:
+      - ENVIRONMENT=production
+      - SESSION_COOKIE_SECURE=true
+      - PUBLIC_APP_URL=${PUBLIC_APP_URL:?set PUBLIC_APP_URL (https://...) in docker/.env}
+      - OIDC_ISSUER=${OIDC_ISSUER:?set OIDC_ISSUER (https://...) in docker/.env}
+      - OIDC_KEY_ENCRYPTION_KEY=${OIDC_KEY_ENCRYPTION_KEY:?set OIDC_KEY_ENCRYPTION_KEY in docker/.env}
+      # Address(es) of your reverse proxy, so client IPs are read from X-Forwarded-For (throttling, lockout, IP policies).
+      - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:?set FORWARDED_ALLOW_IPS to your reverse proxy address in docker/.env}
+      - CORS_ORIGINS=${CORS_ORIGINS:?set CORS_ORIGINS (JSON list of https origins) in docker/.env}
+    ports: !override
+      - "127.0.0.1:8000:8000"
+
+  recipes-worker:
+    environment:
+      - ENVIRONMENT=production
+
+  frontend:
+    build:
+      target: prod
+    environment:
+      - NODE_ENV=production
+    ports: !override
+      - "127.0.0.1:3000:3000"
