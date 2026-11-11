@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { ArrowDown, ArrowUp, ExternalLink, KeyRound, Plus, Search, Settings2, Star, Trash2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -85,10 +86,9 @@ export function AppTiles() {
     return (
       <li key={a.id} className="group relative" data-testid={`tile-${a.id}`}>
         <button type="button" disabled={!a.launchable} onClick={() => launch(a)} aria-label={a.launchable ? `Open ${a.name}` : `${a.name} (no launch link)`}
-          className="flex h-full w-full flex-col items-center gap-2 rounded-xl border bg-card p-4 text-center shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60">
-          <AppIcon path={`/me/apps/${a.id}/icon`} name={a.name} hasIcon={a.has_icon} />
+          title={a.description ?? a.name} className="flex h-full w-full flex-col items-center gap-3 rounded-2xl border border-transparent p-4 text-center transition hover:border-border hover:bg-card hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60">
+          <span className="rounded-2xl bg-card p-1.5 shadow-sm ring-1 ring-border"><AppIcon path={`/me/apps/${a.id}/icon`} name={a.name} hasIcon={a.has_icon} size={56} /></span>
           <span className="line-clamp-2 text-sm font-medium">{a.name}</span>
-          {a.description && <span className="line-clamp-2 text-xs text-muted-foreground">{a.description}</span>}
           {a.launchable && !organise && <ExternalLink aria-hidden className="h-3.5 w-3.5 text-muted-foreground opacity-0 transition group-hover:opacity-100" />}
         </button>
         {a.sign_on_mode === "swa" && (
@@ -117,7 +117,13 @@ export function AppTiles() {
   }
 
   const grid = (list: MyApp[], id: string) => (
-    <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4" data-testid={id}>{list.map((a) => tile(a))}</ul>
+    <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5" data-testid={id}>{list.map((a) => tile(a))}{id === "my-apps" && !searching && (
+      <li>
+        <Link href="/apps/request" data-testid="add-apps-tile" className="flex h-full min-h-[132px] w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed p-4 text-center text-sm text-muted-foreground transition hover:border-primary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <Plus aria-hidden className="h-6 w-6" /> Add apps
+        </Link>
+      </li>
+    )}</ul>
   );
 
   const hasApps = !!apps && apps.length > 0;
@@ -128,21 +134,26 @@ export function AppTiles() {
       {err && <Alert variant="destructive" className="mb-4" role="status"><AlertDescription>{err}</AlertDescription></Alert>}
       {hasApps && (
         <div className="mb-4 flex flex-wrap items-center gap-2">
-          <div className="relative max-w-sm flex-1">
-            <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input aria-label="Search my apps" placeholder="Search apps…" className="pl-9" value={q} onChange={(e) => setQ(e.target.value)} />
+          <div className="relative max-w-xl flex-1">
+            <Search className="pointer-events-none absolute left-4 top-3 h-5 w-5 text-muted-foreground" />
+            <Input aria-label="Search my apps" placeholder="Search your apps" className="h-11 rounded-full pl-11 text-base" value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
           <Button type="button" variant={organise ? "default" : "outline"} size="sm" aria-pressed={organise} onClick={() => setOrganise((v) => !v)} data-testid="organise-toggle">
             <Settings2 className="mr-1 h-4 w-4" /> {organise ? "Done" : "Organise"}
           </Button>
         </div>
       )}
-      {apps && apps.length === 0 && <p className="text-sm text-muted-foreground" data-testid="no-apps">No applications have been assigned to you yet. When an administrator gives you access, they appear here.</p>}
+      {apps && apps.length === 0 && (
+        <div className="rounded-2xl border-2 border-dashed p-8 text-center" data-testid="no-apps">
+          <p className="text-sm text-muted-foreground">No applications have been assigned to you yet. When an administrator gives you access, they appear here.</p>
+          <Link href="/apps/request" className="mt-3 inline-flex items-center gap-1 text-sm font-medium underline-offset-4 hover:underline"><Plus aria-hidden className="h-4 w-4" /> Request access to an app</Link>
+        </div>
+      )}
       {hasApps && matches.length === 0 && <p className="text-sm text-muted-foreground">No app matches “{q}”.</p>}
 
       {!searching && recent.length > 0 && (
         <section className="mb-6" aria-labelledby="recent-h" data-testid="recent-apps">
-          <h3 id="recent-h" className="mb-2 text-sm font-semibold text-muted-foreground">Recently used</h3>
+          <h3 id="recent-h" className="mb-2 text-base font-semibold">Recently used</h3>
           <ul className="flex flex-wrap gap-2">
             {recent.map((a) => (
               <li key={a.id}>
@@ -157,7 +168,7 @@ export function AppTiles() {
 
       {favourites.length > 0 && (
         <section className="mb-6" aria-labelledby="fav-h" data-testid="favourites">
-          <h3 id="fav-h" className="mb-2 text-sm font-semibold text-muted-foreground">Favourites</h3>
+          <h3 id="fav-h" className="mb-2 text-base font-semibold">Favourites</h3>
           {grid(favourites, "fav-apps")}
         </section>
       )}
@@ -168,7 +179,7 @@ export function AppTiles() {
         return (
           <section key={s.id} className="mb-6" aria-labelledby={`sec-${s.id}`} data-testid={`section-${s.id}`}>
             <div className="mb-2 flex items-center gap-1">
-              <h3 id={`sec-${s.id}`} className="text-sm font-semibold text-muted-foreground">{s.name}</h3>
+              <h3 id={`sec-${s.id}`} className="text-base font-semibold">{s.name}</h3>
               {organise && (
                 <>
                   <Button type="button" variant="ghost" size="sm" aria-label={`Move section ${s.name} earlier`} disabled={i === 0} onClick={() => act(() => http(`/me/dashboard/sections/${s.id}`, { method: "PATCH", body: { move: "earlier" } }))}><ArrowUp className="h-3.5 w-3.5" /></Button>
@@ -185,7 +196,7 @@ export function AppTiles() {
 
       {otherApps.length > 0 && (
         <section className="mb-6" aria-labelledby="other-h" data-testid="other-apps">
-          {(ov.sections.length > 0 || favourites.length > 0) && <h3 id="other-h" className="mb-2 text-sm font-semibold text-muted-foreground">{ov.sections.length > 0 ? "Other" : "All apps"}</h3>}
+          {(ov.sections.length > 0 || favourites.length > 0) && <h3 id="other-h" className="mb-2 text-base font-semibold">{ov.sections.length > 0 ? "Other" : "All apps"}</h3>}
           {grid(otherApps, "my-apps")}
         </section>
       )}

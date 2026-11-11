@@ -17,8 +17,8 @@ export function RecentActivity() {
   const [items, setItems] = useState<Item[] | null>(null);
   useEffect(() => { http<{ items: Item[] }>("/me/dashboard/activity").then((r) => setItems(r.items)).catch(() => setItems([])); }, []);
   return (
-    <Card className="mb-6" data-testid="recent-activity">
-      <CardHeader><CardTitle>Recent activity</CardTitle></CardHeader>
+    <Card data-testid="recent-activity">
+      <CardHeader><CardTitle className="text-base">Recent activity</CardTitle></CardHeader>
       <CardContent>
         {items && items.length === 0 && <p className="text-sm text-muted-foreground">Nothing to show yet.</p>}
         <ul className="divide-y text-sm">
