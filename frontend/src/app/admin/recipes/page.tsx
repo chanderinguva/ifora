@@ -87,7 +87,7 @@ export default function RecipesPage() {
                 <td className={td}>{r.owner?.email ?? "—"}{r.last_alert_at && <div><Badge tone="bad">failure alert</Badge></div>}</td>
                 <td className={td}>{trig(r.trigger_type)}</td>
                 <td className={td + " " + mono}>{r.published_version ? `v${r.published_version}` : "unpublished"}{r.has_unpublished_changes && r.published_version ? <span className="ml-1 text-xs text-warn">draft changes</span> : null}</td>
-                <td className={td}>{r.last_job ? <><Badge tone={statusTone(r.last_job.status)}>{r.last_job.status}</Badge> <span className={mono}>{fmt(r.last_job.created_at)}</span></> : "—"}</td>
+                <td className={td}>{r.last_job ? <><Badge tone={statusTone(r.last_job.status)}>{r.last_job.status}</Badge> <span className={mono + " ml-2"}>{fmt(r.last_job.created_at)}</span></> : "—"}</td>
                 <td className={td}><Badge tone={r.enabled ? "good" : "neutral"}>{r.enabled ? "enabled" : "disabled"}</Badge></td>
                 <td className={td + " space-x-2 whitespace-nowrap text-right"}>
                   {r.enabled ? (

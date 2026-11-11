@@ -13,7 +13,7 @@ test("dark theme: toggle, persistence, and following the system setting", async 
   // explicit light
   await toggle.getByRole("radio", { name: "Light theme" }).click();
   await expect(html).not.toHaveClass(/dark/);
-  expect(await bg(page)).toBe("rgb(248, 250, 252)");   // --background in globals.css (light tint)
+  expect(await bg(page)).toBe("rgb(246, 247, 248)");   // --background in globals.css (light graphite, hsl 220 12% 97%)
 
   // explicit dark: class, colours, form controls and card all switch
   await toggle.getByRole("radio", { name: "Dark theme" }).click();
