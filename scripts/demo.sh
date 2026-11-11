@@ -45,6 +45,11 @@ FORWARDED_ALLOW_IPS=172.31.77.2
 WEBAUTHN_RP_ID=demo.ifora.app
 WEBAUTHN_ORIGINS=["https://demo.ifora.app"]
 FRONTEND_TARGET=prod
+# Sign in through Cloudflare Access (team domain + the Access application's AUD tag, from Zero Trust > Access):
+ACCESS_SSO_ENABLED=false
+ACCESS_TEAM_DOMAIN=
+ACCESS_AUD=
+ACCESS_SSO_AUTO_CREATE=true
 ADMIN_MFA_REQUIRED=true
 # No real email from the demo: SMTP_* stays unset.
 

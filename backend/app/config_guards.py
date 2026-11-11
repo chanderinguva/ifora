@@ -46,6 +46,10 @@ def validate_settings(settings, env: Optional[Mapping[str, str]] = None) -> List
         problems.append("CORS_ORIGINS must not contain '*' in production")
     if settings.DEBUG:
         problems.append("DEBUG must be false in production")
+    if getattr(settings, "ACCESS_SSO_ENABLED", False):
+        team = getattr(settings, "ACCESS_TEAM_DOMAIN", "")
+        if not team or "/" in team or not getattr(settings, "ACCESS_AUD", ""):
+            problems.append("ACCESS_SSO_ENABLED requires ACCESS_TEAM_DOMAIN (a bare host name) and ACCESS_AUD")
     for name in ("PUBLIC_APP_URL", "OIDC_ISSUER"):
         if not str(getattr(settings, name, "")).lower().startswith("https://"):
             problems.append(f"{name} must be an https:// URL in production")

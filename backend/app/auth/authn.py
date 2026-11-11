@@ -9,6 +9,8 @@ from typing import List
 # Internal login method -> RFC 8176 `amr` values
 _AMR = {
     "password": ["pwd"],
+    # Cloudflare Access one-time PIN sent to the invited email address (demo environments)
+    "access": ["otp"],
     # discoverable credential with user verification: hardware-bound key + user presence + verification
     "passkey": ["hwk", "user", "mfa"],
     "password+mfa_totp": ["pwd", "otp", "mfa"],

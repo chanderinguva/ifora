@@ -108,6 +108,14 @@ class Settings(BaseSettings):
     WEBAUTHN_RP_NAME: str = Field(default="Ifora")
     WEBAUTHN_ORIGINS: List[str] = Field(default=["http://localhost:3000"])
     WEBAUTHN_CEREMONY_SECONDS: int = Field(default=300)
+
+    # Sign-in through Cloudflare Access (demo environments). Off by default. When on, a request that carries a valid
+    # Access identity token (Cf-Access-Jwt-Assertion) for ACCESS_AUD from ACCESS_TEAM_DOMAIN can start a session for
+    # the matching non-admin account; unknown emails get an account when ACCESS_SSO_AUTO_CREATE is true.
+    ACCESS_SSO_ENABLED: bool = Field(default=False)
+    ACCESS_TEAM_DOMAIN: str = Field(default="")  # e.g. "myteam.cloudflareaccess.com" (no scheme)
+    ACCESS_AUD: str = Field(default="")  # the Access application's audience (AUD) tag
+    ACCESS_SSO_AUTO_CREATE: bool = Field(default=True)
     ENVIRONMENT: str = Field(default="development")
     DEBUG: bool = Field(default=False)
 
