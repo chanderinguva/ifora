@@ -69,6 +69,10 @@ services:
       - OIDC_ISSUER=${OIDC_ISSUER:-http://localhost:8000}
       - ENVIRONMENT=${ENVIRONMENT:-development}
       - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-127.0.0.1}
+      # Passkeys: RP ID is the host the browser sees (no scheme/port); origins are exact scheme+host+port, comma-separated.
+      - WEBAUTHN_RP_ID=${WEBAUTHN_RP_ID:-localhost}
+      - WEBAUTHN_RP_NAME=${WEBAUTHN_RP_NAME:-Ifora}
+      - WEBAUTHN_ORIGINS=${WEBAUTHN_ORIGINS:-http://localhost:3000}
     ports:
       - "127.0.0.1:8000:8000"
     healthcheck:
