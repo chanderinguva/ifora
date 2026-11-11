@@ -4,6 +4,8 @@ import pytest
 
 from tests.conftest import make_user
 
+LIST_KEYS = {"schemas", "totalResults", "startIndex", "itemsPerPage", "Resources"}   # schemas: the ListResponse URN (scim/envelope.py)
+
 
 def _people(db):
     for i, (first, last) in enumerate([("Carol", "Zed"), ("alice", "Young"), ("Bob", "Xu"), ("dave", "Wu")]):
@@ -13,7 +15,7 @@ def _people(db):
 def test_envelope_and_old_names_are_gone(db, admin):
     _people(db)
     r = admin.get("/admin/users?count=2").json()
-    assert set(r) == {"totalResults", "startIndex", "itemsPerPage", "Resources"}
+    assert set(r) == LIST_KEYS
     assert r["itemsPerPage"] == 2 and len(r["Resources"]) == 2 and r["totalResults"] >= 5 and r["startIndex"] == 1
     assert "items" not in r and "total" not in r and "page_size" not in r
     # the old parameter names are ignored, not honoured
@@ -71,7 +73,7 @@ def test_hostile_or_unknown_sort_and_filter_are_400(db, admin, query):
 def test_filter_not_supported_on_python_paged_collection(db, admin):
     assert admin.get('/admin/administrators?filter=email eq "x"').status_code == 400
     r = admin.get("/admin/administrators?sortBy=email&count=1").json()
-    assert set(r) == {"totalResults", "startIndex", "itemsPerPage", "Resources"} and r["itemsPerPage"] == 1
+    assert set(r) == LIST_KEYS and r["itemsPerPage"] == 1
 
 
 def test_groups_audit_and_jobs_use_the_envelope(db, admin):
@@ -81,11 +83,11 @@ def test_groups_audit_and_jobs_use_the_envelope(db, admin):
     names = [x["name"] for x in g["Resources"]]
     assert g["totalResults"] >= 2 and names == sorted(names, key=str.lower)
     a = admin.get('/admin/audit?filter=action eq "GROUP_CREATED"&count=1').json()
-    assert set(a) == {"totalResults", "startIndex", "itemsPerPage", "Resources"} and a["totalResults"] >= 2
+    assert set(a) == LIST_KEYS and a["totalResults"] >= 2
     newest = admin.get("/admin/audit?count=2").json()["Resources"]
     assert newest[0]["timestamp"] >= newest[1]["timestamp"]         # default order is newest first
     assert admin.get("/admin/audit?sortBy=metadata").status_code == 400
-    assert set(admin.get("/admin/recipes/jobs?count=5").json()) == {"totalResults", "startIndex", "itemsPerPage", "Resources"}
+    assert set(admin.get("/admin/recipes/jobs?count=5").json()) == LIST_KEYS
 
 
 def test_requires_admin(db, member):
