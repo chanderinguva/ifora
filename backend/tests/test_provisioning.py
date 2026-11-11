@@ -137,9 +137,9 @@ def test_create_validates_and_never_returns_the_secret(super_admin, rkey):
     assert super_admin.post("/admin/provisioning-apps", {"name": "Acme", "kind": "scim", "base_url": BASE, "auth_type": "bearer", "secret": "t"}).status_code == 409
 
 
-def test_only_super_admins_change_apps_but_admins_read_and_assign(super_admin, admin, remote):
+def test_admins_create_and_assign_but_only_super_admins_change_or_remove(super_admin, admin, remote):
     app = make_app(super_admin)
-    assert admin.post("/admin/provisioning-apps", {"name": "y", "kind": "scim", "base_url": BASE, "auth_type": "bearer", "secret": "t"}).status_code == 403
+    assert admin.post("/admin/provisioning-apps", {"name": "y", "kind": "scim", "base_url": BASE, "auth_type": "bearer", "secret": "t"}).status_code == 201
     assert admin.put(f"/admin/provisioning-apps/{app['id']}", body_of(app)).status_code == 403
     assert admin.delete(f"/admin/provisioning-apps/{app['id']}").status_code == 403
     assert admin.post(f"/admin/provisioning-apps/{app['id']}/test").status_code == 403

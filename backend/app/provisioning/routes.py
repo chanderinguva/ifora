@@ -180,7 +180,7 @@ def list_apps(db: Session = Depends(get_db), _: User = Depends(require_admin)):
 
 
 @router.post("", status_code=201)
-def create_app(body: AppBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(_super)):
+def create_app(body: AppBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
     _need_key()
     if not body.secret:
         raise HTTPException(status_code=422, detail="secret is required")
