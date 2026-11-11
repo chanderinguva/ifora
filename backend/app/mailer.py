@@ -7,6 +7,7 @@ degrade gracefully (the account flows say so instead of pretending a mail went o
 import smtplib
 import ssl
 from email.message import EmailMessage
+from email.utils import formataddr
 from typing import Any, Dict
 
 from backend.app.config import settings
@@ -30,8 +31,14 @@ def send(msg: EmailMessage, timeout: float = 10) -> None:
         smtp.send_message(msg)
 
 
+def from_header() -> str:
+    """`Name <address>` when SMTP_FROM_NAME is set, otherwise just the address."""
+    address = settings.SMTP_FROM or "noreply@localhost"
+    return formataddr((settings.SMTP_FROM_NAME.strip(), address)) if settings.SMTP_FROM_NAME.strip() else address
+
+
 def build(to: str, subject: str, body: str) -> EmailMessage:
     msg = EmailMessage()
-    msg["From"], msg["To"], msg["Subject"] = settings.SMTP_FROM or "noreply@localhost", to, subject
+    msg["From"], msg["To"], msg["Subject"] = from_header(), to, subject
     msg.set_content(body)
     return msg
