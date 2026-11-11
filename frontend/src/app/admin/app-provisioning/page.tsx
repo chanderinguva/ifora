@@ -9,14 +9,12 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge, PageHeader, fieldClass } from "@/components/bits";
-import { useCurrentUser } from "@/components/auth-guard";
 import { http } from "@/lib/http";
 import { DEFAULT_OPTIONS, type ProvApp, type ProvPreset } from "@/lib/provisioning";
 
 const status = (a: ProvApp) => (!a.enabled ? { t: "off", tone: "neutral" as const } : a.errors || a.failed_tasks ? { t: "needs attention", tone: "bad" as const } : { t: "active", tone: "good" as const });
 
 export default function ProvisioningApps() {
-  const me = useCurrentUser();
   const [apps, setApps] = useState<ProvApp[] | null>(null);
   const [presets, setPresets] = useState<ProvPreset[]>([]);
   const [available, setAvailable] = useState(true);
@@ -58,7 +56,7 @@ export default function ProvisioningApps() {
   return (
     <div>
       <PageHeader title="Provisioning apps">
-        {me.is_super_admin && available && <Button onClick={() => setPreset(presets[0] ?? null)} data-testid="add-app"><Plus className="mr-1 h-4 w-4" /> Add application</Button>}
+        {available && <Button onClick={() => setPreset(presets[0] ?? null)} data-testid="add-app"><Plus className="mr-1 h-4 w-4" /> Add application</Button>}
       </PageHeader>
       <p className="mb-4 max-w-3xl text-sm text-muted-foreground">
         Push users and groups from Ifora to the applications your people use. Applications with a SCIM 2.0 endpoint are provisioned directly;
