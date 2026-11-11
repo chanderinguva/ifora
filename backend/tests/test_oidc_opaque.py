@@ -79,3 +79,40 @@ def test_revoke_cors_only_for_public_clients_from_their_origin(super_admin, user
     bad = user_api.c.post("/oauth/revoke", data={"token": "x", "client_id": c["client_id"]}, headers={"Origin": "https://evil.example"})
     assert "access-control-allow-origin" not in bad.headers
     assert "access-control-allow-credentials" not in ok.headers
+
+
+# ---- IFORA-47 / SEC-B-1: entitlement is rechecked after the token was issued ----------------
+
+def _require_assignment(super_admin, required=True):
+    app_id = super_admin.get("/admin/applications").json()["items"][0]["id"]
+    cur = super_admin.get(f"/admin/applications/{app_id}").json()
+    r = super_admin.put(f"/admin/applications/{app_id}", {"name": cur["name"], "sign_on_mode": "oidc", "require_assignment": required})
+    assert r.status_code == 200, r.text
+    return app_id
+
+
+def test_unassigned_user_cannot_refresh_and_family_is_revoked(db, super_admin, user_api):
+    from tests.test_oidc_refresh import refresh
+    c, body = start(super_admin, user_api, client_type="confidential")
+    _require_assignment(super_admin)                                    # the user was never assigned
+    r = refresh(user_api, c, body["refresh_token"])
+    assert r.status_code == 400 and r.json()["error"] == "invalid_grant"
+    assert refresh(user_api, c, body["refresh_token"]).status_code == 400
+
+
+def test_assigned_user_can_still_refresh(db, super_admin, user_api):
+    from tests.test_oidc_refresh import refresh
+    c, body = start(super_admin, user_api, client_type="confidential")
+    app_id = _require_assignment(super_admin)
+    assert super_admin.post(f"/admin/applications/{app_id}/assignments", {"user_id": user_api.user.id}).status_code == 201
+    assert refresh(user_api, c, body["refresh_token"]).status_code == 200
+
+
+def test_unassigned_user_opaque_token_and_refresh_token_are_inactive(db, super_admin, user_api, anon):
+    c, body = start(super_admin, user_api, client_type="confidential", access_token_format="opaque")
+    at, rt = body["access_token"], body["refresh_token"]
+    assert intro(user_api, c, at).json()["active"] is True and intro(user_api, c, rt).json()["active"] is True
+    _require_assignment(super_admin)
+    assert intro(user_api, c, at).json() == {"active": False}
+    assert intro(user_api, c, rt).json() == {"active": False}
+    assert anon.c.get("/oauth/userinfo", headers=bearer(at)).status_code == 401

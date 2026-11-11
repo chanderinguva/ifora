@@ -14,6 +14,7 @@ from typing import Dict
 
 from sqlalchemy.orm import Session
 
+from backend.app.applications.entitlement import sign_on_denied
 from backend.app.config import settings
 from backend.app.oidc import keys, refresh
 from backend.app.oidc.authorize import get_consent, now
@@ -31,7 +32,7 @@ def _refresh(db: Session, caller: OIDCClient, raw: str) -> Dict:
     if row.revoked_at or row.used_at or row.expires_at <= t or row.absolute_expires_at <= t:
         return INACTIVE
     user = db.get(User, row.user_id)
-    if user is None or user.status != "active":
+    if user is None or user.status != "active" or sign_on_denied(db, caller, user.id):
         return INACTIVE
     return {"active": True, "scope": " ".join(row.scopes), "client_id": caller.client_id, "token_type": "refresh_token",
             "sub": user.public_id, "iss": settings.OIDC_ISSUER, "iat": int(row.created_at.timestamp()), "exp": int(row.expires_at.timestamp())}
@@ -51,7 +52,7 @@ def _access(db: Session, caller: OIDCClient, raw: str) -> Dict:
         return INACTIVE
     if issued_to.client_type != "service":  # a user token: the user must still exist and, unless first-party, still consent
         user = db.query(User).filter(User.public_id == c.get("sub")).first()
-        if user is None or user.status != "active":
+        if user is None or user.status != "active" or sign_on_denied(db, issued_to, user.id):
             return INACTIVE
         if not issued_to.first_party and get_consent(db, user.id, issued_to) is None:
             return INACTIVE
@@ -71,7 +72,7 @@ def _opaque_row(db: Session, raw: str, audience: str | None = None):
         return None, None
     if row.user_id is not None:
         user = db.get(User, row.user_id)
-        if user is None or user.status != "active":
+        if user is None or user.status != "active" or sign_on_denied(db, issued_to, user.id):
             return None, None
         if not issued_to.first_party and get_consent(db, user.id, issued_to) is None:
             return None, None
