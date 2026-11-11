@@ -18,7 +18,7 @@ test("SAML application: configure in the UI, then IdP- and SP-initiated sign-in 
   await loginAsAdmin(page);
   const name = `E2E SAML ${Date.now()}`;
   await page.goto("/admin/applications");
-  await page.getByRole("button", { name: /Create App Integration/ }).click();
+  await page.getByRole("button", { name: /Create app integration/ }).click();
   await page.getByTestId("method-saml").click();
   await page.getByTestId("wizard-next").click();
   await page.locator("#a-name").fill(name);

@@ -18,7 +18,7 @@ function Chip({ pill, onClick }: { pill: Pill; onClick: () => void }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `pill:${pill.path}` });
   return (
     <button type="button" ref={setNodeRef} {...attributes} {...listeners} onClick={onClick} data-testid="pill-chip" data-path={pill.path} title={pill.path}
-      className={"cursor-grab touch-none rounded-full border bg-primary/10 px-2 py-0.5 text-xs hover:bg-primary/20 " + (isDragging ? "opacity-40" : "")}>
+      className={"cursor-grab touch-none rounded-full border bg-selected px-2 py-0.5 font-mono text-xs text-selected-foreground transition-colors hover:bg-selected/70 " + (isDragging ? "opacity-40" : "")}>
       {short(pill)}
     </button>
   );
@@ -56,7 +56,7 @@ export function PillTray({ pills }: { pills: Pill[] }) {
       <div className="max-h-80 space-y-2 overflow-auto">
         {groups.map(([g, list]) => (
           <div key={g}>
-            <div className="mb-1 text-xs font-medium uppercase text-muted-foreground">{g}</div>
+            <div className="mb-1 text-xs font-medium text-muted-foreground">{g}</div>
             <div className="flex flex-wrap gap-1">{list.map((p) => <Chip key={p.path} pill={p} onClick={() => click(p)} />)}</div>
           </div>
         ))}

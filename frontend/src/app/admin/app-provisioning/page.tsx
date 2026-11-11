@@ -128,7 +128,7 @@ export default function ProvisioningApps() {
                 <div className="mt-1 break-all text-xs text-muted-foreground">{a.kind === "scim" ? "SCIM 2.0" : "REST gateway"} · {a.base_url}</div>
                 <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs">
                   <span>{a.provisioned} provisioned</span><span>{a.assigned_users} users, {a.assigned_groups} groups assigned</span>
-                  {a.errors > 0 && <span className="text-red-600 dark:text-red-400">{a.errors} with errors</span>}
+                  {a.errors > 0 && <span className="text-bad">{a.errors} with errors</span>}
                   {a.queued > 0 && <span>{a.queued} queued</span>}
                 </div>
               </Link>

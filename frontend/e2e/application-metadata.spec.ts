@@ -7,7 +7,7 @@ test("set owner, sensitivity, review date, tags and attributes on an application
   page.on("dialog", (d) => d.accept());
   await loginAsAdmin(page);
   await page.getByRole("link", { name: "Applications", exact: true }).click();
-  await page.getByRole("button", { name: /Create App Integration/ }).click();
+  await page.getByRole("button", { name: /Create app integration/ }).click();
   await page.getByTestId("method-bookmark").click();
   await page.getByTestId("wizard-next").click();
   await page.locator("#a-name").fill(name);
@@ -31,7 +31,7 @@ test("set owner, sensitivity, review date, tags and attributes on an application
   await expect(again.locator("#am-review")).toHaveValue("2027-03-31");
   await expect(again.locator("#am-tags")).toHaveValue("finance, tier-1");
   await expect(again.locator("#am-attrs")).toHaveValue("vendor=Acme\ncost_center=CC-100");
-  expect(await again.locator("#am-owner").inputValue()).not.toBe("");
+  await expect(again.locator("#am-owner")).not.toHaveValue("");   // retries: the owner options load just after the form
 
   await page.getByRole("button", { name: "Delete" }).click();
   await expect(page).toHaveURL(/\/admin\/applications$/);

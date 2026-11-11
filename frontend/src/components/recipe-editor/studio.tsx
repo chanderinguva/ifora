@@ -129,7 +129,7 @@ function outcomeOf(rows: JobStep[] | undefined, job: Job): { kind: Outcome; text
 }
 
 function ResultDot({ kind, text }: { kind: Outcome; text: string }) {
-  const cls = kind === "ok" ? "bg-green-600 text-white" : kind === "failed" ? "bg-destructive text-destructive-foreground" : "bg-muted text-muted-foreground";
+  const cls = kind === "ok" ? "bg-good text-background" : kind === "failed" ? "bg-destructive text-destructive-foreground" : "bg-muted text-muted-foreground";
   return (
     <span data-testid="step-result" data-outcome={kind} title={`Test: ${text}`} className={"flex h-5 w-5 shrink-0 items-center justify-center rounded-full " + cls}>
       {kind === "ok" ? <Check className="h-3 w-3" /> : kind === "failed" ? <X className="h-3 w-3" /> : <Minus className="h-3 w-3" />}
@@ -157,9 +157,9 @@ function AddMenu({ options, onPick, disabled, label, empty }: { options: StepMen
         {empty ? <span className="flex items-center gap-1"><Plus className="h-4 w-4" /> Add a step</span> : <Plus className="h-3.5 w-3.5" />}
       </button>
       {open && (
-        <div role="menu" className="absolute top-8 z-20 w-72 rounded-md border bg-popover p-2 shadow-md" data-testid="studio-menu">
+        <div role="menu" className="absolute top-8 z-20 w-72 rounded-xl border bg-popover p-2 shadow-md dark:shadow-none" data-testid="studio-menu">
           <input autoFocus aria-label="Search steps" placeholder="Search steps…" value={q} onChange={(e) => setQ(e.target.value)}
-            className="mb-2 h-8 w-full rounded border bg-background px-2 text-sm" />
+            className="mb-2 h-8 w-full rounded-md border bg-background px-2 text-sm" />
           <div className="max-h-72 overflow-auto">
             {([
               { title: "Actions", rows: shown.filter((o) => o.kind === "action" && !o.group) },
@@ -169,10 +169,10 @@ function AddMenu({ options, onPick, disabled, label, empty }: { options: StepMen
               if (!rows.length) return null;
               return (
                 <div key={title} className="mb-1" data-testid="studio-menu-group">
-                  <div className="px-2 py-1 text-xs font-medium uppercase text-muted-foreground">{title}</div>
+                  <div className="px-2 py-1 text-xs font-medium text-muted-foreground">{title}</div>
                   {rows.map((o) => (
                     <button key={o.type + (o.group ?? "") + (o.preset?.action ?? "")} role="menuitem" type="button" aria-label={o.group ? `${o.group}: ${o.label}` : o.label}
-                      className="block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
+                      className="block w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent"
                       onClick={() => { setOpen(false); onPick(o); }}>{o.label}</button>
                   ))}
                 </div>
@@ -341,13 +341,13 @@ export function Studio(props: Props) {
         )}
         {steps.map((s, i) => (
           <div key={s.id}>
-            <div className="flex h-5 items-center justify-center"><div className="h-full w-px bg-border" /></div>
+            <div className="flex h-5 items-center justify-center"><div className="h-full w-0.5 rounded-full bg-border" /></div>
             <GapSlot gap={{ ref: lane, index: i }} active={!!dragging}>{adder(i)}</GapSlot>
-            <div className="flex h-5 items-center justify-center"><div className="h-full w-px bg-border" /></div>
+            <div className="relative flex h-5 items-center justify-center"><div className="h-full w-0.5 rounded-full bg-border" /><span aria-hidden="true" className="absolute bottom-0 h-1.5 w-1.5 translate-y-1/2 rounded-full bg-muted-foreground/60" /></div>
             {renderCard(s, i, depth, inLoop, lane.section)}
           </div>
         ))}
-        {steps.length > 0 && (<><div className="flex h-5 justify-center"><div className="h-full w-px bg-border" /></div>
+        {steps.length > 0 && (<><div className="flex h-5 justify-center"><div className="h-full w-0.5 rounded-full bg-border" /></div>
           <GapSlot gap={{ ref: lane, index: steps.length }} active={!!dragging}>{adder(steps.length)}</GapSlot></>)}
       </div>
     );
@@ -363,13 +363,13 @@ export function Studio(props: Props) {
       setSel(n.id);
     };
     return (<>
-      <div className="text-xs font-medium uppercase text-muted-foreground">{label}</div>
+      <div className="text-xs font-medium text-muted-foreground">{label}</div>
       {renderLane({ section, owner: step.id, branch: "then" }, depth + 1, inLoop)}
       {link ? (
         <div className="space-y-2 border-t pt-2" data-testid="else-if">
-          <div className={"flex items-center gap-2 rounded-md " + (sel === link.id ? "ring-2 ring-primary" : "")}>
+          <div className={"flex items-center gap-2 rounded-md " + (sel === link.id ? "ring-1 ring-primary border-primary" : "")}>
             <button type="button" className="flex min-w-0 flex-1 items-baseline gap-2 text-left" aria-pressed={sel === link.id} aria-label="Open else-if condition" onClick={() => setSel(link.id)}>
-              <span className="text-xs font-medium uppercase text-muted-foreground">Else if</span>
+              <span className="text-xs font-medium text-muted-foreground">Else if</span>
               <span className="min-w-0 truncate text-xs">{summary(link, props)}</span>
             </button>
             {canEdit && <Button type="button" size="sm" variant="ghost" aria-label="Delete else-if" onClick={() => { edit(removeStep(def, link.id)); setSel("trigger"); }}><Trash2 className="h-4 w-4" /></Button>}
@@ -378,7 +378,7 @@ export function Studio(props: Props) {
         </div>
       ) : (<>
         <div className="flex items-center justify-between">
-          <div className="text-xs font-medium uppercase text-muted-foreground">Otherwise</div>
+          <div className="text-xs font-medium text-muted-foreground">Otherwise</div>
           {canEdit && (step.else ?? []).length === 0 && links < 10 && (
             <Button type="button" size="sm" variant="ghost" data-testid="add-else-if" onClick={addElseIf}>+ Else if</Button>
           )}
@@ -393,7 +393,7 @@ export function Studio(props: Props) {
     const selected = sel === step.id;
     const remove = () => { edit(removeStep(def, step.id)); setSel("trigger"); };
     return (
-      <StepShell id={step.id} enabled={canEdit} className={"rounded-lg border bg-card " + (selected ? "ring-2 ring-primary " : "") + (dragging === step.id ? "opacity-40" : "")}>
+      <StepShell id={step.id} enabled={canEdit} className={"rounded-xl border bg-card " + (selected ? "ring-1 ring-primary border-primary " : "") + (dragging === step.id ? "opacity-40" : "")}>
        {(grab) => (<>
         <div className="flex items-center gap-2 p-3">
          <div className={"flex min-w-0 flex-1 items-center gap-2 " + (canEdit ? "cursor-grab active:cursor-grabbing" : "")} {...grab}>
@@ -418,16 +418,16 @@ export function Studio(props: Props) {
         {(step.type === "condition" || step.type === "approval" || step.type === "handle_errors") && (
           <div className="space-y-2 border-t p-3">
             {step.type === "condition" ? renderCondBody(step, depth, inLoop, section, "If yes", 0) : (<>
-              <div className="text-xs font-medium uppercase text-muted-foreground">{step.type === "approval" ? "If approved" : "Monitored steps"}</div>
+              <div className="text-xs font-medium text-muted-foreground">{step.type === "approval" ? "If approved" : "Monitored steps"}</div>
               {renderLane({ section, owner: step.id, branch: "then" }, depth + 1, inLoop)}
-              <div className="text-xs font-medium uppercase text-muted-foreground">{step.type === "approval" ? "If denied or no answer" : "If any of them fails"}</div>
+              <div className="text-xs font-medium text-muted-foreground">{step.type === "approval" ? "If denied or no answer" : "If any of them fails"}</div>
               {renderLane({ section, owner: step.id, branch: "else" }, depth + 1, inLoop)}
             </>)}
           </div>
         )}
         {isLoop(step) && (
           <div className="space-y-2 border-t p-3">
-            <div className="text-xs font-medium uppercase text-muted-foreground">{step.type === "for_each_item" ? "For each item" : "For each member"}</div>
+            <div className="text-xs font-medium text-muted-foreground">{step.type === "for_each_item" ? "For each item" : "For each member"}</div>
             {renderLane({ section, owner: step.id, branch: "then" }, depth + 1, true)}
           </div>
         )}
@@ -463,12 +463,12 @@ export function Studio(props: Props) {
         </div>
         <div className="mx-auto max-w-xl">
           <button type="button" data-testid="studio-trigger" aria-pressed={sel === "trigger"} onClick={() => setSel("trigger")}
-            className={"flex w-full items-center gap-3 rounded-lg border bg-card p-3 text-left " + (sel === "trigger" ? "ring-2 ring-primary" : "")}>
+            className={"flex w-full items-center gap-3 rounded-xl border bg-card p-3 text-left " + (sel === "trigger" ? "ring-1 ring-primary border-primary" : "")}>
             <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground"><Zap className="h-4 w-4" /></span>
             <span><span className="block text-sm font-medium">When: {trigInfo?.label ?? def.trigger.type}</span><span className="block text-xs text-muted-foreground">Trigger</span></span>
           </button>
           {renderLane({ section: "steps", owner: null, branch: null }, 0, false)}
-          <div className="mt-8 rounded-lg border border-dashed p-3" data-testid="handle-errors">
+          <div className="mt-8 rounded-xl border border-dashed p-3" data-testid="handle-errors">
             <div className="flex items-center gap-2 text-sm font-semibold"><ShieldAlert className="h-4 w-4" /> Handle errors</div>
             <p className="mb-2 mt-1 text-xs text-muted-foreground">Optional, for the whole recipe. If any step above fails for good (after its retries), these steps run with the error as data, and the job is still recorded as failed. Each step can also be set to carry on after a failure.</p>
             <div data-testid="error-handler">{renderLane({ section: "on_error", owner: null, branch: null }, 0, false)}</div>
@@ -538,7 +538,7 @@ export function Studio(props: Props) {
           const l = locate(def, dragging);
           const info = l ? meta.steps.find((m) => m.type === l.step.type) : null;
           return (
-            <div className="flex items-center gap-3 rounded-lg border-2 border-primary bg-card/90 p-3 opacity-90 shadow-xl" style={{ width: dragWidth ?? undefined }}>
+            <div className="flex items-center gap-3 rounded-lg border-2 border-primary bg-card/90 p-3 opacity-90 shadow-lg" style={{ width: dragWidth ?? undefined }}>
               <GripVertical className="h-4 w-4 text-muted-foreground" />
               <span className="min-w-0"><span className="block truncate text-sm font-medium">{info?.label ?? dragging}</span>
                 <span className="block truncate text-xs text-muted-foreground">{l ? summary(l.step, props) : ""}</span></span>

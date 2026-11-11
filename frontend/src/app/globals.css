@@ -4,25 +4,31 @@
 
 @layer base {
   :root {
-    /* Ifora tokens (docs/branding/brand-guidelines.md): navy #0B1220, indigo #4F46E5, blue #2563EB, violet #8B5CF6, cloud #F8FAFC */
-    --background: 210 40% 98%;
-    --foreground: 220 57% 7%;
+    /* Ifora tokens. Neutrals are a graphite ramp (hue 220, barely tinted); indigo #4F46E5 is the one accent.
+       The blue and violet of the logo mark stay in the mark (--ifora-*). */
+    --background: 220 12% 97%;
+    --foreground: 220 16% 10%;
     --card: 0 0% 100%;
-    --card-foreground: 220 57% 7%;
+    --card-foreground: 220 16% 10%;
     --popover: 0 0% 100%;
-    --popover-foreground: 220 57% 7%;
+    --popover-foreground: 220 16% 10%;
     --primary: 243 75% 59%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 214 32% 94%;
-    --secondary-foreground: 220 47% 14%;
-    --muted: 214 32% 94%;
-    --muted-foreground: 215 19% 38%;
-    --accent: 243 80% 96%;
-    --accent-foreground: 243 60% 40%;
-    --destructive: 0 72% 46%;
+    --secondary: 220 10% 94%;
+    --secondary-foreground: 220 14% 16%;
+    --muted: 220 10% 94%;
+    --muted-foreground: 220 8% 36%;
+    --accent: 220 10% 94%;
+    --accent-foreground: 220 16% 10%;
+    --selected: 243 80% 96%;
+    --selected-foreground: 243 55% 38%;
+    --destructive: 0 62% 44%;
     --destructive-foreground: 0 0% 100%;
-    --border: 214 32% 89%;
-    --input: 214 32% 85%;
+    --good: 152 45% 28%;
+    --warn: 32 70% 33%;
+    --bad: 0 62% 44%;
+    --border: 220 10% 89%;
+    --input: 220 10% 82%;
     --ring: 243 75% 59%;
     --radius: 0.5rem;
     --ifora-1: #4F46E5;
@@ -31,24 +37,29 @@
   }
 
   .dark {
-    --background: 220 57% 7%;
-    --foreground: 210 40% 98%;
-    --card: 220 50% 10%;
-    --card-foreground: 210 40% 98%;
-    --popover: 220 50% 10%;
-    --popover-foreground: 210 40% 98%;
+    --background: 220 10% 8%;
+    --foreground: 220 12% 94%;
+    --card: 220 9% 11%;
+    --card-foreground: 220 12% 94%;
+    --popover: 220 9% 12%;
+    --popover-foreground: 220 12% 94%;
     --primary: 234 89% 74%;
-    --primary-foreground: 220 57% 7%;
-    --secondary: 217 33% 17%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217 33% 17%;
-    --muted-foreground: 215 20% 65%;
-    --accent: 243 40% 20%;
-    --accent-foreground: 234 89% 85%;
-    --destructive: 0 72% 55%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 217 28% 20%;
-    --input: 217 28% 24%;
+    --primary-foreground: 220 16% 8%;
+    --secondary: 220 8% 16%;
+    --secondary-foreground: 220 12% 94%;
+    --muted: 220 8% 16%;
+    --muted-foreground: 220 8% 66%;
+    --accent: 220 8% 16%;
+    --accent-foreground: 220 12% 94%;
+    --selected: 243 30% 20%;
+    --selected-foreground: 234 89% 85%;
+    --destructive: 0 65% 62%;
+    --destructive-foreground: 220 16% 8%;
+    --good: 152 40% 62%;
+    --warn: 36 70% 64%;
+    --bad: 0 65% 66%;
+    --border: 220 8% 20%;
+    --input: 220 8% 26%;
     --ring: 234 89% 74%;
     --ifora-1: #818CF8;
     --ifora-2: #60A5FA;
@@ -63,6 +74,7 @@
   }
 
   body {
+    font-feature-settings: "cv11", "ss03";
     color: hsl(var(--foreground));
     background-color: hsl(var(--background));
     font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
@@ -72,6 +84,9 @@
 * {
   @apply border-border;
 }
+input[type="checkbox"], input[type="radio"] { accent-color: hsl(var(--primary)); }
+thead { background-color: hsl(var(--muted) / 0.5); }
+:focus-visible { outline-color: hsl(var(--ring)); }
 /* Dropdowns: one modern look everywhere (native select, so keyboard, mobile and screen readers keep working). */
 select {
   -webkit-appearance: none;

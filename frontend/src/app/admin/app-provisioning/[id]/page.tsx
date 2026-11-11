@@ -173,7 +173,7 @@ export default function AppDetail() {
               <thead><tr><th className={th}>Account</th><th className={th}>Remote id</th><th className={th}>State</th><th className={th}>Last synced</th></tr></thead>
               <tbody>{links.map((l) => (
                 <tr key={l.id} className="border-t"><td className={td}>{l.label} <span className="text-xs text-muted-foreground">{l.type}</span></td><td className={`${td} font-mono text-xs`}>{l.remote_id}</td>
-                  <td className={td}><Badge tone={stateTone(l.state)}>{l.state}</Badge>{l.last_error && <div className="mt-1 text-xs text-red-600 dark:text-red-400">{l.last_error}</div>}</td><td className={td}>{fmt(l.last_synced_at)}</td></tr>))}
+                  <td className={td}><Badge tone={stateTone(l.state)}>{l.state}</Badge>{l.last_error && <div className="mt-1 text-xs text-bad">{l.last_error}</div>}</td><td className={td}>{fmt(l.last_synced_at)}</td></tr>))}
               </tbody></table></div>
           )}
         </CardContent>
@@ -188,7 +188,7 @@ export default function AppDetail() {
               <tbody>{tasks.slice(0, 30).map((t) => (
                 <tr key={t.id} className="border-t"><td className={td}>{fmt(t.created_at)}</td>
                   <td className={td}>{t.op === "delete_remote" ? "remove" : "sync"} {t.resource_type} #{t.user_id ?? t.group_id}</td>
-                  <td className={td}><Badge tone={stateTone(t.status)}>{t.status}</Badge>{t.attempts > 1 && <span className="ml-2 text-xs text-muted-foreground">{t.attempts} attempts</span>}{t.last_error && <div className="mt-1 text-xs text-red-600 dark:text-red-400">{t.last_error}</div>}</td>
+                  <td className={td}><Badge tone={stateTone(t.status)}>{t.status}</Badge>{t.attempts > 1 && <span className="ml-2 text-xs text-muted-foreground">{t.attempts} attempts</span>}{t.last_error && <div className="mt-1 text-xs text-bad">{t.last_error}</div>}</td>
                   <td className={td}>{t.result ?? "—"}</td>
                   <td className={td}>{canEdit && t.status === "failed" && <Button size="sm" variant="outline" onClick={() => run(() => http(`/admin/provisioning-apps/${id}/tasks/${t.id}/retry`, { method: "POST" }), "Retry queued")}>Retry</Button>}</td></tr>))}
               </tbody></table></div>

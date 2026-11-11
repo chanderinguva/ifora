@@ -151,9 +151,9 @@ export default function AuditPage() {
             <dl className="space-y-3 text-sm">
               {([["When", fmt(open.timestamp)], ["Actor", open.actor_email ?? (open.actor_id ? `#${open.actor_id}` : "system")], ["IP address", open.actor_ip_address ?? "—"],
                 ["Target", open.target_type ? `${open.target_type} #${open.target_id ?? ""}` : "—"], ["Event ID", String(open.id)]] as const).map(([k, v]) => (
-                <div key={k}><dt className="text-xs uppercase text-muted-foreground">{k}</dt><dd className="break-words">{v}</dd></div>
+                <div key={k}><dt className="text-xs text-muted-foreground">{k}</dt><dd className="break-words">{v}</dd></div>
               ))}
-              <div><dt className="text-xs uppercase text-muted-foreground">Details</dt>
+              <div><dt className="text-xs text-muted-foreground">Details</dt>
                 <dd><pre className="mt-1 max-h-96 overflow-auto rounded-md bg-muted p-3 text-xs" data-testid="audit-drawer-json">{open.metadata ? JSON.stringify(open.metadata, null, 2) : "No additional details."}</pre></dd></div>
             </dl>
             {open.target_type && open.target_id && (

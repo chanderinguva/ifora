@@ -26,16 +26,16 @@ export function SidebarNav({
   return (
     <nav aria-label="Main" className={cn("flex-1 p-3", collapsed ? "overflow-visible" : "overflow-y-auto")}>
       {groups.map((group, gi) => (
-        <div key={gi} className={cn(gi > 0 && "mt-5")}>
+        <div key={gi} className={cn(gi > 0 && "mt-6")}>
           {group.label &&
             (collapsed ? (
               <div className="mx-2 mb-2 border-t" aria-hidden="true" />
             ) : (
-              <div className="mb-1.5 px-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground" aria-hidden="true">
+              <div className="mb-2 px-3 text-xs font-medium text-muted-foreground" aria-hidden="true">
                 {group.label}
               </div>
             ))}
-          <ul className="space-y-1" aria-label={group.label}>
+          <ul className="space-y-0.5" aria-label={group.label}>
             {group.items.map(({ href, label, icon: Icon }) => {
               const active = pathname === href || pathname.startsWith(href + "/");
               return (
@@ -46,13 +46,13 @@ export function SidebarNav({
                     aria-current={active ? "page" : undefined}
                     aria-label={collapsed ? label : undefined}
                     className={cn(
-                      "group relative flex items-center rounded-md py-2 text-sm font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+                      "group relative flex h-9 items-center rounded-md text-sm font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
                       collapsed ? "justify-center px-0" : "gap-3 px-3",
-                      active ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                      active ? "bg-accent text-foreground ring-1 ring-inset ring-border" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
                     )}
                   >
-                    {active && <span aria-hidden="true" className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-foreground" />}
-                    <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    {active && !collapsed && <span aria-hidden="true" className="absolute left-1 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-primary" />}
+                    <Icon className="h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
                     {!collapsed && <span className="truncate">{label}</span>}
                     {collapsed && (
                       <span

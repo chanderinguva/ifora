@@ -86,10 +86,10 @@ export function AppTiles() {
     return (
       <li key={a.id} className="group relative" data-testid={`tile-${a.id}`}>
         <button type="button" disabled={!a.launchable} onClick={() => launch(a)} aria-label={a.launchable ? `Open ${a.name}` : `${a.name} (no launch link)`}
-          title={a.description ?? a.name} className="flex h-full w-full flex-col items-center gap-3 rounded-2xl border border-transparent p-4 text-center transition hover:border-border hover:bg-card hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60">
-          <span className="rounded-2xl bg-card p-1.5 shadow-sm ring-1 ring-border"><AppIcon path={`/me/apps/${a.id}/icon`} name={a.name} hasIcon={a.has_icon} size={56} /></span>
+          title={a.description ?? a.name} className="flex h-full w-full flex-col items-center gap-3 rounded-2xl border border-transparent p-4 text-center transition-colors hover:border-border hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60">
+          <span className="rounded-[20px] bg-card p-1.5 ring-1 ring-border"><AppIcon path={`/me/apps/${a.id}/icon`} name={a.name} hasIcon={a.has_icon} size={56} /></span>
           <span className="line-clamp-2 text-sm font-medium">{a.name}</span>
-          {a.launchable && !organise && <ExternalLink aria-hidden className="h-3.5 w-3.5 text-muted-foreground opacity-0 transition group-hover:opacity-100" />}
+          {a.launchable && !organise && <ExternalLink aria-hidden className="h-3.5 w-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />}
         </button>
         {a.sign_on_mode === "swa" && (
           <a href={`/swa/continue?app=${a.id}&manage=1`} aria-label={`Change saved sign-in for ${a.name}`} title="Change saved sign-in"
@@ -99,7 +99,7 @@ export function AppTiles() {
         )}
         <button type="button" onClick={() => put(a.id, { favorite: !p.favorite })} aria-pressed={p.favorite} aria-label={p.favorite ? `Remove ${a.name} from favourites` : `Add ${a.name} to favourites`}
           className="absolute right-2 top-2 rounded-md p-1 text-muted-foreground opacity-60 hover:bg-muted hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100">
-          <Star className={"h-3.5 w-3.5 " + (p.favorite ? "fill-current text-amber-500" : "")} />
+          <Star className={"h-3.5 w-3.5 " + (p.favorite ? "fill-primary text-primary" : "")} />
         </button>
         {organise && (
           <div className="mt-1 flex items-center justify-center gap-1">

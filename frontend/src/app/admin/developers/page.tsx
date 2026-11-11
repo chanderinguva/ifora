@@ -16,13 +16,13 @@ type Tab = (typeof TABS)[number][0];
 const SPEC_URL = `${API_URL}/openapi.json`;
 
 const METHOD_TONE: Record<string, string> = {
-  GET: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300",
-  POST: "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300",
-  PUT: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
-  PATCH: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
-  DELETE: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
+  GET: "bg-secondary text-foreground",
+  POST: "bg-selected text-selected-foreground",
+  PUT: "bg-secondary text-warn",
+  PATCH: "bg-secondary text-warn",
+  DELETE: "bg-secondary text-bad",
 };
-const Method = ({ m }: { m: string }) => <span className={`inline-block w-16 shrink-0 rounded px-2 py-0.5 text-center text-xs font-semibold ${METHOD_TONE[m] ?? ""}`}>{m}</span>;
+const Method = ({ m }: { m: string }) => <span className={`inline-block w-16 shrink-0 rounded-md px-2 py-0.5 text-center font-mono text-xs font-medium ${METHOD_TONE[m] ?? ""}`}>{m}</span>;
 
 function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) {
   const [done, setDone] = useState(false);
@@ -61,12 +61,12 @@ function OperationRow({ op, open, onToggle }: { op: Operation; open: boolean; on
           {op.params.length > 0 && (
             <div><h4 className="mb-1 text-sm font-semibold">Parameters</h4>
               <table className="w-full text-left text-sm"><thead><tr><th className={th}>Name</th><th className={th}>In</th><th className={th}>Type</th><th className={th}>Description</th></tr></thead>
-                <tbody>{op.params.map((p) => <tr key={p.in + p.name}><td className={td}><code>{p.name}</code>{p.required && <span className="ml-1 text-xs text-red-600">required</span>}</td><td className={td}>{p.in}</td><td className={td}>{p.type}</td><td className={td}>{p.description}</td></tr>)}</tbody></table></div>
+                <tbody>{op.params.map((p) => <tr key={p.in + p.name}><td className={td}><code>{p.name}</code>{p.required && <span className="ml-1 text-xs text-bad">required</span>}</td><td className={td}>{p.in}</td><td className={td}>{p.type}</td><td className={td}>{p.description}</td></tr>)}</tbody></table></div>
           )}
           {op.bodyFields && (
             <div><h4 className="mb-1 text-sm font-semibold">Request body <span className="font-normal text-muted-foreground">{op.bodyContentType}</span></h4>
               {op.bodyFields.length > 0 && <table className="mb-2 w-full text-left text-sm"><thead><tr><th className={th}>Field</th><th className={th}>Type</th><th className={th}>Description</th></tr></thead>
-                <tbody>{op.bodyFields.map((f) => <tr key={f.name}><td className={td}><code>{f.name}</code>{f.required && <span className="ml-1 text-xs text-red-600">required</span>}</td><td className={td}>{f.type}</td><td className={td}>{f.description}</td></tr>)}</tbody></table>}
+                <tbody>{op.bodyFields.map((f) => <tr key={f.name}><td className={td}><code>{f.name}</code>{f.required && <span className="ml-1 text-xs text-bad">required</span>}</td><td className={td}>{f.type}</td><td className={td}>{f.description}</td></tr>)}</tbody></table>}
             </div>
           )}
           <div><h4 className="mb-1 text-sm font-semibold">Responses</h4>

@@ -15,7 +15,7 @@ test("SWA application: configure, store a password once, then the tile posts it 
   await loginAsAdmin(page);
   const name = `E2E SWA ${Date.now()}`;
   await page.goto("/admin/applications");
-  await page.getByRole("button", { name: /Create App Integration/ }).click();
+  await page.getByRole("button", { name: /Create app integration/ }).click();
   await page.getByTestId("method-swa").click();
   await page.getByTestId("wizard-next").click();
   await page.locator("#a-name").fill(name);

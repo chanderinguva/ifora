@@ -9,7 +9,7 @@ export default {
     fontFamily: {
       sans: ["var(--font-inter)", "ui-sans-serif", "system-ui", "sans-serif"],
       brand: ["var(--font-lora)", "Georgia", "serif"],
-      mono: ["ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
+      mono: ["var(--font-mono)", "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
     },
     colors: {
       border: "hsl(var(--border))",
@@ -45,7 +45,16 @@ export default {
         DEFAULT: "hsl(var(--accent))",
         foreground: "hsl(var(--accent-foreground))",
       },
+      selected: {
+        DEFAULT: "hsl(var(--selected))",
+        foreground: "hsl(var(--selected-foreground))",
+      },
+      good: "hsl(var(--good))",
+      warn: "hsl(var(--warn))",
+      bad: "hsl(var(--bad))",
     },
+    transitionTimingFunction: { DEFAULT: "cubic-bezier(0.2, 0, 0, 1)" },
+    transitionDuration: { DEFAULT: "150ms" },
     borderRadius: {
       lg: "var(--radius)",
       md: "calc(var(--radius) - 2px)",
