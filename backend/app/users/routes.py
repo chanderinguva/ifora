@@ -358,6 +358,14 @@ def update_user(
 ):
     user = _get_or_404(db, user_id)
     _guard_target(actor, user)
+    if user.id == actor.id and not actor.is_super_admin:
+        # Group rules match on these. An administrator editing their own would pick which rule-managed groups they
+        # land in, including groups that carry administrator roles (IFORA-46 / SEC-A-1). Another admin must do it.
+        if body.profile_attributes is not None or (body.email is not None and body.email.lower() != user.email):
+            raise HTTPException(
+                status_code=403,
+                detail="Administrators cannot change their own email or profile attributes; ask another administrator",
+            )
     changed: Dict[str, Any] = {}
 
     if body.email is not None and body.email.lower() != user.email:
