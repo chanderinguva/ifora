@@ -18,7 +18,7 @@ function Chip({ pill, onClick }: { pill: Pill; onClick: () => void }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `pill:${pill.path}` });
   return (
     <button type="button" ref={setNodeRef} {...attributes} {...listeners} onClick={onClick} data-testid="pill-chip" data-path={pill.path} title={pill.path}
-      className={"cursor-grab touch-none rounded-full border bg-primary/10 px-2 py-0.5 text-xs hover:bg-primary/20 " + (isDragging ? "opacity-40" : "")}>
+      className={"cursor-grab touch-none rounded-full border bg-selected px-2 py-0.5 font-mono text-xs text-selected-foreground transition-colors hover:bg-selected/70 " + (isDragging ? "opacity-40" : "")}>
       {short(pill)}
     </button>
   );

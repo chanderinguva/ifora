@@ -3,10 +3,7 @@
 import { useEffect, useState } from "react";
 import { API_URL } from "@/lib/api";
 
-const HUES = [212, 262, 330, 24, 152, 190, 48, 0];
-const hue = (name: string) => HUES[[...name].reduce((a, c) => a + c.charCodeAt(0), 0) % HUES.length];
-
-/** Tile logo: the uploaded image (fetched with the session cookie, shown from a blob URL) or a coloured initial. */
+/** Tile logo: the uploaded image (fetched with the session cookie, shown from a blob URL) or a neutral initial. */
 export function AppIcon({ path, name, hasIcon, size = 48 }: { path: string; name: string; hasIcon: boolean; size?: number }) {
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
@@ -20,10 +17,10 @@ export function AppIcon({ path, name, hasIcon, size = 48 }: { path: string; name
     return () => { alive = false; if (url) URL.revokeObjectURL(url); };
   }, [path, hasIcon]);
 
-  const box = { width: size, height: size };
-  if (src) return <img src={src} alt="" aria-hidden style={box} className="rounded-xl object-cover" />;
+  const box = { width: size, height: size, borderRadius: Math.round(size / 4) };
+  if (src) return <img src={src} alt="" aria-hidden style={box} className="object-cover" />;
   return (
-    <span aria-hidden style={{ ...box, background: `hsl(${hue(name)} 60% 42%)`, fontSize: size * 0.4 }} className="flex items-center justify-center rounded-xl font-semibold text-white">
+    <span aria-hidden style={{ ...box, fontSize: Math.round(size * 0.4) }} className="flex items-center justify-center border bg-secondary font-medium text-secondary-foreground">
       {name.trim().charAt(0).toUpperCase()}
     </span>
   );

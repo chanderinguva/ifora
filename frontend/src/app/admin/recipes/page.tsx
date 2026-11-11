@@ -9,7 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge, PageHeader, fmt, td, th } from "@/components/bits";
+import { Badge, PageHeader, fmt, mono, td, th, tr } from "@/components/bits";
 import { RecipeTabs } from "@/components/recipe-bits";
 import { ImportCard, TemplatePicker } from "@/components/recipe-starters";
 import { http } from "@/lib/http";
@@ -82,12 +82,12 @@ export default function RecipesPage() {
           <thead className="border-b"><tr><th className={th}>Recipe</th><th className={th}>Owner</th><th className={th}>Trigger</th><th className={th}>Version</th><th className={th}>Last run</th><th className={th}>Status</th><th className={th}></th></tr></thead>
           <tbody>
             {items?.map((r) => (
-              <tr key={r.id} className="border-b align-top last:border-0">
+              <tr key={r.id} className={tr + " align-top"}>
                 <td className={td + " font-medium"}><Link className="underline-offset-4 hover:underline" href={`/admin/recipes/${r.id}`}>{r.name}</Link></td>
                 <td className={td}>{r.owner?.email ?? "—"}{r.last_alert_at && <div><Badge tone="bad">failure alert</Badge></div>}</td>
                 <td className={td}>{trig(r.trigger_type)}</td>
-                <td className={td}>{r.published_version ? `v${r.published_version}` : "unpublished"}{r.has_unpublished_changes && r.published_version ? <span className="ml-1 text-xs text-warn">draft changes</span> : null}</td>
-                <td className={td}>{r.last_job ? <><Badge tone={statusTone(r.last_job.status)}>{r.last_job.status}</Badge> <span className="text-xs text-muted-foreground">{fmt(r.last_job.created_at)}</span></> : "—"}</td>
+                <td className={td + " " + mono}>{r.published_version ? `v${r.published_version}` : "unpublished"}{r.has_unpublished_changes && r.published_version ? <span className="ml-1 text-xs text-warn">draft changes</span> : null}</td>
+                <td className={td}>{r.last_job ? <><Badge tone={statusTone(r.last_job.status)}>{r.last_job.status}</Badge> <span className={mono}>{fmt(r.last_job.created_at)}</span></> : "—"}</td>
                 <td className={td}><Badge tone={r.enabled ? "good" : "neutral"}>{r.enabled ? "enabled" : "disabled"}</Badge></td>
                 <td className={td + " space-x-2 whitespace-nowrap text-right"}>
                   {r.enabled ? (

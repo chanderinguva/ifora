@@ -9,7 +9,7 @@ test("create a bookmark application, assign a user, see it under My apps and lau
   await page.getByRole("link", { name: "Applications", exact: true }).click();
   await expect(page).toHaveURL(/\/admin\/applications$/);
 
-  await page.getByRole("button", { name: /Create App Integration/ }).click();
+  await page.getByRole("button", { name: /Create app integration/ }).click();
   await page.getByTestId("method-bookmark").click();
   await page.getByTestId("wizard-next").click();
   await page.locator("#a-name").fill(name);
@@ -57,7 +57,7 @@ test("create an OIDC web application from a template, see the secret once, set a
   const n = `E2E web ${Date.now()}`;
   await loginAsAdmin(page);
   await page.goto("/admin/applications");
-  await page.getByRole("button", { name: /Create App Integration/ }).click();
+  await page.getByRole("button", { name: /Create app integration/ }).click();
   await page.getByTestId("method-oidc").click();
   await page.getByTestId("wizard-next").click();
   await page.getByTestId("type-web").click();

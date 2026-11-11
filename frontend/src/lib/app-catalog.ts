@@ -1,5 +1,5 @@
 /**
- * Starter catalog for the Create App Integration wizard. Entries are bookmarks to each vendor's public sign-in page:
+ * Starter catalog for the Create app integration wizard. Entries are bookmarks to each vendor's public sign-in page:
  * they pre-fill a name and URL, nothing more. SAML/OIDC values are tenant-specific, so they are never guessed here.
  * No vendor logos are bundled (trademark); upload one on the application page.
  */

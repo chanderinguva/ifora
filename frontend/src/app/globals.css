@@ -84,6 +84,9 @@
 * {
   @apply border-border;
 }
+input[type="checkbox"], input[type="radio"] { accent-color: hsl(var(--primary)); }
+thead { background-color: hsl(var(--muted) / 0.5); }
+:focus-visible { outline-color: hsl(var(--ring)); }
 /* Dropdowns: one modern look everywhere (native select, so keyboard, mobile and screen readers keep working). */
 select {
   -webkit-appearance: none;

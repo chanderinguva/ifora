@@ -7,7 +7,7 @@ test("set owner, sensitivity, review date, tags and attributes on an application
   page.on("dialog", (d) => d.accept());
   await loginAsAdmin(page);
   await page.getByRole("link", { name: "Applications", exact: true }).click();
-  await page.getByRole("button", { name: /Create App Integration/ }).click();
+  await page.getByRole("button", { name: /Create app integration/ }).click();
   await page.getByTestId("method-bookmark").click();
   await page.getByTestId("wizard-next").click();
   await page.locator("#a-name").fill(name);

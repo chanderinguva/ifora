@@ -3,7 +3,7 @@ import { loginAsAdmin } from "./helpers";
 
 test("admin dashboard: tasks link to the thing to fix, widgets render, status deep-link filters users", async ({ page }) => {
   await loginAsAdmin(page);
-  await expect(page.getByRole("heading", { name: "Admin Dashboard" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
 
   // the throwaway admin has no second factor, so that task must be listed and must link to Users
   await expect(page.getByTestId("tasks")).toBeVisible();

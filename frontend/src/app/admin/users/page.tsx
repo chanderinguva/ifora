@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge, PageHeader, Pager, fieldClass, fmt, td, th } from "@/components/bits";
+import { Badge, PageHeader, Pager, fieldClass, fmt, mono, td, th, tr } from "@/components/bits";
 import { useCurrentUser } from "@/components/auth-guard";
 import { http, pageQs, qs, type Page } from "@/lib/http";
 import { AttrField, toApi } from "@/components/attr-field";
@@ -132,8 +132,8 @@ export default function UsersPage() {
 
       {note && <Alert className="mb-4" role="status" data-testid="bulk-note"><AlertDescription>{note}</AlertDescription></Alert>}
       {picked.size > 0 && (
-        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border bg-accent/40 p-2 text-sm" data-testid="bulk-bar">
-          <span className="px-2 font-medium">{picked.size} selected</span>
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border bg-selected p-2 text-sm" data-testid="bulk-bar">
+          <span className="px-2 font-medium text-selected-foreground tabular-nums">{picked.size} selected</span>
           {([["activate", "Activate"], ["suspend", "Suspend"], ["unsuspend", "Unsuspend"], ["unlock", "Unlock"], ["deactivate", "Deactivate"]] as const).map(([a, l]) => (
             <Button key={a} size="sm" variant={a === "deactivate" ? "destructive" : "outline"} data-testid={`bulk-${a}`}
               onClick={() => { if (a !== "deactivate" || confirm(`Deactivate ${picked.size} user(s)? Sessions end and they are removed from all groups.`)) bulk(a); }}>{l}</Button>
@@ -158,21 +158,21 @@ export default function UsersPage() {
             </thead>
             <tbody>
               {data?.Resources.map((u) => (
-                <tr key={u.id} className="border-b last:border-0 hover:bg-accent/30">
+                <tr key={u.id} className={tr} data-selected={picked.has(u.id)}>
                   <td className={td}><input type="checkbox" aria-label={`Select ${u.email}`} checked={picked.has(u.id)} onChange={() => toggle(u.id)} /></td>
                   <td className={td}>
                     <Link className="font-medium underline-offset-4 hover:underline" href={`/admin/users/${u.id}`}>
                       {u.first_name} {u.last_name}
                     </Link>
                   </td>
-                  <td className={td}>{u.email}</td>
+                  <td className={td + " font-mono text-[13px]"}>{u.email}</td>
                   <td className={td}>
                     {u.is_super_admin ? <Badge tone="info">Super admin</Badge> : u.is_admin ? <Badge tone="info">Admin</Badge> : <Badge>User</Badge>}
                   </td>
                   <td className={td}>
                     <Badge tone={statusTone(u.status)}>{u.status.replace("_", " ")}</Badge>
                   </td>
-                  <td className={td}>{fmt(u.last_login_at)}</td>
+                  <td className={td + " " + mono}>{fmt(u.last_login_at)}</td>
                 </tr>
               ))}
               {data && data.Resources.length === 0 && (
