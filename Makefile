@@ -107,8 +107,7 @@ secrets-history:
 # Needs the compose stack and a rebuilt backend-api image (see README "Testing"): tests use the identityforge_test database.
 test-backend:
 	@scripts/need.sh docker "install Docker Desktop"
-	docker exec ifora-api pip install -q -r /app/backend/requirements-dev.txt
-	docker exec -w /app/backend ifora-api python -m pytest -q -p no:cacheprovider
+	scripts/test_backend.sh $(PYTEST_ARGS)
 
 # ---- Frontend ---------------------------------------------------------------------------------------------------
 lint-web:
