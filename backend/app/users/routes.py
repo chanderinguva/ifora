@@ -15,7 +15,7 @@ from backend.app.audit.service import record
 from backend.app.auth.deps import require_admin
 from backend.app.auth.sessions_util import revoke_user_sessions
 from backend.app import mailer
-from backend.app.auth import password_tokens, recovery_routes
+from backend.app.auth import access_allowlist, password_tokens, recovery_routes
 from backend.app.users import lifecycle
 from backend.app.db import get_db
 from backend.app.groups import rules as group_rules
@@ -290,9 +290,13 @@ def create_user(
     group_rules.evaluate_user(db, user, request, actor)
     db.commit()
     db.refresh(user)
+    # Demo environments: let this person past Cloudflare Access before the invitation (or anything else) is sent.
+    allow = access_allowlist.add(user.email)
     if body.send_invite:
         invited = recovery_routes.send_link(user, "invite", raw, db)
     out = _detail(user)
+    if allow != "disabled":
+        out["access_allowlist"] = allow  # added | already | failed
     if invited is not None:
         out["invitation_sent"] = invited
     if body.generate_password and not body.send_invite:
@@ -513,6 +517,7 @@ def delete_user(
     db.delete(user)
     record(db, AuditAction.USER_DELETED, request, actor, user_id, "user", {"email": email})
     db.commit()
+    access_allowlist.remove(email)  # no-op unless the Access allowlist is configured; failures never block the delete
     return {"success": True}
 
 

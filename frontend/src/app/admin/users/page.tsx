@@ -231,9 +231,10 @@ function CreateUser({ canMakeAdmin, onDone }: { canMakeAdmin: boolean; onDone: (
       if (pwMode === "set") body.password = f.password;
       else if (pwMode === "invite") body.send_invite = true;
       else body.generate_password = true;
-      const r = await http<{ temporary_password?: string; invitation_sent?: boolean; email: string }>("/admin/users", { method: "POST", body });
-      if (r.invitation_sent === false) setError("The user was created, but the invitation email could not be sent. Use “Send invite” on their page to retry.");
-      else if (r.temporary_password) setCreated({ email: r.email, password: r.temporary_password });
+      const r = await http<{ temporary_password?: string; invitation_sent?: boolean; access_allowlist?: string; email: string }>("/admin/users", { method: "POST", body });
+      if (r.temporary_password) setCreated({ email: r.email, password: r.temporary_password }); // never hide a generated password
+      else if (r.access_allowlist === "failed") setError("The user was created, but they could not be added to the demo invite list, so they will not get past the sign-in gate. Add them in Cloudflare Access, then retry the invitation.");
+      else if (r.invitation_sent === false) setError("The user was created, but the invitation email could not be sent. Use “Send invite” on their page to retry.");
       else onDone();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed");

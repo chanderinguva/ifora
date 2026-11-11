@@ -179,6 +179,11 @@ signed in to Ifora without a second login: the API verifies the Access token its
 new invited email, and the first visit goes to `/welcome` (choose a password, optionally add a passkey). Administrators,
 accounts with TOTP and passkey-only accounts are never signed in this way; they use their password.
 
+Inviting people: a super administrator uses Users > New user > "Email an invitation" (non-admin; roles are assigned
+afterwards on the user's page). With the `ACCESS_ALLOWLIST_*` settings the invited email is also added to the Cloudflare
+Access policy, so the emailed link works for them, and it is removed again when the user is deleted. Email goes out over
+SMTP; Cloudflare Email Service works with `SMTP_IMPLICIT_TLS=true` on port 465.
+
 ## Architecture
 
 ### Backend

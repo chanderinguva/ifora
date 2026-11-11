@@ -89,6 +89,7 @@ class Settings(BaseSettings):
     SMTP_FROM: str = Field(default="")
     SMTP_FROM_NAME: str = Field(default="")  # display name shown as "Name <address>"
     SMTP_STARTTLS: bool = Field(default=True)
+    SMTP_IMPLICIT_TLS: bool = Field(default=False)  # true for port 465 (SMTPS); STARTTLS is then not used
     # New users get username "first.last" (numeric suffix on conflict) and primary email "<username>@<this domain>".
     # Empty = no automatic email: the admin must type one. See docs/architecture/023-user-identity-naming.md.
     PRIMARY_EMAIL_DOMAIN: str = Field(default="")
@@ -116,6 +117,13 @@ class Settings(BaseSettings):
     ACCESS_TEAM_DOMAIN: str = Field(default="")  # e.g. "myteam.cloudflareaccess.com" (no scheme)
     ACCESS_AUD: str = Field(default="")  # the Access application's audience (AUD) tag
     ACCESS_SSO_AUTO_CREATE: bool = Field(default=True)
+    # Keep the Cloudflare Access allowlist in step with the users: inviting someone adds their email to the Access
+    # policy below, deleting them removes it. Needs a Cloudflare API token limited to "Access: Apps and Policies: Edit".
+    # All four must be set to switch it on.
+    ACCESS_ALLOWLIST_TOKEN: str = Field(default="")
+    ACCESS_ALLOWLIST_ACCOUNT_ID: str = Field(default="")
+    ACCESS_ALLOWLIST_APP_ID: str = Field(default="")
+    ACCESS_ALLOWLIST_POLICY_ID: str = Field(default="")
     ENVIRONMENT: str = Field(default="development")
     DEBUG: bool = Field(default=False)
 

@@ -23,8 +23,12 @@ def send(msg: EmailMessage, timeout: float = 10) -> None:
     """Send one message. Raises smtplib.SMTPException / OSError on failure."""
     if "send" in overrides:
         return overrides["send"](msg)
-    with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=timeout) as smtp:
-        if settings.SMTP_STARTTLS:
+    if settings.SMTP_IMPLICIT_TLS:  # SMTPS (port 465): TLS from the first byte, certificate and hostname verified
+        conn = smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT, timeout=timeout, context=ssl.create_default_context())
+    else:
+        conn = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=timeout)
+    with conn as smtp:
+        if settings.SMTP_STARTTLS and not settings.SMTP_IMPLICIT_TLS:
             smtp.starttls(context=ssl.create_default_context())  # verify the server certificate and hostname
         if settings.SMTP_USERNAME:
             smtp.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
