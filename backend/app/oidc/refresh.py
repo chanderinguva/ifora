@@ -97,6 +97,11 @@ def rotate(db: Session, client: OIDCClient, form: Dict[str, str], audit: Audit) 
         if consent is None or not set(row.scopes) <= set(consent.scopes) or "offline_access" not in client.allowed_scopes:
             revoke_family(db, row.family_id)  # consent withdrawn or client narrowed since the token was issued
             raise tokens.TokenError("invalid_grant", "access has been withdrawn")
+        from backend.app.applications.entitlement import sign_on_denied
+
+        if sign_on_denied(db, client, user.id):  # unassigned, or the application was disabled, since the token was issued (SEC-B-1)
+            revoke_family(db, row.family_id)
+            raise tokens.TokenError("invalid_grant", "access has been withdrawn")
         scopes = row.scopes
         if form.get("scope"):
             asked = [s for s in form["scope"].split(" ") if s]
