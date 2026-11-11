@@ -27,7 +27,9 @@ export default function AppDetail() {
   const router = useRouter();
   const me = useCurrentUser();
   const [app, setApp] = useState<ProvApp | null>(null);
-  const canEdit = me.is_super_admin || (app !== null && app.created_by === me.id);   // others only manage the apps they created
+  const [canWriteApps, setCanWriteApps] = useState(false);
+  useEffect(() => { http<{ access: Record<string, string> }>("/me/admin-access").then((r) => setCanWriteApps(r.access.applications === "write")).catch(() => {}); }, []);
+  const canEdit = me.is_super_admin || canWriteApps;   // the applications area, as in Okta: org and app admins change apps, the rest view
   const [form, setForm] = useState({ name: "", description: "", base_url: "", auth_type: "bearer", header_name: "", secret: "", client_id: "", token_url: "", scope: "", rest: "" });
   const [opts, setOpts] = useState<ProvOptions | null>(null);
   const [rules, setRules] = useState<{ target: string; source: string }[]>([]);
@@ -263,7 +265,7 @@ export default function AppDetail() {
               <textarea id="d-rest" rows={14} spellCheck={false} disabled={!canEdit} className={`${fieldClass} h-auto font-mono text-xs`} value={form.rest} onChange={(e) => setForm({ ...form, rest: e.target.value })} /></div>
           )}
           {canEdit ? <SaveButton dirty={conn.dirty} onClick={() => run(async () => { apply(await save()); }, "Saved")}>Save</SaveButton>
-            : <p className="text-xs text-muted-foreground">Only a super administrator or the administrator who created this application can change the connection.</p>}
+            : <p className="text-xs text-muted-foreground">Only super, organization and application administrators can change the connection.</p>}
         </CardContent>
       </Card>
     </div>
