@@ -155,6 +155,25 @@ Client IPs: uvicorn trusts `X-Forwarded-For` only from addresses in `FORWARDED_A
 that is still the default (`127.0.0.1`), every client looks like the proxy, which breaks throttling, lockout and
 IP/CIDR policies; the API logs an error once when it sees this. Confirm real client IPs after your first deploy.
 
+### Demo environment (invite-only)
+
+A second, isolated stack for showing the product to invited people, served at `https://demo.ifora.app` through a
+Cloudflare Tunnel, with Cloudflare Access deciding who may connect. It is its own compose project (`ifora-demo`: own
+Postgres, Redis and secrets, no published ports), so it shares nothing with the dev/prod stack. `scripts/demo.sh`
+runs it:
+
+```
+scripts/demo.sh init                      # generate secrets into ~/ifora-demo/.env.demo (outside the repo)
+# add CLOUDFLARE_TUNNEL_TOKEN to that file, then:
+scripts/demo.sh deploy                    # build and start origin/main, then smoke-test the edge routing
+scripts/demo.sh bootstrap-admin <email>   # first administrator; enrol MFA before inviting anyone
+```
+
+New features reach the demo by merging to `main` and running `scripts/demo.sh deploy` again; the demo never builds
+from a working tree. `scripts/demo.sh reset --yes` wipes the demo data. A Caddy edge sends API, OIDC, SAML and SCIM
+paths to the API and everything else to Next.js on one hostname, blocks `/metrics` and `/docs`, and passes
+Cloudflare's `CF-Connecting-IP` as the client IP (only the edge address is trusted via `FORWARDED_ALLOW_IPS`).
+
 ## Architecture
 
 ### Backend

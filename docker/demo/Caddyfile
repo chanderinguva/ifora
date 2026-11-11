@@ -1,0 +1,36 @@
+# Edge for the demo stack. Plain HTTP: Cloudflare terminates TLS and the tunnel is the only client.
+{
+	auto_https off
+}
+
+:80 {
+	# The API and the protocol endpoints that live at the host root.
+	@backend path /api/* /oauth/token /oauth/userinfo /oauth/jwks /oauth/revoke /.well-known/* /saml/metadata /saml/sso /scim/* /health
+	handle @backend {
+		reverse_proxy backend-api:8000 {
+			# Cloudflare sets CF-Connecting-IP. Replace whatever the client sent so X-Forwarded-For cannot be spoofed.
+			header_up X-Forwarded-For {header.CF-Connecting-IP}
+			header_up X-Forwarded-Proto https
+			header_up -X-Real-IP
+		}
+	}
+
+	# Operational and documentation endpoints are not for the public edge.
+	@blocked path /metrics /docs /redoc /openapi.json
+	handle @blocked {
+		respond 404
+	}
+
+	# Everything else, including the pages /oauth/authorize, /oauth/logout and /saml/continue, is the Next.js app.
+	handle {
+		reverse_proxy frontend:3000 {
+			header_up X-Forwarded-Proto https
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		-Server
+	}
+}
