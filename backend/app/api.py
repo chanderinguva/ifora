@@ -1,6 +1,9 @@
 """FastAPI application and API router configuration."""
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
+from starlette.exceptions import HTTPException   # the base class, so unknown routes and 405s are covered too
+
+from backend.app.scim.errors import problem
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -73,41 +76,34 @@ def create_app() -> FastAPI:
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request, exc):
         """Handle HTTP exceptions consistently."""
-        return JSONResponse(
-            status_code=exc.status_code,
-            content={"detail": exc.detail},
-            headers=getattr(exc, "headers", None),
-        )
+        detail = exc.detail if isinstance(exc.detail, str) else "Request failed"
+        body = problem(exc.status_code, detail)
+        if not isinstance(exc.detail, str):
+            body["errors"] = exc.detail   # structured detail some routes raise
+        return JSONResponse(status_code=exc.status_code, content=body, headers=getattr(exc, "headers", None))
 
     @app.exception_handler(SQLAlchemyError)
     async def db_exception_handler(request, exc):
         """Handle database errors."""
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "Internal database error"},
-        )
+        return JSONResponse(status_code=500, content=problem(500, "Internal database error"))
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request, exc):
-        """Handle validation errors."""
-        return JSONResponse(
-            status_code=422,
-            # Drop ctx (may hold non-serialisable exceptions) and input (may echo passwords)
-            content={
-                "detail": [
-                    {k: v for k, v in e.items() if k not in ("ctx", "input")}
-                    for e in exc.errors()
-                ]
-            },
-        )
+        """Handle validation errors: SCIM Error with a readable detail, and the per-field list under `errors`."""
+        # Drop ctx (may hold non-serialisable exceptions) and input (may echo passwords)
+        errors = [{k: v for k, v in e.items() if k not in ("ctx", "input")} for e in exc.errors()]
+        parts = []
+        for e in errors:
+            field = ".".join(str(x) for x in e.get("loc", ()) if x not in ("body", "query", "path"))
+            parts.append(f"{field}: {e.get('msg', 'invalid')}" if field else str(e.get("msg", "invalid")))
+        body = problem(422, "; ".join(parts) or "Invalid request", "invalidValue")
+        body["errors"] = errors
+        return JSONResponse(status_code=422, content=body)
 
     @app.exception_handler(Exception)
     async def general_exception_handler(request, exc):
         """Handle unexpected exceptions."""
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "Internal server error"},
-        )
+        return JSONResponse(status_code=500, content=problem(500, "Internal server error"))
 
     # Include auth routes (defined in backend/app/auth/routes.py)
     from backend.app.auth.routes import router as auth_router

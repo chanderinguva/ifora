@@ -18,6 +18,14 @@ class ScimError(Exception):
         return out
 
 
+def problem(status: int, detail: str, scim_type: Optional[str] = None) -> dict:
+    """RFC 7644 3.12 Error body for any API response. `detail` stays a plain string, so older clients keep working."""
+    out = {"schemas": [ERROR_SCHEMA], "status": str(status), "detail": detail}
+    if scim_type:
+        out["scimType"] = scim_type
+    return out
+
+
 def invalid_value(detail: str) -> ScimError:
     return ScimError(400, detail, "invalidValue")
 
