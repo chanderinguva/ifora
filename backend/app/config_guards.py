@@ -46,6 +46,9 @@ def validate_settings(settings, env: Optional[Mapping[str, str]] = None) -> List
         problems.append("CORS_ORIGINS must not contain '*' in production")
     if settings.DEBUG:
         problems.append("DEBUG must be false in production")
+    allow = [getattr(settings, n, "") for n in ("ACCESS_ALLOWLIST_TOKEN", "ACCESS_ALLOWLIST_ACCOUNT_ID", "ACCESS_ALLOWLIST_APP_ID", "ACCESS_ALLOWLIST_POLICY_ID")]
+    if any(allow) and not all(allow):
+        problems.append("ACCESS_ALLOWLIST_* must be set together (token, account id, application id, policy id) or not at all")
     if getattr(settings, "ACCESS_SSO_ENABLED", False):
         team = getattr(settings, "ACCESS_TEAM_DOMAIN", "")
         if not team or "/" in team or not getattr(settings, "ACCESS_AUD", ""):

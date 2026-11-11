@@ -50,6 +50,18 @@ ACCESS_SSO_ENABLED=false
 ACCESS_TEAM_DOMAIN=
 ACCESS_AUD=
 ACCESS_SSO_AUTO_CREATE=true
+# Invite by email (all four to switch on): a Cloudflare token limited to Access: Apps and Policies: Edit.
+ACCESS_ALLOWLIST_TOKEN=
+ACCESS_ALLOWLIST_ACCOUNT_ID=
+ACCESS_ALLOWLIST_APP_ID=
+ACCESS_ALLOWLIST_POLICY_ID=
+# Outbound email via Cloudflare Email Service (SMTP). Fill SMTP_PASSWORD (token: Email Sending: Edit) and SMTP_FROM.
+SMTP_HOST=
+SMTP_PORT=465
+SMTP_IMPLICIT_TLS=true
+SMTP_USERNAME=api_token
+SMTP_PASSWORD=
+SMTP_FROM=
 ADMIN_MFA_REQUIRED=true
 # No real email from the demo: SMTP_* stays unset.
 
