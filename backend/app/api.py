@@ -3,6 +3,7 @@
 from fastapi import FastAPI
 from starlette.exceptions import HTTPException   # the base class, so unknown routes and 405s are covered too
 
+from backend.app.scim.envelope import ScimEnvelopeMiddleware
 from backend.app.scim.errors import problem
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
@@ -40,6 +41,8 @@ def create_app() -> FastAPI:
         redoc_url=None if prod else "/redoc",
         openapi_url=None if prod else "/openapi.json",
     )
+
+    app.add_middleware(ScimEnvelopeMiddleware)   # innermost: schemas + meta on every JSON resource and list under /api/v1
 
     @app.middleware("http")
     async def security_headers(request, call_next):

@@ -8,6 +8,11 @@ test("developers page: live API reference, samples, Postman collection, SDK and 
   await expect(page).toHaveURL(/\/admin\/developers/);
   await expect(page.getByRole("heading", { name: "Developers" })).toBeVisible();
 
+  // getting started shows the SCIM response shapes
+  await expect(page.getByLabel("List")).toContainText("urn:ietf:params:scim:api:messages:2.0:ListResponse");
+  await expect(page.getByLabel("Error")).toContainText("urn:ietf:params:scim:api:messages:2.0:Error");
+  await expect(page.getByLabel("Resource", { exact: true })).toContainText('"meta"');
+
   // reference: every operation from the live OpenAPI document, searchable
   await page.getByRole("tab", { name: "API reference" }).click();
   await expect(page.getByTestId("api-op").first()).toBeVisible();
@@ -35,6 +40,7 @@ test("developers page: live API reference, samples, Postman collection, SDK and 
 
   await page.getByRole("tab", { name: "SDKs" }).click();
   await expect(page.getByText("openapi-generator-cli generate").first()).toBeVisible();
+  await expect(page.getByLabel("Python SDK example")).toContainText("from ifora import Client");
   await page.getByRole("tab", { name: "MCP" }).click();
   await expect(page.getByLabel("Claude Code command")).toContainText("openapi-mcp-server");
 });

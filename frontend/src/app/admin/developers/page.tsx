@@ -116,12 +116,36 @@ function Reference({ ops }: { ops: Operation[] }) {
   );
 }
 
+const RESOURCE_EXAMPLE = JSON.stringify({
+  schemas: ["urn:ifora:params:scim:schemas:2.0:Group"],
+  id: 12, name: "Engineering", description: "Product engineering",
+  meta: { resourceType: "Group", created: "2026-01-05T09:30:00+00:00", lastModified: "2026-02-01T14:02:11+00:00", location: `${API_URL}/api/v1/admin/groups/12` },
+}, null, 2);
+const LIST_EXAMPLE = JSON.stringify({
+  schemas: ["urn:ietf:params:scim:api:messages:2.0:ListResponse"],
+  totalResults: 42, startIndex: 1, itemsPerPage: 25,
+  Resources: [{ schemas: ["urn:ifora:params:scim:schemas:2.0:Group"], id: 12, name: "Engineering", meta: { resourceType: "Group", location: `${API_URL}/api/v1/admin/groups/12` } }, "…"],
+}, null, 2);
+const ERROR_EXAMPLE = JSON.stringify({
+  schemas: ["urn:ietf:params:scim:api:messages:2.0:Error"],
+  status: "422", scimType: "invalidValue", detail: "name: Field required",
+  errors: [{ type: "missing", loc: ["body", "name"], msg: "Field required" }],
+}, null, 2);
+
 function GettingStarted() {
   return (
     <div className="space-y-4">
       <Card><CardHeader><CardTitle>Base URL</CardTitle></CardHeader><CardContent className="space-y-2 text-sm">
         <Code text={`${API_URL}/api/v1`} label="Base URL" />
-        <p className="text-muted-foreground">JSON over HTTPS. Errors are <code>{"{ \"detail\": \"…\" }"}</code> with a standard HTTP status; validation errors list each field.</p>
+        <p className="text-muted-foreground">JSON over HTTPS. Requests and responses follow SCIM 2.0 conventions (RFC 7643 and 7644): resources carry <code>schemas</code> and <code>meta</code>, lists are a ListResponse, and errors are a SCIM Error. See Responses below.</p>
+      </CardContent></Card>
+      <Card><CardHeader><CardTitle>Responses</CardTitle></CardHeader><CardContent className="space-y-3 text-sm">
+        <p><b>A resource</b> keeps its own fields and adds <code>schemas</code> and <code>meta</code> (<code>resourceType</code>, <code>created</code>, <code>lastModified</code>, <code>location</code>). The <code>id</code> is unchanged.</p>
+        <Code label="Resource" text={RESOURCE_EXAMPLE} />
+        <p><b>A list</b> is a ListResponse. Page with <code>startIndex</code> (1-based) and <code>count</code> (default 25, max 100, 0 returns only the total); sort with <code>sortBy</code> and <code>sortOrder</code> (<code>ascending</code> or <code>descending</code>); narrow with a SCIM <code>filter</code> on a response field, for example <code>/admin/users?filter=email co &quot;@ifora.app&quot; and status eq &quot;active&quot;</code>.</p>
+        <Code label="List" text={LIST_EXAMPLE} />
+        <p><b>An error</b> is a SCIM Error with the HTTP status repeated as a string. <code>detail</code> is always readable text. Validation errors (422) add <code>scimType</code> and an <code>errors</code> array with one entry per field.</p>
+        <Code label="Error" text={ERROR_EXAMPLE} />
       </CardContent></Card>
       <Card><CardHeader><CardTitle>Authentication</CardTitle></CardHeader><CardContent className="space-y-3 text-sm">
         <p><b>API token</b> for scripts and integrations against <code>/api/v1/admin/**</code>. Create one under <Link className="underline" href="/admin/administrators">Administrators &amp; API tokens</Link> (it can be read-only, expire, and be limited to network ranges), then send it as a bearer token. A token carries its owner&apos;s administrator roles, so it can never do more than they can.</p>
@@ -174,36 +198,42 @@ export async function ifora<T = unknown>(path: string, init: { method?: string; 
 
 // const users = await ifora("/admin/users?count=10");`;
 
-const PY_CLIENT = `import os
-import requests
+const PY_INSTALL = `# from a checkout of the repository
+pip install ./sdk/python`;
+const PY_SDK = `import os
+from ifora import Client, IForaError
 
-BASE = "${API_URL}/api/v1"
+with Client("${API_URL}", token=os.environ["IFORA_API_TOKEN"]) as ifora:
+    # lists are SCIM ListResponses; paginate() walks every page
+    for user in ifora.paginate(ifora.users.list, filter='status eq "active"'):
+        print(user["id"], user["email"])
 
+    group = ifora.groups.create({"name": "Engineering"})
+    print(group["meta"]["location"])
 
-class Ifora:
-    def __init__(self, token: str | None = None):
-        self.s = requests.Session()
-        self.s.headers["Authorization"] = f"Bearer {token or os.environ['IFORA_API_TOKEN']}"
+    try:
+        ifora.groups.get(999999)
+    except IForaError as e:            # every failure is a SCIM Error
+        print(e.status, e.detail)      # 404 Group not found
 
-    def request(self, method: str, path: str, **kw):
-        r = self.s.request(method, BASE + path, timeout=30, **kw)
-        r.raise_for_status()
-        return r.json() if r.content else None
-
-
-# users = Ifora().request("GET", "/admin/users", params={"count": 10})`;
+# Endpoints outside /api/v1/admin (your profile, MFA, sign-in) need a session:
+#   ifora.login("you@example.com", "…")`;
 
 function Sdks() {
   const gen = (g: string, out: string) => `npx @openapitools/openapi-generator-cli generate -i ${SPEC_URL} -g ${g} -o ${out}`;
   return (
     <div className="space-y-4">
-      <Alert><AlertDescription>There are no published SDK packages yet. Because the API describes itself in OpenAPI, you can generate a typed client for your language straight from the live document, or start from the small hand-written clients below.</AlertDescription></Alert>
+      <Alert><AlertDescription>The Python SDK covers every endpoint and ships in the repository under sdk/python (it is not on PyPI). For other languages, generate a client from the live OpenAPI document, or start from the small TypeScript client below.</AlertDescription></Alert>
       <Card><CardHeader><CardTitle>Generate a client</CardTitle></CardHeader><CardContent className="space-y-3 text-sm">
         <p>Uses <a className="underline" href="https://openapi-generator.tech" target="_blank" rel="noreferrer">OpenAPI Generator</a>; pick any of its generators.</p>
         <Code text={[gen("typescript-fetch", "./ifora-ts"), gen("python", "./ifora-py"), gen("java", "./ifora-java"), gen("go", "./ifora-go")].join("\n")} label="Generator commands" />
       </CardContent></Card>
       <Card><CardHeader><CardTitle>TypeScript</CardTitle></CardHeader><CardContent><Code text={TS_CLIENT} label="TypeScript client" /></CardContent></Card>
-      <Card><CardHeader><CardTitle>Python</CardTitle></CardHeader><CardContent><Code text={PY_CLIENT} label="Python client" /></CardContent></Card>
+      <Card><CardHeader><CardTitle>Python SDK</CardTitle></CardHeader><CardContent className="space-y-3 text-sm">
+        <p>One method per endpoint, grouped by section (<code>ifora.users</code>, <code>ifora.groups</code>, <code>ifora.applications</code>…), with SCIM errors raised as <code>IForaError</code>. The package is generated from this API&apos;s OpenAPI document, so it never lags behind.</p>
+        <Code text={PY_INSTALL} label="Install the Python SDK" />
+        <Code text={PY_SDK} label="Python SDK example" />
+      </CardContent></Card>
     </div>
   );
 }
