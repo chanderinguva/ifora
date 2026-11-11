@@ -87,6 +87,7 @@ class Settings(BaseSettings):
     SMTP_USERNAME: str = Field(default="")
     SMTP_PASSWORD: str = Field(default="")
     SMTP_FROM: str = Field(default="")
+    SMTP_FROM_NAME: str = Field(default="")  # display name shown as "Name <address>"
     SMTP_STARTTLS: bool = Field(default=True)
     # New users get username "first.last" (numeric suffix on conflict) and primary email "<username>@<this domain>".
     # Empty = no automatic email: the admin must type one. See docs/architecture/023-user-identity-naming.md.
