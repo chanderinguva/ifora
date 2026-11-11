@@ -47,10 +47,11 @@ LINK_SORT = sortable(LINK_LIST_ATTRS, id=ProvisioningLink.id)
 MAX_APPS = 50
 
 
-def _super(user: User = Depends(require_admin)) -> User:
-    if not user.is_super_admin:
-        raise HTTPException(status_code=403, detail="Only a super admin can do that")
-    return user
+def _own(a: ProvisioningApp, actor: User) -> ProvisioningApp:
+    """Super admins manage every provisioning app; other administrators only the ones they created."""
+    if not actor.is_super_admin and a.created_by != actor.id:
+        raise HTTPException(status_code=403, detail="You can only change provisioning apps you created")
+    return a
 
 
 class Options(BaseModel):
@@ -140,7 +141,7 @@ def _dict(db: Session, a: ProvisioningApp) -> dict:
         "base_url": a.base_url, "auth_type": a.auth_type, "header_name": a.header_name, "token_url": a.token_url, "client_id": a.client_id, "scope": a.scope, "has_secret": True,
         "enabled": a.enabled, "options": service.options_of(a), "mapping": a.mapping or [], "rest_config": a.rest_config,
         "last_test": {"at": a.last_test_at.isoformat() if a.last_test_at else None, "ok": a.last_test_ok, "message": a.last_test_message},
-        "application_id": a.application_id,
+        "application_id": a.application_id, "created_by": a.created_by,
         "assigned_users": cnt(db.query(func.count(ApplicationAssignment.id)).filter(ApplicationAssignment.application_id == a.application_id, ApplicationAssignment.user_id.is_not(None))),
         "assigned_groups": cnt(db.query(func.count(ApplicationAssignment.id)).filter(ApplicationAssignment.application_id == a.application_id, ApplicationAssignment.group_id.is_not(None))),
         "provisioned": cnt(db.query(func.count(ProvisioningLink.id)).filter(ProvisioningLink.app_id == a.id, ProvisioningLink.resource_type == "user", ProvisioningLink.state == "synced")),
@@ -226,8 +227,8 @@ def get_app(app_id: int, db: Session = Depends(get_db), _: User = Depends(requir
 
 
 @router.put("/{app_id}")
-def update_app(app_id: int, body: AppBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(_super)):
-    a = _get(db, app_id)
+def update_app(app_id: int, body: AppBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    a = _own(_get(db, app_id), actor)
     _need_key()
     ck = _checked(db, body)
     oa = body.auth_type == "oauth2"
@@ -267,8 +268,8 @@ def update_app(app_id: int, body: AppBody, request: Request, db: Session = Depen
 
 
 @router.delete("/{app_id}")
-def delete_app(app_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(_super)):
-    a = _get(db, app_id)
+def delete_app(app_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    a = _own(_get(db, app_id), actor)
     name = a.name
     application = db.get(Application, a.application_id)
     db.delete(a)
@@ -284,8 +285,8 @@ def delete_app(app_id: int, request: Request, db: Session = Depends(get_db), act
 
 
 @router.post("/{app_id}/test")
-def test_app(app_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(_super)):
-    a = _get(db, app_id)
+def test_app(app_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    a = _own(_get(db, app_id), actor)
     _need_key()
     try:
         message, ok = adapters.build(a, crypto.decrypt(a.secret_enc)).test(), True
@@ -300,8 +301,8 @@ def test_app(app_id: int, request: Request, db: Session = Depends(get_db), actor
 
 
 @router.post("/{app_id}/sync")
-def sync_app(app_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(_super)):
-    a = _get(db, app_id)
+def sync_app(app_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    a = _own(_get(db, app_id), actor)
     if not a.enabled:
         raise HTTPException(status_code=409, detail="Enable the application first")
     queued = service.queue_full_sync(db, a)
@@ -311,10 +312,10 @@ def sync_app(app_id: int, request: Request, db: Session = Depends(get_db), actor
 
 
 @router.post("/{app_id}/deprovision-all")
-def deprovision_all(app_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(_super)):
+def deprovision_all(app_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
     """Remove every assignment and queue the work: each provisioned account is deactivated/deleted per the app's policy.
     Keep the app turned on until the queue is empty; delete it afterwards."""
-    a = _get(db, app_id)
+    a = _own(_get(db, app_id), actor)
     if not a.enabled:
         raise HTTPException(status_code=409, detail="Turn the application on first so the changes can be sent")
     removed = db.query(ApplicationAssignment).filter(ApplicationAssignment.application_id == a.application_id).delete(synchronize_session=False)
@@ -441,8 +442,8 @@ def list_tasks(app_id: int, status: Optional[str] = Query(None, pattern="^(queue
 
 
 @router.post("/{app_id}/tasks/{task_id}/retry")
-def retry_task(app_id: int, task_id: int, db: Session = Depends(get_db), _: User = Depends(_super)):
-    _get(db, app_id)
+def retry_task(app_id: int, task_id: int, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    _own(_get(db, app_id), actor)
     t = db.get(ProvisioningTask, task_id)
     if t is None or t.app_id != app_id:
         raise HTTPException(status_code=404, detail="Task not found")

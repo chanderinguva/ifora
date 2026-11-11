@@ -137,12 +137,21 @@ def test_create_validates_and_never_returns_the_secret(super_admin, rkey):
     assert super_admin.post("/admin/provisioning-apps", {"name": "Acme", "kind": "scim", "base_url": BASE, "auth_type": "bearer", "secret": "t"}).status_code == 409
 
 
-def test_admins_create_and_assign_but_only_super_admins_change_or_remove(super_admin, admin, remote):
+def test_admins_manage_only_the_apps_they_created_and_super_admins_all(super_admin, admin, remote):
     app = make_app(super_admin)
-    assert admin.post("/admin/provisioning-apps", {"name": "y", "kind": "scim", "base_url": BASE, "auth_type": "bearer", "secret": "t"}).status_code == 201
+    # someone else's app: visible and assignable, but not changeable
     assert admin.put(f"/admin/provisioning-apps/{app['id']}", body_of(app)).status_code == 403
     assert admin.delete(f"/admin/provisioning-apps/{app['id']}").status_code == 403
     assert admin.post(f"/admin/provisioning-apps/{app['id']}/test").status_code == 403
+    assert admin.post(f"/admin/provisioning-apps/{app['id']}/sync").status_code == 403
+    assert admin.post(f"/admin/provisioning-apps/{app['id']}/deprovision-all").status_code == 403
+    # their own app: full management
+    mine = make_app(admin, name="Mine")
+    assert admin.post(f"/admin/provisioning-apps/{mine['id']}/test").status_code == 200
+    assert admin.put(f"/admin/provisioning-apps/{mine['id']}", body_of(mine, description="edited")).status_code == 200
+    # a super admin still manages theirs and everyone's
+    assert super_admin.put(f"/admin/provisioning-apps/{mine['id']}", body_of(mine, description="by super")).status_code == 200
+    assert admin.delete(f"/admin/provisioning-apps/{mine['id']}").status_code == 200
     assert admin.get("/admin/provisioning-apps").status_code == 200
     u = new_user(admin, "assignee@example.com")
     assert admin.post(f"/admin/provisioning-apps/{app['id']}/assignments", {"user_id": u["id"]}).status_code == 201

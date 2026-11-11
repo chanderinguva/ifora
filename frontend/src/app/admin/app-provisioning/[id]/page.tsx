@@ -26,8 +26,8 @@ export default function AppDetail() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const me = useCurrentUser();
-  const canEdit = me.is_super_admin;
   const [app, setApp] = useState<ProvApp | null>(null);
+  const canEdit = me.is_super_admin || (app !== null && app.created_by === me.id);   // others only manage the apps they created
   const [form, setForm] = useState({ name: "", description: "", base_url: "", auth_type: "bearer", header_name: "", secret: "", client_id: "", token_url: "", scope: "", rest: "" });
   const [opts, setOpts] = useState<ProvOptions | null>(null);
   const [rules, setRules] = useState<{ target: string; source: string }[]>([]);
@@ -263,7 +263,7 @@ export default function AppDetail() {
               <textarea id="d-rest" rows={14} spellCheck={false} disabled={!canEdit} className={`${fieldClass} h-auto font-mono text-xs`} value={form.rest} onChange={(e) => setForm({ ...form, rest: e.target.value })} /></div>
           )}
           {canEdit ? <SaveButton dirty={conn.dirty} onClick={() => run(async () => { apply(await save()); }, "Saved")}>Save</SaveButton>
-            : <p className="text-xs text-muted-foreground">Only super administrators can change the connection.</p>}
+            : <p className="text-xs text-muted-foreground">Only a super administrator or the administrator who created this application can change the connection.</p>}
         </CardContent>
       </Card>
     </div>

@@ -20,6 +20,7 @@ export type ProvApp = {
   client_id: string | null;
   scope: string | null;
   enabled: boolean;
+  created_by: number | null;
   options: ProvOptions;
   mapping: { target: string; source: string }[];
   rest_config: Record<string, unknown> | null;
