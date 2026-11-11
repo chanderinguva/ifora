@@ -84,16 +84,20 @@ cmd_deploy() {
 cmd_bootstrap_admin() {
   local email="${1:-}"; [ -n "$email" ] || die "usage: demo.sh bootstrap-admin <admin-email>"
   local password; password="$(token | cut -c1-24)A1!"
-  docker exec -e A_EMAIL="$email" -e A_PASSWORD="$password" ifora-demo-api python - <<'PY'
+  # -i is required: without it docker exec drops the heredoc, python runs nothing and exits 0.
+  local out
+  out="$(docker exec -i -e A_EMAIL="$email" -e A_PASSWORD="$password" ifora-demo-api python - <<'PY'
 import json, os, urllib.request, urllib.error
 body = json.dumps({"email": os.environ["A_EMAIL"], "password": os.environ["A_PASSWORD"], "first_name": "Demo",
                    "last_name": "Admin", "secret_key": os.environ["ADMIN_SECRET_KEY"]}).encode()
-req = urllib.request.Request("http://localhost:8000/api/v1/auth/admin/bootstrap", body, {"Content-Type": "application/json"})
+req = urllib.request.Request("http://localhost:8000/api/v1/admin/bootstrap", body, {"Content-Type": "application/json"})
 try:
-    print(urllib.request.urlopen(req).status)
+    print("status", urllib.request.urlopen(req).status)
 except urllib.error.HTTPError as e:
     raise SystemExit(f"bootstrap failed: {e.code} {e.read().decode()[:200]}")
 PY
+)" || die "bootstrap failed: $out"
+  case "$out" in "status 200"*|"status 201"*) ;; *) die "bootstrap did not confirm success (got: '$out')";; esac
   echo "demo: admin $email created. Password (shown once, store it in your password manager): $password"
   echo "demo: admin MFA is required; sign in and enrol a TOTP factor before inviting anyone."
 }
