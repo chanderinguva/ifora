@@ -1,6 +1,6 @@
 "use client";
 
-import { UserCog, LayoutDashboard, Users, Shield, ScrollText, Home, Settings, Workflow, AppWindow, SlidersHorizontal, RefreshCw, Send, Zap, LayoutGrid, Globe, Palette, Mail, KeyRound, Inbox, ShieldCheck } from "lucide-react";
+import { Code2, UserCog, LayoutDashboard, Users, Shield, ScrollText, Home, Settings, Workflow, AppWindow, SlidersHorizontal, RefreshCw, Send, Zap, LayoutGrid, Globe, Palette, Mail, KeyRound, Inbox, ShieldCheck } from "lucide-react";
 import { AppShell, type NavGroup } from "./app-shell";
 import { useCurrentUser } from "./auth-guard";
 import { inAdminView } from "@/lib/roles";
@@ -41,6 +41,7 @@ export const ADMIN_NAV: NavGroup[] = [
   },
   { label: "Reports", items: [{ href: "/admin/audit", area: "reports", label: "System log", icon: ScrollText }] },
   { label: "Customization", items: [{ href: "/admin/branding", label: "Branding", icon: Palette, area: "branding" }, { href: "/admin/email-templates", label: "Email templates", icon: Mail, area: "branding" }] },
+  { label: "Developers", items: [{ href: "/admin/developers", label: "API & SDKs", icon: Code2 }] },
   { label: "Account", items: [{ href: "/settings", label: "Account settings", icon: Settings }] },
 ];
 
