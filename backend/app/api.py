@@ -1,5 +1,7 @@
 """FastAPI application and API router configuration."""
 
+import logging
+
 from fastapi import FastAPI
 from starlette.exceptions import HTTPException   # the base class, so unknown routes and 405s are covered too
 
@@ -30,9 +32,13 @@ class _AppCORS(CORSMiddleware):
 
 def create_app() -> FastAPI:
     """Create and configure FastAPI application."""
-    prod = settings.ENVIRONMENT.lower() == "production"
-    if prod and not settings.SESSION_COOKIE_SECURE:
-        raise RuntimeError("ENVIRONMENT=production requires SESSION_COOKIE_SECURE=true (serve the API over HTTPS)")
+    from backend.app import config_guards
+
+    prod = config_guards.is_production(settings)
+    problems = config_guards.validate_settings(settings)
+    if problems:  # fail closed: an unsafe production configuration refuses to boot (messages never contain values)
+        raise RuntimeError("Refusing to start in production: " + "; ".join(problems))
+    proxy_warned = {"done": False}
     app = FastAPI(
         title="Ifora API",
         description="Identity and Access Management Platform",
@@ -46,6 +52,14 @@ def create_app() -> FastAPI:
 
     @app.middleware("http")
     async def security_headers(request, call_next):
+        if prod and not proxy_warned["done"] and "x-forwarded-for" in request.headers and config_guards.forwarded_ips_is_default():
+            # uvicorn ignores the header unless the peer is in FORWARDED_ALLOW_IPS, so every client looks like the proxy
+            # (throttling, lockout and IP/CIDR policies then see one address). Say so once, loudly.
+            proxy_warned["done"] = True
+            logging.getLogger(__name__).error(
+                "X-Forwarded-For received but FORWARDED_ALLOW_IPS is the default (127.0.0.1): the header is NOT trusted and "
+                "all clients share the proxy address. Set FORWARDED_ALLOW_IPS to your proxy's address."
+            )
         response = await call_next(request)
         h = response.headers
         h.setdefault("X-Content-Type-Options", "nosniff")

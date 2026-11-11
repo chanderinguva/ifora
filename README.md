@@ -134,6 +134,27 @@ Set in `docker/.env` (see `docker/.env.example` for all options):
 | `RECIPES_HTTP_ALLOWED_HOSTS` | Comma-separated hosts the recipe HTTP step may call; empty allows any public host |
 | `RECIPES_ENABLED`, `PROVISIONING_ENABLED`, `GROUP_RULES_ENABLED` | Turn the background workers' processing on or off |
 
+### Production
+
+Run behind a TLS-terminating reverse proxy (not part of this repo) with the production override:
+
+```
+docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml --env-file docker/.env up -d --build
+```
+
+The override sets `ENVIRONMENT=production`, secure cookies and the compiled frontend, binds every published port to
+`127.0.0.1`, and requires `PUBLIC_APP_URL`, `OIDC_ISSUER` (both `https://`), `OIDC_KEY_ENCRYPTION_KEY`,
+`FORWARDED_ALLOW_IPS` (your proxy's address) and `CORS_ORIGINS` to be set. Needs Docker Compose 2.24+.
+
+In production the API refuses to start, naming the setting but never its value, when: cookies are not `Secure`;
+`SECRET_KEY` or `ADMIN_SECRET_KEY` is short, low-entropy, a placeholder, or the two are equal;
+`OIDC_KEY_ENCRYPTION_KEY` is empty or equals `MFA_ENCRYPTION_KEY`; `CORS_ORIGINS` contains `*`; `DEBUG` is on; or
+`PUBLIC_APP_URL`/`OIDC_ISSUER` is not `https://`. Development defaults are unchanged.
+
+Client IPs: uvicorn trusts `X-Forwarded-For` only from addresses in `FORWARDED_ALLOW_IPS`. If the header arrives while
+that is still the default (`127.0.0.1`), every client looks like the proxy, which breaks throttling, lockout and
+IP/CIDR policies; the API logs an error once when it sees this. Confirm real client IPs after your first deploy.
+
 ## Architecture
 
 ### Backend
