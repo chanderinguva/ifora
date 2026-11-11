@@ -89,6 +89,11 @@ docs/
 !/CLAUDE.md
 !/RELEASE_NOTES.md
 !/CHANGELOG.md
+!/.github/pull_request_template.md
+
+# Local quality-gate tool caches
+.ruff_cache/
+.mypy_cache/
 
 # Claude Code local config, agents and memory
 .claude/
