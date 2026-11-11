@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# pre-push hook (IFORA-20): runs the fast local gates before anything leaves your machine.
+# Install with `make hooks`. Bypassing it (git push --no-verify) is allowed but leaves a gap the PR checklist
+# closes: the PR template requires pasted `make check` output.
+set -u
+root="$(git rev-parse --show-toplevel)"
+cd "$root" || exit 1
+echo "pre-push: running make check-fast ..."
+if ! make --no-print-directory check-fast; then
+  echo >&2
+  echo "pre-push: gates failed, push aborted. Fix the failures above (or, if you must, git push --no-verify and say so in the PR)." >&2
+  exit 1
+fi

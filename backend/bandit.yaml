@@ -1,0 +1,3 @@
+# bandit (IFORA-20). The gate runs at HIGH severity (-lll); medium findings are a recorded baseline.
+# Skip a specific test only with a reason in a comment. (none yet)
+skips: []

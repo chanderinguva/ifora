@@ -1,0 +1,24 @@
+# gitleaks configuration (IFORA-20), written for gitleaks 8.28.x. Extends the built-in ruleset; nothing is uploaded anywhere.
+# Accepted findings need a reason. Never allow-list a real secret: rotate it instead.
+title = "ifora gitleaks config"
+
+[extend]
+useDefault = true
+
+# Lock files hold integrity hashes, not secrets.
+[[allowlists]]
+description = "lock files and vendored dependencies"
+paths = [
+  '''frontend/package-lock\.json''',
+  '''frontend/node_modules/''',
+]
+
+# Test fixtures: dummy passwords and fake signing secrets that look high-entropy to the generic rule.
+# Scoped to ONE rule (generic-api-key) and to backend/tests, so a real AWS/GitHub/etc. key in a test file is still caught.
+[[rules]]
+id = "generic-api-key"
+[[rules.allowlists]]
+description = "dummy credentials in backend tests"
+paths = [
+  '''backend/tests/''',
+]

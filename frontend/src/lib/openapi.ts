@@ -1,7 +1,5 @@
 /** Reads the API's own OpenAPI document and derives what the developer page shows: operations, examples, code snippets, a Postman collection. */
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 export type Spec = { info: { title: string; version: string; description?: string }; paths: Record<string, Record<string, any>>; components?: { schemas?: Record<string, any> } };
 export type Field = { name: string; type: string; required: boolean; description: string };
 export type Operation = {

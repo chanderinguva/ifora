@@ -214,6 +214,24 @@ npx playwright test e2e/recipe-connectors.spec.ts   # one spec
 The suite assumes two server modes. Specs that sign in as a freshly created administrator (`admin-roles`, `delegated-resets`, `group-roles`, `nav`, `role-switch`) need the backend started with `ADMIN_MFA_REQUIRED=false`; otherwise that admin is sent to enrol MFA and the spec ends on `/settings#security`. `admin-mfa-policy` needs the default (`true`). Run them in separate passes. Specs sign in as the same admin many times, so run with `--workers=1` when you see "Invalid or expired code" (a TOTP code is single-use).
 Coverage includes sign-in and MFA, admin roles, API tokens, OIDC flows, provisioning, access requests and the recipe studio (drag and drop, else-if, loops, formulas, lookup tables, callable recipes, connectors). The connector spec creates and deletes its own `E2E ...` connection and recipe, using a fake token.
 
+## Quality gates (local, no hosted CI)
+
+Gates run on your machine; this repository deliberately has no GitHub Actions workflows (`.github/workflows` must stay empty, and `make no-workflows` enforces it).
+
+```bash
+make tools        # which tools you need (ruff, mypy, bandit, pip-audit, gitleaks, semgrep, node)
+make check        # every gate; keeps going after a failure and lists FAILED gates at the end
+make check-fast   # lint, types on changed files, secret scan, frontend lint/types, no-workflows
+make hooks        # install the pre-push hook (runs check-fast) for this checkout
+```
+
+Paste the `make check` output into the pull request (see `.github/pull_request_template.md`). Notes:
+
+- Python lint (`ruff`) fails on real errors repo-wide and on unused/undefined names in changed `backend/app` files; `mypy` runs on changed files only. Widening both is tracked as follow-up work.
+- `deps-py` and `deps-web` fail on any known advisory. Accept one only by adding `ID | reason | YYYY-MM-DD` (expiry required) to `.security-allowlist` after triage; never to silence a finding you have not read.
+- `make test-backend` needs the compose stack up and a rebuilt `backend-api` image (see Testing).
+- Branch protection (require PR review, no force-push to `main`) is applied by the repository owner in GitHub settings; it is not done by these scripts.
+
 ## Security
 
 - Passwords hashed with Argon2id

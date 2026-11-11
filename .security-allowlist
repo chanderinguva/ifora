@@ -1,0 +1,3 @@
+# Accepted dependency advisories for `make deps-py`. One per line:  ADVISORY-ID | reason | YYYY-MM-DD (expiry)
+# An entry with no reason, a bad date or a past date fails the gate. Advisory IDs only; never put secrets here.
+# (empty: no advisories are currently accepted)
