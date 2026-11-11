@@ -23,6 +23,7 @@ from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Table, Tex
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Session
 
+from backend.app.admin_roles import resolve as role_resolve
 from backend.app.audit.model import AuditAction
 from backend.app.audit.service import record
 from backend.app.config import settings
@@ -225,6 +226,12 @@ def _reconcile(db: Session, rule: GroupRule, user: User, should_be_member: bool,
             )
         ).first()
         if should_be_member and row is None:
+            # Joining a group that carries administrator roles is a privilege grant (IFORA-46 / SEC-A-1). Only a super
+            # administrator may cause it; a rule firing with no actor (scheduled sync, SCIM) is denied, fail closed.
+            if (actor is None or not actor.is_super_admin) and role_resolve.group_has_roles(db, gid):
+                record(db, AuditAction.GROUP_RULE_ROLE_GRANT_BLOCKED, request, actor, gid, "group",
+                       {"user_id": user.id, "rule_id": rule.id})
+                continue
             db.execute(insert(user_group_association).values(
                 user_id=user.id, group_id=gid, added_by_user_id=None, rule_id=rule.id,
                 added_at=datetime.now(timezone.utc),

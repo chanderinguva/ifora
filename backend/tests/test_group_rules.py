@@ -284,3 +284,59 @@ def test_create_user_password_xor_generate(admin):
     assert admin.post("/admin/users", {**base}).status_code == 422
     assert admin.post("/admin/users", {**base, "password": STRONG, "generate_password": True}).status_code == 422
     assert admin.post("/admin/users", {**base, "password": STRONG, "group_ids": [999]}).status_code == 422
+
+
+# ---- IFORA-46 / SEC-A-1: admin self-edit into a role-carrying group ----------------------
+
+def test_admin_cannot_edit_own_attributes_into_a_role_carrying_group(db, admin, super_admin):
+    r = super_admin.post("/admin/groups", {"name": "Helpdesk", "type": "team", "owner_user_id": super_admin.user.id})
+    assert r.status_code == 201, r.text
+    gid = r.json()["id"]
+    assert super_admin.put(f"/admin/roles/groups/{gid}", {"roles": ["help_desk_admin"]}).status_code == 200
+    assert super_admin.post("/admin/group-rules", rule_body(gid)).status_code == 201
+    uid = admin.user.id
+    assert admin.patch(f"/admin/users/{uid}", {"profile_attributes": {"department": "Sales"}}).status_code == 403
+    assert admin.patch(f"/admin/users/{uid}", {"email": "someone@sales.example.com"}).status_code == 403
+    assert "admin@example.com" not in members(super_admin, gid)
+
+
+def test_admin_can_still_edit_own_name(admin):
+    assert admin.patch(f"/admin/users/{admin.user.id}", {"first_name": "Renamed"}).status_code == 200
+
+
+def test_admin_can_edit_a_members_attributes(db, admin):
+    u = make_user(db, "other@example.com")
+    r = admin.patch(f"/admin/users/{u.id}", {"profile_attributes": {"department": "Sales"}})
+    assert r.status_code == 200, r.text
+
+
+def _role_group_with_rule(super_admin):
+    gid = super_admin.post("/admin/groups", {"name": "Helpdesk", "type": "team", "owner_user_id": super_admin.user.id}).json()["id"]
+    assert super_admin.put(f"/admin/roles/groups/{gid}", {"roles": ["help_desk_admin"]}).status_code == 200
+    make_rule(super_admin, gid)
+    return gid
+
+
+def test_non_super_admin_edit_cannot_add_role_group_member_via_rule(db, admin, super_admin):
+    gid = _role_group_with_rule(super_admin)
+    u = make_user(db, "other@example.com")
+    assert admin.patch(f"/admin/users/{u.id}", {"profile_attributes": {"department": "Sales"}}).status_code == 200
+    assert "other@example.com" not in members(super_admin, gid)
+    blocked = super_admin.get("/admin/audit?action=GROUP_RULE_ROLE_GRANT_BLOCKED").json()
+    assert blocked["totalResults"] == 1
+    assert blocked["Resources"][0]["metadata"]["user_id"] == u.id
+
+
+def test_super_admin_edit_still_adds_role_group_member_via_rule(db, super_admin):
+    gid = _role_group_with_rule(super_admin)
+    u = make_user(db, "other@example.com")
+    assert super_admin.patch(f"/admin/users/{u.id}", {"profile_attributes": {"department": "Sales"}}).status_code == 200
+    assert "other@example.com" in members(super_admin, gid)
+
+
+def test_rule_into_normal_group_unaffected_by_role_check(db, admin):
+    gid = new_group(admin)
+    make_rule(admin, gid)
+    u = make_user(db, "other@example.com")
+    assert admin.patch(f"/admin/users/{u.id}", {"profile_attributes": {"department": "Sales"}}).status_code == 200
+    assert "other@example.com" in members(admin, gid)
