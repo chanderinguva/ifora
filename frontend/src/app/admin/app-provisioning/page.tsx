@@ -18,6 +18,8 @@ export default function ProvisioningApps() {
   const [apps, setApps] = useState<ProvApp[] | null>(null);
   const [presets, setPresets] = useState<ProvPreset[]>([]);
   const [available, setAvailable] = useState(true);
+  const [canWrite, setCanWrite] = useState(false);
+  useEffect(() => { http<{ access: Record<string, string> }>("/me/admin-access").then((r) => setCanWrite(r.access.applications === "write")).catch(() => {}); }, []);
   const [preset, setPreset] = useState<ProvPreset | null>(null);
   const [form, setForm] = useState({ name: "", base_url: "", auth_type: "bearer", header_name: "", secret: "", client_id: "", token_url: "", scope: "", rest: "" });
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -56,7 +58,7 @@ export default function ProvisioningApps() {
   return (
     <div>
       <PageHeader title="Provisioning apps">
-        {available && <Button onClick={() => setPreset(presets[0] ?? null)} data-testid="add-app"><Plus className="mr-1 h-4 w-4" /> Add application</Button>}
+        {available && canWrite && <Button onClick={() => setPreset(presets[0] ?? null)} data-testid="add-app"><Plus className="mr-1 h-4 w-4" /> Add application</Button>}
       </PageHeader>
       <p className="mb-4 max-w-3xl text-sm text-muted-foreground">
         Push users and groups from Ifora to the applications your people use. Applications with a SCIM 2.0 endpoint are provisioned directly;

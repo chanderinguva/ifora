@@ -137,24 +137,34 @@ def test_create_validates_and_never_returns_the_secret(super_admin, rkey):
     assert super_admin.post("/admin/provisioning-apps", {"name": "Acme", "kind": "scim", "base_url": BASE, "auth_type": "bearer", "secret": "t"}).status_code == 409
 
 
-def test_admins_manage_only_the_apps_they_created_and_super_admins_all(super_admin, admin, remote):
+def _signed_in(db, email, role):
+    u = make_user(db, email, admin=True, roles=[role])
+    a = Api()
+    assert a.login(u.email).status_code == 200
+    a.user = u
+    return a
+
+
+def test_provisioning_follows_the_applications_area_like_okta(db, super_admin, admin, remote):
+    """Super, org (the `admin` fixture) and app admins create and manage any app; the other roles only view."""
+    appadmin = _signed_in(db, "appadmin@example.com", "app_admin")
     app = make_app(super_admin)
-    # someone else's app: visible and assignable, but not changeable
-    assert admin.put(f"/admin/provisioning-apps/{app['id']}", body_of(app)).status_code == 403
-    assert admin.delete(f"/admin/provisioning-apps/{app['id']}").status_code == 403
-    assert admin.post(f"/admin/provisioning-apps/{app['id']}/test").status_code == 403
-    assert admin.post(f"/admin/provisioning-apps/{app['id']}/sync").status_code == 403
-    assert admin.post(f"/admin/provisioning-apps/{app['id']}/deprovision-all").status_code == 403
-    # their own app: full management
-    mine = make_app(admin, name="Mine")
-    assert admin.post(f"/admin/provisioning-apps/{mine['id']}/test").status_code == 200
-    assert admin.put(f"/admin/provisioning-apps/{mine['id']}", body_of(mine, description="edited")).status_code == 200
-    # a super admin still manages theirs and everyone's
-    assert super_admin.put(f"/admin/provisioning-apps/{mine['id']}", body_of(mine, description="by super")).status_code == 200
+    for role in ("help_desk_admin", "group_admin", "report_admin", "read_only_admin"):
+        w = _signed_in(db, f"{role}@example.com", role)
+        base = f"/admin/provisioning-apps/{app['id']}"
+        assert w.put(base, body_of(app)).status_code == 403, role
+        assert w.delete(base).status_code == 403, role
+        assert w.post(f"{base}/test").status_code == 403, role
+        assert w.post("/admin/provisioning-apps", {"name": "z", "kind": "scim", "base_url": BASE, "auth_type": "bearer", "secret": "t"}).status_code == 403, role
+    # an app admin and an org admin each create, and each manages the other's (and the super admin's) apps
+    mine = make_app(appadmin, name="By app admin")
+    theirs = make_app(admin, name="By org admin")
+    for actor, target in ((appadmin, theirs), (admin, mine), (appadmin, app), (admin, app), (super_admin, mine)):
+        base = f"/admin/provisioning-apps/{target['id']}"
+        assert actor.post(f"{base}/test").status_code == 200
+        assert actor.put(base, body_of(target, description="edited")).status_code == 200
+    assert appadmin.delete(f"/admin/provisioning-apps/{theirs['id']}").status_code == 200
     assert admin.delete(f"/admin/provisioning-apps/{mine['id']}").status_code == 200
-    assert admin.get("/admin/provisioning-apps").status_code == 200
-    u = new_user(admin, "assignee@example.com")
-    assert admin.post(f"/admin/provisioning-apps/{app['id']}/assignments", {"user_id": u["id"]}).status_code == 201
 
 
 def test_members_cannot_reach_the_api(super_admin, member, rkey):
@@ -363,7 +373,6 @@ def test_permanent_error_fails_marks_the_link_audits_and_can_be_retried(db, admi
     (failed,) = tasks(db, app, "failed")
     assert "400" in failed.last_error and links(db, app)[0].state == "error"
     assert "PROVISIONING_TASK_FAILED" in admin.get("/admin/audit?count=50").text
-    assert admin.post(f"/admin/provisioning-apps/{app['id']}/tasks/{failed.id}/retry").status_code == 403
     assert super_admin.post(f"/admin/provisioning-apps/{app['id']}/tasks/{failed.id}/retry").status_code == 200
     run()
     assert remote.users["r1"]["title"] == "X" and links(db, app)[0].state == "synced"
@@ -634,7 +643,6 @@ def test_deprovision_all_clears_assignments_and_deactivates_everyone(db, admin, 
     admin.post(f"/admin/provisioning-apps/{app['id']}/assignments", {"group_id": gid})
     run()
     assert len(remote.users) == 3 and all(r["active"] for r in remote.users.values())
-    assert admin.post(f"/admin/provisioning-apps/{app['id']}/deprovision-all").status_code == 403
     r = super_admin.post(f"/admin/provisioning-apps/{app['id']}/deprovision-all").json()
     assert r["assignments_removed"] == 1
     run()

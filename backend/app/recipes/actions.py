@@ -398,7 +398,7 @@ def _email(rc: RunCtx, cfg: dict):
     if done >= settings.RECIPES_MAX_EMAILS_PER_JOB:
         raise StepError(f"a job may send at most {settings.RECIPES_MAX_EMAILS_PER_JOB} emails")
     msg = EmailMessage()
-    msg["From"], msg["To"], msg["Subject"] = settings.SMTP_FROM or "noreply@localhost", to, subject
+    msg["From"], msg["To"], msg["Subject"] = mailer.from_header(), to, subject
     msg["X-Ifora-Job"] = f"{rc.job_id}-{rc.step_id}"
     msg["X-IdentityForge-Job"] = msg["X-Ifora-Job"]  # name used before the rebrand; mail rules may still match it
     msg.set_content(body)
