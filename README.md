@@ -229,7 +229,7 @@ Paste the `make check` output into the pull request (see `.github/pull_request_t
 
 - Python lint (`ruff`) fails on real errors repo-wide and on unused/undefined names in changed `backend/app` files; `mypy` runs on changed files only. Widening both is tracked as follow-up work.
 - `deps-py` and `deps-web` fail on any known advisory. Accept one only by adding `ID | reason | YYYY-MM-DD` (expiry required) to `.security-allowlist` after triage; never to silence a finding you have not read.
-- `make test-backend` needs the compose stack up and a rebuilt `backend-api` image (see Testing).
+- `make test-backend` needs the compose stack up (it reuses the `ifora-api` image, network and env). It runs `scripts/test_backend.sh`, which starts a throwaway container with this checkout mounted, so the running container's baked code is not what is tested. Pass pytest args with `make test-backend PYTEST_ARGS="tests/test_foo.py -x"`. Fixtures create a database on the shared dev Postgres, so never point it at production.
 - Branch protection (require PR review, no force-push to `main`) is applied by the repository owner in GitHub settings; it is not done by these scripts.
 
 ## Security
