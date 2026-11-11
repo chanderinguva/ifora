@@ -56,7 +56,7 @@ export function PillTray({ pills }: { pills: Pill[] }) {
       <div className="max-h-80 space-y-2 overflow-auto">
         {groups.map(([g, list]) => (
           <div key={g}>
-            <div className="mb-1 text-xs font-medium uppercase text-muted-foreground">{g}</div>
+            <div className="mb-1 text-xs font-medium text-muted-foreground">{g}</div>
             <div className="flex flex-wrap gap-1">{list.map((p) => <Chip key={p.path} pill={p} onClick={() => click(p)} />)}</div>
           </div>
         ))}

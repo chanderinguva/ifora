@@ -150,7 +150,7 @@ export function PillInput({
             if ("formula" in x) {
               const bad = formulaPaths(x.formula).find((p) => !known(p));
               return <span key={i} data-testid="formula-chip" title={bad ? `Not available at this step: ${bad}` : x.formula}
-                className={cn("max-w-full truncate rounded-full px-2 py-0.5 font-mono", bad ? "bg-destructive/10 text-destructive" : "bg-violet-500/10 text-foreground")}>ƒ {x.formula}</span>;
+                className={cn("max-w-full truncate rounded-full px-2 py-0.5 font-mono", bad ? "bg-destructive/10 text-destructive" : "bg-selected text-selected-foreground")}>ƒ {x.formula}</span>;
             }
             return <span key={i} title={known(x.pill) ? x.pill : "Not available at this step"} className={cn("rounded-full px-2 py-0.5", known(x.pill) ? "bg-primary/10 text-foreground" : "bg-destructive/10 text-destructive")}>
               {pills.find((p) => p.path === x.pill)?.label ?? x.pill}</span>;
@@ -186,8 +186,8 @@ export function JobView({ job }: { job: Job }) {
             </div>
             {s.error && <p className="mt-1 text-destructive">{s.error}</p>}
             <div className="mt-2 grid gap-2 md:grid-cols-2">
-              <div><div className="text-xs uppercase text-muted-foreground">Input (redacted)</div><pre className="max-h-48 overflow-auto rounded bg-muted p-2 text-xs">{json(s.input)}</pre></div>
-              <div><div className="text-xs uppercase text-muted-foreground">Output (redacted)</div><pre className="max-h-48 overflow-auto rounded bg-muted p-2 text-xs">{json(s.output)}</pre></div>
+              <div><div className="text-xs text-muted-foreground">Input (redacted)</div><pre className="max-h-48 overflow-auto rounded bg-muted p-2 text-xs">{json(s.input)}</pre></div>
+              <div><div className="text-xs text-muted-foreground">Output (redacted)</div><pre className="max-h-48 overflow-auto rounded bg-muted p-2 text-xs">{json(s.output)}</pre></div>
             </div>
           </li>
         ))}

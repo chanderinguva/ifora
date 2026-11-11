@@ -18,10 +18,10 @@ const NODES: Node[] = [
 ];
 const H = 52;
 const TONE: Record<Node["tone"], string> = {
-  start: "fill-sky-50 stroke-sky-500 dark:fill-sky-950 dark:stroke-sky-500",
-  good: "fill-emerald-50 stroke-emerald-600 dark:fill-emerald-950 dark:stroke-emerald-500",
-  block: "fill-amber-50 stroke-amber-500 dark:fill-amber-950 dark:stroke-amber-500",
-  off: "fill-rose-50 stroke-rose-500 dark:fill-rose-950 dark:stroke-rose-500",
+  start: "fill-secondary stroke-muted-foreground",
+  good: "fill-selected stroke-primary",
+  block: "fill-secondary stroke-warn",
+  off: "fill-secondary stroke-bad",
 };
 
 // both = the move works in both directions (an arrowhead at each end); a = text-anchor

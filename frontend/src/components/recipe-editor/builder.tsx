@@ -110,8 +110,8 @@ export function RecipeBuilder() {
           a.href = url; a.download = `${name.replace(/[^A-Za-z0-9_-]+/g, "-") || "recipe"}.recipe.json`; a.click();
           URL.revokeObjectURL(url);
         }, "Exported the saved draft (no secrets included)")}>Export</Button>
-        {dirty && <span className="text-sm text-amber-600">Unsaved changes</span>}
-        {!dirty && recipe.has_unpublished_changes && recipe.published_version && <span className="text-sm text-amber-600">Draft differs from the published version</span>}
+        {dirty && <span className="text-sm text-warn">Unsaved changes</span>}
+        {!dirty && recipe.has_unpublished_changes && recipe.published_version && <span className="text-sm text-warn">Draft differs from the published version</span>}
       </div>
 
       {!canEdit && <Alert className="mb-4" data-testid="read-only-note"><AlertDescription>Read-only: only the owner ({recipe.owner?.email ?? "unassigned"}), listed editors and super admins can change this recipe.</AlertDescription></Alert>}

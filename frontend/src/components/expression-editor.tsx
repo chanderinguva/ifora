@@ -155,7 +155,7 @@ export function ExpressionEditor({ id, value, onChange, placeholder }: { id: str
 
       <div role="status" aria-live="polite" className="min-h-[1.25rem] text-xs" data-testid="expression-status">
         {check && (check.ok
-          ? <span className="text-green-700 dark:text-green-400">✓ Valid. Reads {check.attributes.length ? check.attributes.map((a) => `user.${a}`).join(", ") : "no attributes"}.</span>
+          ? <span className="text-good">✓ Valid. Reads {check.attributes.length ? check.attributes.map((a) => `user.${a}`).join(", ") : "no attributes"}.</span>
           : <span className="text-destructive">{check.error}</span>)}
       </div>
     </div>

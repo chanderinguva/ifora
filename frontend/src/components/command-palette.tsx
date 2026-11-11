@@ -71,7 +71,7 @@ export function CommandPalette({ nav }: { nav: NavGroup[] }) {
               className={"flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm " + (i === active ? "bg-accent" : "")}
               onMouseEnter={() => setActive(i)} onClick={() => go(h)}>
               <span className="truncate">{h.title}{h.subtitle && <span className="ml-2 text-xs text-muted-foreground">{h.subtitle}</span>}</span>
-              <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">{h.kind}</span>
+              <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{h.kind}</span>
             </li>
           ))}
           {all.length === 0 && <li className="px-3 py-6 text-center text-sm text-muted-foreground">No matches</li>}

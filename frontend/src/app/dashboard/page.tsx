@@ -40,8 +40,8 @@ export default function UserHome() {
 
         <aside aria-label="Your account" className="space-y-4">
           {todo.length > 0 && (
-            <Card className="border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30" data-testid="security-checklist">
-              <CardHeader><CardTitle className="flex items-center gap-2 text-base"><ShieldAlert className="h-4 w-4 text-amber-600" /> Protect your account</CardTitle></CardHeader>
+            <Card className="border-warn/40" data-testid="security-checklist">
+              <CardHeader><CardTitle className="flex items-center gap-2 text-base"><ShieldAlert className="h-4 w-4 text-warn" /> Protect your account</CardTitle></CardHeader>
               <CardContent className="space-y-2 text-sm">
                 <ul className="list-disc space-y-1 pl-5">{todo.map((t) => <li key={t}>{t}</li>)}</ul>
                 <Link href="/settings#security" className="inline-block font-medium underline-offset-4 hover:underline">Set up in Account settings →</Link>

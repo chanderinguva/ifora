@@ -99,7 +99,7 @@ export function AppTiles() {
         )}
         <button type="button" onClick={() => put(a.id, { favorite: !p.favorite })} aria-pressed={p.favorite} aria-label={p.favorite ? `Remove ${a.name} from favourites` : `Add ${a.name} to favourites`}
           className="absolute right-2 top-2 rounded-md p-1 text-muted-foreground opacity-60 hover:bg-muted hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100">
-          <Star className={"h-3.5 w-3.5 " + (p.favorite ? "fill-current text-amber-500" : "")} />
+          <Star className={"h-3.5 w-3.5 " + (p.favorite ? "fill-current text-warn" : "")} />
         </button>
         {organise && (
           <div className="mt-1 flex items-center justify-center gap-1">

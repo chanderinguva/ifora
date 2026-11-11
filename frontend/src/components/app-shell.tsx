@@ -132,7 +132,7 @@ export function AppShell({ title, nav, children }: { title: string; nav: NavGrou
   };
 
   return (
-    <div className="flex min-h-screen bg-muted/30">
+    <div className="flex min-h-screen bg-background">
       <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:border focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:shadow">
         Skip to main content
       </a>
@@ -144,7 +144,7 @@ export function AppShell({ title, nav, children }: { title: string; nav: NavGrou
         data-collapsed={collapsed}
         style={collapsed ? undefined : { width }}
         className={cn(
-          "relative hidden shrink-0 flex-col border-r bg-background md:flex",
+          "relative hidden shrink-0 flex-col border-r bg-card md:flex",
           collapsed && "w-16",
           ready && !dragging && "transition-[width] duration-200 ease-in-out motion-reduce:transition-none",
         )}
@@ -184,7 +184,7 @@ export function AppShell({ title, nav, children }: { title: string; nav: NavGrou
       <MobileDrawer open={drawer} onClose={closeDrawer} groups={nav} home={home} title={title} />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 items-center gap-3 border-b bg-background px-4 md:px-6">
+        <header className="flex h-14 items-center gap-3 border-b bg-card px-4 md:px-6">
           <button className={cn(iconButton, "md:hidden")} aria-label="Open navigation" aria-expanded={drawer} data-testid="open-nav" onClick={() => setDrawer(true)}>
             <Menu className="h-4 w-4" aria-hidden="true" />
           </button>
@@ -203,12 +203,12 @@ export function AppShell({ title, nav, children }: { title: string; nav: NavGrou
           <div className="ml-auto flex items-center gap-2 sm:gap-3">
             {user.is_admin && !user.acting_as_user && (
               <button
-                className={cn(iconButton, "w-9 gap-2 bg-muted/40 text-sm sm:w-64 sm:justify-start sm:px-3 lg:w-96 xl:w-[28rem]")}
+                className={cn(iconButton, "w-9 gap-2 bg-background text-sm sm:w-64 sm:justify-start sm:px-3 lg:w-96 xl:w-[28rem]")}
                 aria-label="Search" data-testid="open-search"
                 onClick={() => window.dispatchEvent(new Event("open-command-palette"))}>
                 <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
-                <span className="hidden truncate sm:inline">Search users, groups, apps…</span>
-                <kbd className="ml-auto hidden rounded border bg-background px-1.5 py-0.5 text-[10px] sm:inline">⌘K</kbd>
+                <span className="hidden truncate sm:inline">Search users, groups, apps</span>
+                <kbd className="ml-auto hidden rounded border bg-card px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground sm:inline">⌘K</kbd>
               </button>
             )}
             <ThemeToggle />
@@ -217,7 +217,7 @@ export function AppShell({ title, nav, children }: { title: string; nav: NavGrou
         </header>
 
         {user.is_admin && user.acting_as_user && (
-          <div role="status" data-testid="user-view-banner" className="flex flex-wrap items-center justify-between gap-2 border-b bg-amber-50 px-6 py-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+          <div role="status" data-testid="user-view-banner" className="flex flex-wrap items-center justify-between gap-2 border-b bg-selected px-6 py-2 text-sm text-selected-foreground">
             <span>You are in <strong>user view</strong>. Administrator functions are switched off for this session.</span>
             <button
               className="underline underline-offset-4"
@@ -230,8 +230,8 @@ export function AppShell({ title, nav, children }: { title: string; nav: NavGrou
             </button>
           </div>
         )}
-        <main id="main" tabIndex={-1} className="flex-1 p-4 outline-none md:p-6">
-          {children}
+        <main id="main" tabIndex={-1} className="flex-1 p-4 outline-none md:p-8">
+          <div className="mx-auto w-full max-w-[1600px]">{children}</div>
         </main>
       </div>
     </div>
