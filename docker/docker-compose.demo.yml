@@ -1,0 +1,70 @@
+# Demo environment override (https://demo.ifora.app, invite-only). Use via scripts/demo.sh, which runs:
+#   docker compose -p ifora-demo -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.demo.yml --env-file .env.demo
+#
+# A separate compose project ("ifora-demo") with its own Postgres, Redis and secrets: nothing is shared with the
+# dev/prod stack on ifora.app. Nothing is published on the host. The only way in is the cloudflared tunnel, which
+# reaches the Caddy edge, and Cloudflare Access decides who may connect.
+# Requires Docker Compose 2.24+ (uses !reset).
+name: ifora-demo
+
+services:
+  postgres:
+    container_name: ifora-demo-postgres
+    ports: !reset []
+  redis:
+    container_name: ifora-demo-redis
+    ports: !reset []
+
+  backend-api:
+    container_name: ifora-demo-api
+    ports: !reset []
+
+  recipes-worker:
+    container_name: ifora-demo-recipes-worker
+
+  frontend:
+    container_name: ifora-demo-frontend
+    ports: !reset []
+    environment:
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+    build:
+      args:
+        # Same origin as the app: the browser calls https://demo.ifora.app/api/v1/... and the edge routes it.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?set NEXT_PUBLIC_API_URL=https://demo.ifora.app in docker/.env.demo}
+
+  # Routes API/OIDC/SAML/SCIM paths to the backend and everything else to Next.js. Plain HTTP inside the stack:
+  # TLS ends at Cloudflare. No published ports, so only the tunnel container can reach it.
+  edge:
+    image: caddy:2.8-alpine
+    container_name: ifora-demo-edge
+    restart: unless-stopped
+    depends_on:
+      backend-api:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+    volumes:
+      - ./demo/Caddyfile:/etc/caddy/Caddyfile:ro
+    networks:
+      default:
+        # Fixed address so FORWARDED_ALLOW_IPS can trust exactly this hop for X-Forwarded-For.
+        ipv4_address: 172.31.77.2
+
+  # Outbound-only tunnel to Cloudflare. The token comes from Zero Trust > Networks > Tunnels.
+  cloudflared:
+    image: cloudflare/cloudflared:2024.12.2
+    container_name: ifora-demo-tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN in docker/.env.demo}
+    depends_on:
+      - edge
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.77.0/24
+          # Auto-assigned addresses come from the upper half, so 172.31.77.2 stays free for the edge.
+          ip_range: 172.31.77.128/25
