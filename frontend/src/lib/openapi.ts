@@ -197,9 +197,25 @@ export function postmanCollection(spec: Spec, ops: Operation[], base: string): u
   return {
     info: {
       name: `${spec.info.title} ${spec.info.version}`,
-      description: "Generated from the live OpenAPI document. Set apiToken (Administrators & API tokens) for /api/v1/admin/** calls.",
+      description: "Generated from the live OpenAPI document. Set apiToken (Administrators & API tokens) for /api/v1/admin/** calls. Responses follow SCIM 2.0: resources carry schemas and meta, lists are a ListResponse, errors are a SCIM Error. The collection's Tests tab checks this on every request.",
       schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     },
+    event: [{
+      listen: "test",
+      script: {
+        type: "text/javascript",
+        exec: [
+          "// Every JSON reply is a SCIM resource, ListResponse or Error.",
+          "const ok = pm.response.code >= 200 && pm.response.code < 300;",
+          "let body = null; try { body = pm.response.json(); } catch (e) { /* no body */ }",
+          "if (body && typeof body === 'object' && !Array.isArray(body)) {",
+          "  if (!ok) pm.test('error is a SCIM Error', () => { pm.expect(body.schemas).to.include('urn:ietf:params:scim:api:messages:2.0:Error'); pm.expect(body.status).to.eql(String(pm.response.code)); pm.expect(body.detail).to.be.a('string'); });",
+          "  else if (Array.isArray(body.Resources)) pm.test('list is a SCIM ListResponse', () => { pm.expect(body.schemas).to.include('urn:ietf:params:scim:api:messages:2.0:ListResponse'); pm.expect(body.totalResults).to.be.a('number'); });",
+          "  else if (body.id !== undefined) pm.test('resource has schemas and meta', () => { pm.expect(body.schemas).to.be.an('array').that.is.not.empty; pm.expect(body.meta).to.have.property('resourceType'); });",
+          "}",
+        ],
+      },
+    }],
     auth: { type: "bearer", bearer: [{ key: "token", value: "{{apiToken}}", type: "string" }] },
     variable: [{ key: "baseUrl", value: base }, { key: "apiToken", value: "" }, { key: "csrfToken", value: "" }],
     item: Array.from(folders, ([name, item]) => ({ name, item })).sort((a, b) => a.name.localeCompare(b.name)),
