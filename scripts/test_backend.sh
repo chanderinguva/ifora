@@ -20,7 +20,10 @@ NETWORK="$(docker inspect "$API" --format '{{range $k,$v := .NetworkSettings.Net
 ENVFILE="$(mktemp)"
 trap 'rm -f "$ENVFILE"' EXIT
 chmod 600 "$ENVFILE"
-docker inspect "$API" --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -v '^$' > "$ENVFILE"
+# Drop dev-stack settings the tests assume are unset (their app defaults apply): the WebAuthn relying party/origins
+# (the dev stack uses ifora.app; tests expect localhost) and the recipe encryption key (tests cover the no-key paths).
+docker inspect "$API" --format '{{range .Config.Env}}{{println .}}{{end}}' \
+  | grep -v '^$' | grep -Ev '^(WEBAUTHN_RP_ID|WEBAUTHN_ORIGINS|RECIPE_ENCRYPTION_KEY)=' > "$ENVFILE"
 
 ARGS=("$@")
 if [ ${#ARGS[@]} -eq 0 ]; then ARGS=(); fi
