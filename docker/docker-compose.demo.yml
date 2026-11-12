@@ -17,10 +17,14 @@ services:
 
   backend-api:
     container_name: ifora-demo-api
+    environment:
+      - ENVIRONMENT=demo  # Overrides production Compose identity; security checks remain enforced.
     ports: !reset []
 
   recipes-worker:
     container_name: ifora-demo-recipes-worker
+    environment:
+      - ENVIRONMENT=demo
 
   frontend:
     container_name: ifora-demo-frontend

@@ -94,7 +94,7 @@ def test_template_edits_are_validated(admin, subject, body, fragment):
 def test_preview_does_not_save_and_uses_sample_data(admin):
     admin.put("/admin/branding", {"display_name": "Acme"})
     p = admin.post("/admin/email-templates/reset/preview", {"subject": "{{org_name}} reset", "body": "Hi {{ first_name }}: {{link}}"}).json()
-    assert p["subject"] == "Acme reset" and p["body"].startswith("Hi Alex: https://example.invalid/")
+    assert p["subject"] == "[TEST] Acme reset" and p["body"].startswith("Hi Alex: https://example.invalid/")
     assert admin.get("/admin/email-templates").json()["items"][1]["customised"] is False
 
 

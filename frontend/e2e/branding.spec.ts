@@ -39,6 +39,7 @@ test("branding: name, colour, logo and message reach the sidebar and the sign-in
     await page.locator("#t-body").fill("Hi {{first_name}}, join {{org_name}}: {{link}}");
     await page.getByTestId("tpl-preview").click();
     await expect(page.getByTestId("tpl-preview-out")).toContainText("Welcome to Acme E2E");
+    await page.getByRole("button", { name: "Plain text" }).click();
     await expect(page.getByTestId("tpl-preview-out")).toContainText("Hi Alex, join Acme E2E");
     await page.getByTestId("tpl-save").click();
     await expect(page.getByText("Template saved")).toBeVisible();

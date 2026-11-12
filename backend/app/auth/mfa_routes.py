@@ -241,8 +241,12 @@ def email_enrollment_code(request: Request, db: Session = Depends(get_db), auth=
         f"It works once and expires in {mfa_service.ENROLLMENT_CODE_HOURS} hours.\n\n"
         "If you did not ask for this, you can ignore this message; the code is useless without your password."
     )
+    from backend.app.branding import templates
+    subject, rendered_body, html, logo = templates.rich_email(
+        db, "mfa_enrollment", first_name=user.first_name, code=code,
+        valid_for=f"{mfa_service.ENROLLMENT_CODE_HOURS} hours")
     try:
-        mailer.send(mailer.build(user.email, "Your Ifora enrolment code", body))
+        mailer.send(mailer.build(user.email, subject, rendered_body, html=html, logo=logo))
     except Exception:  # noqa: BLE001
         raise HTTPException(status_code=502, detail="The mail server did not accept the message")
     return {"success": True}

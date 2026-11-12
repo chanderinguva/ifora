@@ -132,3 +132,12 @@ def test_no_forwarded_warning_when_trusted_proxy_is_configured(monkeypatch, capl
     with caplog.at_level(logging.ERROR):
         client.get("/health", headers={"X-Forwarded-For": "203.0.113.9"})
     assert not [r for r in caplog.records if "FORWARDED_ALLOW_IPS" in r.getMessage()]
+
+
+def test_demo_retains_public_deployment_hardening(monkeypatch):
+    make_production_valid(monkeypatch)
+    monkeypatch.setattr(settings, "ENVIRONMENT", "demo")
+    assert config_guards.validate_settings(settings) == []
+    assert create_app().openapi_url is None
+    monkeypatch.setattr(settings, "SESSION_COOKIE_SECURE", False)
+    assert problems_naming("SESSION_COOKIE_SECURE")

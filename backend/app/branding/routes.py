@@ -19,6 +19,7 @@ from backend.app.audit.service import record
 from backend.app.auth.deps import require_admin
 from backend.app.branding import templates as T
 from backend.app.branding.models import EmailTemplate, OrgBranding, OrgLogo
+from backend.app.environment import name as environment_name, label as environment_label, subject as email_subject
 from backend.app.db import get_db
 from backend.app.users.model import User
 
@@ -45,6 +46,8 @@ def _view(db: Session) -> dict:
         "tagline": b.tagline if b else None,
         "has_logo": logo is not None,
         "logo_rev": logo.sha256[:12] if logo else None,
+        "environment": environment_name(),
+        "environment_label": environment_label(),
     }
 
 
@@ -152,7 +155,7 @@ def _key(key: str) -> str:
 
 def _tpl(db: Session, key: str) -> dict:
     d = T.DEFAULTS[key]
-    return {"key": key, "label": d["label"], **T.current(db, key), "default_subject": d["subject"], "default_body": d["body"], "variables": T.VARIABLES}
+    return {"key": key, "label": d["label"], "category": d["category"], "live": d["live"], **T.current(db, key), "default_subject": d["subject"], "default_body": d["body"], "variables": T.VARIABLES, "required": list(d["required"])}
 
 
 @templates_router.get("")
@@ -165,19 +168,19 @@ class TemplateBody(BaseModel):
     body: str = Field(..., min_length=1, max_length=T.MAX_BODY)
 
 
-def _check(b: TemplateBody) -> None:
-    problem = T.validate(b.subject, b.body)
+def _check(b: TemplateBody, key: str) -> None:
+    problem = T.validate(b.subject, b.body, key)
     if problem:
         raise HTTPException(status_code=422, detail=problem)
 
 
-_SAMPLE = {"first_name": "Alex", "link": "https://example.invalid/set-password?token=SAMPLE", "valid_for": "24 hours"}
+_SAMPLE = {"first_name": "Alex", "link": "https://example.invalid/set-password?token=SAMPLE", "valid_for": "24 hours", "code": "ABCD-1234-EFGH", "action": "New sign-in detected", "timestamp": "2026-11-11 10:30 UTC", "ip_address": "192.0.2.10"}
 
 
 @templates_router.put("/{key}")
 def put_template(key: str, body: TemplateBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
     _key(key)
-    _check(body)
+    _check(body, key)
     row = db.query(EmailTemplate).filter(EmailTemplate.key == key).first()
     if row is None:
         row = EmailTemplate(key=key, subject=body.subject, body=body.body, updated_at=_now())
@@ -203,23 +206,37 @@ def reset_template(key: str, request: Request, db: Session = Depends(get_db), ac
 @templates_router.post("/{key}/preview")
 def preview_template(key: str, body: TemplateBody, db: Session = Depends(get_db), _: User = Depends(require_admin)):
     _key(key)
-    _check(body)
-    vals = {**_SAMPLE, "org_name": T.org_name(db)}
-    return {"subject": T.render(body.subject, vals), "body": T.render(body.body, vals)}
+    _check(body, key)
+    from backend.app.branding import email_html
+    vals = {**T.values(db), **_SAMPLE}
+    rendered = T.render(body.body, vals)
+    return {"subject": email_subject(T.render(body.subject, vals)), "body": rendered,
+            "html": email_html.render(db, title=T.DEFAULTS[key]["label"], body=rendered,
+                                      link=_SAMPLE["link"] if "link" in T.DEFAULTS[key]["required"] else "",
+                                      code=_SAMPLE["code"] if "code" in T.DEFAULTS[key]["required"] else "",
+                                      action_label=T.DEFAULTS[key]["cta"], preview=True)}
 
 
 @templates_router.post("/{key}/send-test")
 def send_test(key: str, body: TemplateBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
     """Sends the draft to the signed-in administrator's own address only, so this can never be used to mail anyone else."""
     _key(key)
-    _check(body)
+    _check(body, key)
     if not mailer.configured():
         raise HTTPException(status_code=409, detail="Email is not configured on this server (SMTP_HOST and SMTP_FROM)")
     ratelimit.check("email_test", str(actor.id), 5)
     ratelimit.hit("email_test", str(actor.id), 3600)
     vals = {**_SAMPLE, "org_name": T.org_name(db), "first_name": actor.first_name}
     try:
-        mailer.send(mailer.build(actor.email, "[Test] " + T.render(body.subject, vals), T.render(body.body, vals)), timeout=10)
+        from backend.app.branding import email_html
+        vals = {**T.values(db, first_name=actor.first_name), **_SAMPLE, "first_name": actor.first_name}
+        rendered = T.render(body.body, vals)
+        html = email_html.render(db, title=T.DEFAULTS[key]["label"], body=rendered,
+                                 link=_SAMPLE["link"] if "link" in T.DEFAULTS[key]["required"] else "",
+                                 code=_SAMPLE["code"] if "code" in T.DEFAULTS[key]["required"] else "",
+                                 action_label=T.DEFAULTS[key]["cta"])
+        mailer.send(mailer.build(actor.email, "[Test] " + email_subject(T.render(body.subject, vals)),
+                                 rendered, html=html, logo=email_html.logo_attachment(db)), timeout=10)
     except Exception:  # noqa: BLE001 - delivery details stay out of the response
         raise HTTPException(status_code=502, detail="The test email could not be sent")
     record(db, AuditAction.EMAIL_TEST_SENT, request, actor, None, "email_template", {"key": key})

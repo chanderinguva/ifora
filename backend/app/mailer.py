@@ -41,8 +41,14 @@ def from_header() -> str:
     return formataddr((settings.SMTP_FROM_NAME.strip(), address)) if settings.SMTP_FROM_NAME.strip() else address
 
 
-def build(to: str, subject: str, body: str) -> EmailMessage:
+def build(to: str, subject: str, body: str, *, html: str | None = None, logo: tuple[bytes, str, str] | None = None) -> EmailMessage:
     msg = EmailMessage()
     msg["From"], msg["To"], msg["Subject"] = from_header(), to, subject
     msg.set_content(body)
+    if html is not None:
+        msg.add_alternative(html, subtype="html")
+        if logo is not None:
+            raw, mime, cid = logo
+            main, subtype = mime.split("/", 1)
+            msg.get_body(preferencelist=("html",)).add_related(raw, maintype=main, subtype=subtype, cid=f"<{cid}>", disposition="inline", filename="ifora-logo.png")
     return msg
