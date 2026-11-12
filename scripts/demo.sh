@@ -89,8 +89,11 @@ cmd_deploy() {
   git -C "$REPO" worktree add --detach "$SRC" "$sha"
   echo "demo: deploying origin/main @ ${sha:0:9}"
   compose up -d --build --remove-orphans
+  # The Caddyfile is bind-mounted and only read at start, so an unchanged container would keep the old config.
+  docker exec ifora-demo-edge caddy reload --config /etc/caddy/Caddyfile >/dev/null 2>&1 \
+    || echo "demo: warning: could not reload the edge config (is ifora-demo-edge running?)" >&2
   echo "$sha" > "$DEMO_HOME/deployed-sha"
-  cmd_smoke
+  SMOKE_RETRIES=24 cmd_smoke
 }
 
 cmd_bootstrap_admin() {
@@ -115,19 +118,29 @@ PY
 }
 
 cmd_smoke() {
-  local fail=0
+  # The frontend answers 502 for ~15-25 s after a deploy: SMOKE_RETRIES=n re-checks every 5 s and prints only the result.
+  local tries="${SMOKE_RETRIES:-1}" n=1
+  while :; do
+    if smoke_once "$([ "$n" -ge "$tries" ] && echo loud || echo quiet)"; then return 0; fi
+    [ "$n" -lt "$tries" ] || die "smoke test failed"
+    n=$((n + 1)); sleep 5
+  done
+}
+
+smoke_once() { # loud|quiet
+  local fail=0 out=""
   chk() { # name expected-status path
     local got; got="$(docker exec ifora-demo-edge wget -S -q -O /dev/null "http://127.0.0.1$3" 2>&1 | awk '/HTTP\//{print $2; exit}' || true)"
     [ -n "$got" ] || got=000
-    if [ "$got" = "$2" ]; then echo "  ok   $1 ($3 -> $got)"; else echo "  FAIL $1 ($3 -> $got, want $2)"; fail=1; fi
+    if [ "$got" = "$2" ]; then out+="  ok   $1 ($3 -> $got)"$'\n'; else out+="  FAIL $1 ($3 -> $got, want $2)"$'\n'; fail=1; fi
   }
-  echo "demo: smoke"
   chk "api health via edge" 200 /health
   chk "oidc discovery via edge" 200 /.well-known/openid-configuration
   chk "frontend via edge" 200 /
   chk "metrics blocked at edge" 404 /metrics
   chk "api docs blocked at edge" 404 /docs
-  [ "$fail" = 0 ] || die "smoke test failed"
+  if [ "$fail" = 0 ] || [ "$1" = loud ]; then echo "demo: smoke"; printf '%s' "$out"; fi
+  [ "$fail" = 0 ]
 }
 
 cmd_reset() {
