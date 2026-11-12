@@ -1,7 +1,7 @@
 # Backend CI worker isolation
 
 Baseline: build #8 ran all 1728 backend tests in about 14 minutes, with warm test
-dependency images. CI now uses pytest-xdist 3.8.0 with two workers and loadfile
+dependency images. CI uses pytest-xdist 3.8.0 with four workers and loadfile
 scheduling: tests within a file stay together, while files run in parallel.
 
 No tests are selected out and no production password hashing settings change.
@@ -20,7 +20,7 @@ Redis settings and unexpected worker IDs. The entrypoint still validates exact
 disposable endpoints before pytest imports application code. Services remain
 ephemeral, without host ports or application data volumes. Keep runner capacity 1.
 
-`CI_TEST_WORKERS` accepts 1..4. The pipeline sets 2; set 1 to diagnose an isolation
+`CI_TEST_WORKERS` accepts 1..4. The pipeline sets 4; set 1 to diagnose an isolation
 issue serially. Crashed workers fail the build without automatic replacements.
 Do not increase workers without measuring CPU/memory pressure on the Mac, which
 also runs both deployed environments. The dependency image rebuilds once for the
@@ -96,13 +96,35 @@ Results under gitignored `.ci/benchmarks/<timestamp>-<pid>/` include:
   CPU, memory and block I/O. These do not measure overall Mac pressure or prove
   the cause of the earlier Drone/local timing gap.
 
-Profiling is opt-in (`CI_TEST_PROFILE=1`). Normal Drone runs retain two workers
+Profiling is opt-in (`CI_TEST_PROFILE=1`). Normal Drone runs use four workers
 and their existing pytest options. The profiler measures fixture **setup** and
 aggregate setup/call/teardown phases; fixture times are inclusive and may overlap,
 so do not add them together as independent wall times. Use `_clean_db` and
 `_clean_redis` measurements to decide whether cleanup warrants a separate change.
 No transactions, truncation, cryptography, test selection or deployment health
-checks are weakened by this measurement PR.
+checks are weakened by this change.
 
 Pick a worker count only after comparable successful runs and a subsequent Drone
 validation. Share `summary.json` and worker JSON files to review the results.
+
+## Measured worker selection
+
+The Mac completed a disk-backed benchmark at commit
+`8fb314a0a02f351ea69a51a3d1711bfeb0e38559`:
+
+| Workers | Full run wall time | Tests passed | Failures/errors/skips |
+| --- | --- | --- | --- |
+| 2 | 498.57s (8m19s) | 1729 | 0 / 0 / 0 |
+| 3 | 357.87s (5m58s) | 1729 | 0 / 0 / 0 |
+| 4 | 296.98s (4m57s) | 1729 | 0 / 0 / 0 |
+
+All runs and cleanup exited 0. Four workers reduced backend benchmark wall time
+by 201.59s (40.4%) relative to two workers. Use four in Drone while retaining
+runner capacity one, all four isolated databases/Redis DBs and existing deploy
+gates. This is one pass per configuration; resource samples have not been
+reviewed and sustained stability/end-to-end time need confirmation in Drone.
+With unchanged warm-cache overhead, roughly 6–7 minutes total is a planning
+estimate, not a measured pipeline result. Source-changing/cold builds can differ.
+If the Mac experiences resource pressure or the four-worker run is unstable,
+return only `CI_TEST_WORKERS` in `.drone.yml` to `"2"` and rerun; do not reduce
+coverage or password hashing settings to meet a timing target.

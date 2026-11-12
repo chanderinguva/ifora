@@ -69,7 +69,7 @@ steps:
       REDIS_URL: redis://ci-redis:6379/0
       TEST_DB_NAME: ifora_ci_test
       TEST_REDIS_DB: "15"
-      CI_TEST_WORKERS: "2"
+      CI_TEST_WORKERS: "4" # full-suite Mac disk benchmark: 4m57s vs 8m19s with two
       SESSION_COOKIE_SECURE: "false"
       PUBLIC_APP_URL: http://localhost:3000
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
