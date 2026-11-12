@@ -1,6 +1,20 @@
 # Edge for the demo stack. Plain HTTP: Cloudflare terminates TLS and the tunnel is the only client.
 {
 	auto_https off
+
+	# Caddy's error log records the whole request. Drop the credentials it carries (the Cloudflare Access token,
+	# session cookies, bearer tokens) so a log line never holds something that could be replayed.
+	log {
+		output stderr
+		format filter {
+			wrap json
+			request>headers>Cf-Access-Jwt-Assertion delete
+			request>headers>Cookie delete
+			request>headers>Authorization delete
+			request>headers>X-Csrf-Token delete
+			resp_headers>Set-Cookie delete
+		}
+	}
 }
 
 :80 {

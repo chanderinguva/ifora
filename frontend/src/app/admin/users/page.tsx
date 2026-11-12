@@ -2,7 +2,7 @@
 
 import { Avatar } from "@/components/avatar";
 import { PasswordRules } from "@/components/password-rules";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -198,6 +198,8 @@ function CreateUser({ canMakeAdmin, onDone }: { canMakeAdmin: boolean; onDone: (
   const [schema, setSchema] = useState<ProfileAttribute[]>([]);
   const [attrs, setAttrs] = useState<Record<string, string>>({ user_type: "Employee" });
   const [pwMode, setPwMode] = useState<"set" | "generate" | "invite">("generate");
+  const pwTouched = useRef(false);
+  const choosePw = (m: "set" | "generate" | "invite") => { pwTouched.current = true; setPwMode(m); };
   const [groups, setGroups] = useState<Group[]>([]);
   const [picked, setPicked] = useState<number[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -217,6 +219,10 @@ function CreateUser({ canMakeAdmin, onDone }: { canMakeAdmin: boolean; onDone: (
   useEffect(() => {
     http<{ items: ProfileAttribute[] }>("/admin/profile-attributes").then((r) => setSchema(r.items.filter((a) => !a.user_editable))).catch(() => {});
     http<Page<Group>>(`/admin/groups${qs({ count: 100 })}`).then((r) => setGroups(r.Resources.filter((g) => !g.is_system_group))).catch(() => {});
+    // Invite by email is the default whenever mail can be sent; without SMTP the temporary password stays the default.
+    http<{ email_configured: boolean }>("/admin/users/import-columns")
+      .then((r) => { if (r.email_configured && !pwTouched.current) setPwMode("invite"); })
+      .catch(() => {});
   }, []);
 
   async function submit(e: React.FormEvent) {
@@ -326,16 +332,16 @@ function CreateUser({ canMakeAdmin, onDone }: { canMakeAdmin: boolean; onDone: (
           <fieldset className="space-y-2 sm:col-span-2">
             <legend className="text-sm font-medium">Password</legend>
             <label className="flex items-center gap-2 text-sm">
-              <input type="radio" name="pwmode" checked={pwMode === "generate"} onChange={() => setPwMode("generate")} />
+              <input type="radio" name="pwmode" checked={pwMode === "invite"} onChange={() => choosePw("invite")} />
+              Invite by email (the person chooses their own password; needs SMTP configured)
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="radio" name="pwmode" checked={pwMode === "generate"} onChange={() => choosePw("generate")} />
               Generate a random temporary password (shown once)
             </label>
             <label className="flex items-center gap-2 text-sm">
-              <input type="radio" name="pwmode" checked={pwMode === "set"} onChange={() => setPwMode("set")} />
+              <input type="radio" name="pwmode" checked={pwMode === "set"} onChange={() => choosePw("set")} />
               I will set a password
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="radio" name="pwmode" checked={pwMode === "invite"} onChange={() => setPwMode("invite")} />
-              Email an invitation (the person chooses their own password; needs SMTP configured)
             </label>
             {pwMode === "set" && (
               <div className="space-y-1">
