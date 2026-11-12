@@ -1,0 +1,66 @@
+# Drone CI for this Mac: server (UI, webhooks, scheduler) + docker runner (executes pipelines on the local Docker daemon).
+# A separate compose project ("ifora-drone"): it cannot touch the "docker" (dev/prod) or "ifora-demo" stacks.
+#
+# Setup (one time):
+#   1. GitHub > Settings > Developer settings > OAuth Apps > New. Homepage https://drone.ifora.app,
+#      callback https://drone.ifora.app/login. Copy the client id and generate a secret.
+#   2. cp docker/drone/.env.drone.example docker/drone/.env.drone   # gitignored; fill it in
+#      DRONE_RPC_SECRET: openssl rand -hex 16
+#   3. Cloudflare Zero Trust > Networks > Tunnels > new tunnel "drone", public hostname drone.ifora.app -> http://drone:80.
+#      Put its token in DRONE_TUNNEL_TOKEN. GitHub must reach this host for webhooks and the OAuth callback, so do NOT put
+#      a Cloudflare Access policy on drone.ifora.app (Drone itself only lets DRONE_GITHUB_USER sign in).
+#   4. docker compose -p ifora-drone -f docker/drone/docker-compose.drone.yml --env-file docker/drone/.env.drone --profile tunnel up -d
+#   5. Open https://drone.ifora.app, log in with GitHub, Activate the repo (this creates the GitHub webhook),
+#      Settings: tick Trusted, add secrets ghcr_user and ghcr_token (PAT with write:packages).
+name: ifora-drone
+
+services:
+  drone:
+    image: drone/drone:2
+    container_name: ifora-drone
+    restart: unless-stopped
+    environment:
+      DRONE_SERVER_HOST: ${DRONE_SERVER_HOST:?set DRONE_SERVER_HOST (drone.ifora.app)}
+      DRONE_SERVER_PROTO: https
+      DRONE_RPC_SECRET: ${DRONE_RPC_SECRET:?set DRONE_RPC_SECRET (openssl rand -hex 16)}
+      DRONE_GITHUB_CLIENT_ID: ${DRONE_GITHUB_CLIENT_ID:?set the GitHub OAuth app client id}
+      DRONE_GITHUB_CLIENT_SECRET: ${DRONE_GITHUB_CLIENT_SECRET:?set the GitHub OAuth app client secret}
+      # Only this GitHub login may sign in, and it is the admin. Anyone else is refused.
+      DRONE_USER_FILTER: ${DRONE_GITHUB_USER:?set DRONE_GITHUB_USER (your GitHub login)}
+      DRONE_USER_CREATE: username:${DRONE_GITHUB_USER},admin:true
+      DRONE_DATABASE_DRIVER: sqlite3
+      DRONE_DATABASE_DATASOURCE: /data/database.sqlite
+    ports:
+      - "127.0.0.1:8088:80" # local access for debugging; the tunnel reaches it as http://drone:80
+    volumes:
+      - drone_data:/data
+
+  runner:
+    image: drone/drone-runner-docker:1
+    container_name: ifora-drone-runner
+    restart: unless-stopped
+    depends_on:
+      - drone
+    environment:
+      DRONE_RPC_PROTO: http
+      DRONE_RPC_HOST: drone
+      DRONE_RPC_SECRET: ${DRONE_RPC_SECRET:?set DRONE_RPC_SECRET}
+      DRONE_RUNNER_NAME: mac-runner
+      DRONE_RUNNER_CAPACITY: 1 # one pipeline at a time: builds and deploys must not overlap
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  # Outbound-only tunnel so GitHub can reach the server. Start with --profile tunnel.
+  tunnel:
+    profiles: ["tunnel"]
+    image: cloudflare/cloudflared:2024.12.2
+    container_name: ifora-drone-tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${DRONE_TUNNEL_TOKEN:?set DRONE_TUNNEL_TOKEN}
+    depends_on:
+      - drone
+
+volumes:
+  drone_data:
