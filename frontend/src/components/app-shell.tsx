@@ -11,7 +11,7 @@ import { SidebarNav, type NavGroup } from "./sidebar-nav";
 import { ThemeToggle } from "./theme-toggle";
 import { UserMenu } from "./user-menu";
 import { useBranding } from "@/lib/branding";
-import { EnvironmentBanner } from "./environment-banner";
+import { EnvironmentIdentity } from "./environment-banner";
 
 export type { NavGroup, NavItem } from "./sidebar-nav";
 
@@ -202,7 +202,8 @@ export function AppShell({ title, nav, children }: { title: string; nav: NavGrou
             {collapsed ? <PanelLeftOpen className="h-4 w-4" aria-hidden="true" /> : <PanelLeftClose className="h-4 w-4" aria-hidden="true" />}
           </button>
           <LogoLink href={home} className="md:hidden" />
-          <Breadcrumbs groups={nav} className="hidden sm:block" />
+          <Breadcrumbs groups={nav} className="hidden min-w-0 truncate sm:block" />
+          <EnvironmentIdentity environment={branding.environment} label={branding.environment_label} />
           <div className="ml-auto flex items-center gap-2 sm:gap-3">
             {user.is_admin && !user.acting_as_user && (
               <button
@@ -219,7 +220,6 @@ export function AppShell({ title, nav, children }: { title: string; nav: NavGrou
           </div>
         </header>
 
-        <EnvironmentBanner environment={branding.environment} label={branding.environment_label} />
         {user.is_admin && user.acting_as_user && (
           <div role="status" data-testid="user-view-banner" className="flex flex-wrap items-center justify-between gap-2 border-b bg-selected px-6 py-2 text-sm text-selected-foreground">
             <span>You are in <strong>user view</strong>. Administrator functions are switched off for this session.</span>
@@ -241,3 +241,4 @@ export function AppShell({ title, nav, children }: { title: string; nav: NavGrou
     </div>
   );
 }
+
