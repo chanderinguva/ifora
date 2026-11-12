@@ -114,6 +114,43 @@ class SlackThread(unittest.TestCase):
             self.assertEqual(state["ts"], "123.456")
             self.assertNotIn("images", state["events"])
 
+    def test_changing_step_metadata_keeps_one_parent(self):
+        calls = []
+        def api(method, payload, token):
+            calls.append((method, payload))
+            return {"ok": True, "ts": "123.456"}
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            # The early environment can lack start metadata that later steps receive.
+            slack.notify("start", {**self.env(), "DRONE_BUILD_STARTED": "0"}, root, api)
+            for event in ("tests", "images", "demo", "success"):
+                slack.notify(event, {**self.env(), "DRONE_BUILD_STARTED": "456",
+                                     "DRONE_STAGE_NUMBER": "1"}, root, api)
+            parents = [p for m, p in calls if m == "chat.postMessage" and "thread_ts" not in p]
+            replies = [p for m, p in calls if "thread_ts" in p]
+            self.assertEqual(len(parents), 1)
+            self.assertEqual(len(replies), 4)
+            self.assertTrue(all(p["thread_ts"] == "123.456" for p in replies))
+            self.assertEqual(len(list((root / "slack").glob("*.json"))), 1)
+
+    def test_distinct_builds_and_repositories_have_separate_parents(self):
+        calls = []
+        def api(method, payload, token):
+            calls.append((method, payload))
+            return {"ok": True, "ts": str(len(calls))}
+        with tempfile.TemporaryDirectory() as tmp:
+            for patch in ({}, {"DRONE_BUILD_NUMBER": "10"}, {"DRONE_REPO": "owner/other"}):
+                slack.notify("start", {**self.env(), **patch}, Path(tmp), api)
+            self.assertEqual(len(calls), 3)
+            self.assertEqual(len(list((Path(tmp) / "slack").glob("*.json"))), 3)
+
+    def test_missing_build_identity_makes_no_request(self):
+        def api(*args):
+            self.fail("API called without build identity")
+        for key in ("DRONE_REPO", "DRONE_BUILD_NUMBER"):
+            with self.subTest(key=key), self.assertRaises(RuntimeError):
+                slack.notify("start", {**self.env(), key: ""}, api=api)
+
     def test_failure_card_reports_partial_deployment(self):
         card = json.dumps(slack.blocks("failure", self.env(), {"deploy-demo": {"status": "success", "seconds": 25}, "deploy-local": {"status": "failure", "seconds": 30}}))
         self.assertIn("No automatic rollback", card)

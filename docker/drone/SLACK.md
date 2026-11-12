@@ -21,6 +21,12 @@ steps are ordered to avoid competing parent updates. Application steps do not
 depend on notification completion. Network retries are bounded; exactly-once
 delivery cannot be guaranteed after ambiguous network failures.
 
+Thread identity uses repository and build number only. Start timestamps and stage
+metadata are excluded because their values can differ between notification steps.
+Missing build identity fails the notification before contacting Slack.
+This change applies to future builds; it does not consolidate existing duplicate
+messages or change a pipeline already running an older commit.
+
 The parent may first appear at a later milestone if the start notification fails.
 Missing phase data is shown as unreported, never guessed successful. An overall
 failure can leave demo deployed while dev failed; the message explicitly warns
