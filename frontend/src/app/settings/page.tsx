@@ -1,5 +1,6 @@
 "use client";
 
+import { ProfilePicture } from "@/components/profile-picture";
 import { PasswordRules } from "@/components/password-rules";
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -109,6 +110,7 @@ export default function AccountSettings() {
       <Card className="mb-6">
         <CardHeader><CardTitle>Profile</CardTitle></CardHeader>
         <CardContent className="space-y-4">
+          <ProfilePicture user={me} />
           <p className="text-sm text-muted-foreground">{me.email} · {me.username}</p>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">

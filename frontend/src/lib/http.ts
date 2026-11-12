@@ -52,6 +52,25 @@ export async function http<T = any>(
   return data as T;
 }
 
+/** Send one image as the raw request body (the API re-encodes it; no multipart). */
+export async function uploadImage<T = any>(path: string, file: Blob): Promise<T> {
+  const res = await fetch(`${API_URL}/api/v1${path}`, {
+    method: "PUT",
+    credentials: "include",
+    headers: { "Content-Type": file.type, "X-CSRF-Token": await ensureCsrfToken() },
+    body: file,
+  });
+  let data: any = null;
+  try {
+    data = await res.json();
+  } catch {
+    /* empty body */
+  }
+  if (res.status === 401 && endSession()) return new Promise<T>(() => {});
+  if (!res.ok) throw new ApiError(res.status, describe(data?.detail));
+  return data as T;
+}
+
 let leaving = false;
 
 /** The session ended (timed out or signed out elsewhere): go to the login page and come back here afterwards. Every call here is an authenticated one, so a 401 always means this. */

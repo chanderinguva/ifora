@@ -10,6 +10,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge, PageHeader, fmt } from "@/components/bits";
+import { Avatar } from "@/components/avatar";
 import { useCurrentUser } from "@/components/auth-guard";
 import { http } from "@/lib/http";
 import { compact, useDirty } from "@/lib/use-dirty";
@@ -86,7 +87,14 @@ export default function UserDetail() {
       <PageHeader title={`${user.first_name} ${user.last_name}`}>
         <Link href="/admin/users" className="text-sm underline-offset-4 hover:underline">← All users</Link>
       </PageHeader>
-      <div className="mb-4 flex flex-wrap gap-2 text-sm">
+      <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+        <Avatar user={user} size={40} />
+        {user.avatar_etag && (
+          <Button type="button" variant="ghost" size="sm" onClick={async () => {
+            await http(`/admin/users/${user.id}/avatar`, { method: "DELETE" });
+            setUser({ ...user, avatar_etag: null });
+          }}>Remove picture</Button>
+        )}
         <Badge tone={statusTone(user.status)}>{user.status.replace("_", " ")}</Badge>
         {user.mfa_enabled && <Badge tone="good">MFA</Badge>}
         {(user.passkey_count ?? 0) > 0 && <Badge tone="good">{user.passkey_count} passkey{user.passkey_count === 1 ? "" : "s"}</Badge>}

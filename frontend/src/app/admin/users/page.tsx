@@ -1,5 +1,6 @@
 "use client";
 
+import { Avatar } from "@/components/avatar";
 import { PasswordRules } from "@/components/password-rules";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
@@ -161,7 +162,8 @@ export default function UsersPage() {
                 <tr key={u.id} className={tr} data-selected={picked.has(u.id)}>
                   <td className={td}><input type="checkbox" aria-label={`Select ${u.email}`} checked={picked.has(u.id)} onChange={() => toggle(u.id)} /></td>
                   <td className={td}>
-                    <Link className="font-medium underline-offset-4 hover:underline" href={`/admin/users/${u.id}`}>
+                    <Link className="inline-flex items-center gap-2 font-medium underline-offset-4 hover:underline" href={`/admin/users/${u.id}`}>
+                      <Avatar user={u} size={28} />
                       {u.first_name} {u.last_name}
                     </Link>
                   </td>

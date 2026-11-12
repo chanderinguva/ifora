@@ -138,6 +138,7 @@ def create_app() -> FastAPI:
     from backend.app.auth.passkey_routes import router as passkey_router
     from backend.app.auth.role_routes import router as role_router
     from backend.app.groups.routes import router as groups_router
+    from backend.app.profiles.avatar import router as avatar_router
     from backend.app.profiles.routes import router as profiles_router
     from backend.app.users.csv_routes import router as users_csv_router
     from backend.app.users.routes import router as users_router
@@ -235,7 +236,7 @@ def create_app() -> FastAPI:
     from backend.app.search_routes import router as search_router
 
     app.include_router(search_router, prefix="/api/v1")
-    for r in (users_csv_router, users_router, groups_router, profiles_router, audit_router, dashboard_router, mfa_router, passkey_router, role_router):
+    for r in (users_csv_router, users_router, groups_router, profiles_router, avatar_router, audit_router, dashboard_router, mfa_router, passkey_router, role_router):
         app.include_router(r, prefix="/api/v1")
 
     return app
