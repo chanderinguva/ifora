@@ -102,11 +102,22 @@ def _clean_redis():
         r.close()
 
 
-@pytest.fixture(autouse=True)
-def _clean_db():
+def reset_test_rows():
+    """Keep the seeded tenant, but no rows created by a previous test."""
+    from backend.app.tenancy import DEFAULT_TENANT_SLUG, reset_tenant_cache
+
     with engine.begin() as conn:
         names = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables if t.name != "tenants")
         conn.exec_driver_sql(f"TRUNCATE {names} RESTART IDENTITY CASCADE")
+        # Tenant-owned rows are gone, so temporary tenant records can now be deleted.
+        # Keeping every tenant made tests depend on file scheduling (e.g. slug "other").
+        conn.exec_driver_sql("DELETE FROM tenants WHERE slug <> %s", (DEFAULT_TENANT_SLUG,))
+    reset_tenant_cache()
+
+
+@pytest.fixture(autouse=True)
+def _clean_db():
+    reset_test_rows()
     yield
 
 
