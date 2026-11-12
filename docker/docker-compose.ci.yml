@@ -1,0 +1,10 @@
+# CI override: run the pre-built images that scripts/ci-deploy.sh builds and pushes to GHCR, instead of building here.
+# Add as the LAST -f file, with `up -d --no-build`, and export IFORA_API_IMAGE, IFORA_WORKER_IMAGE, IFORA_FRONTEND_IMAGE.
+# Used for both stacks (demo and dev/prod); everything else (ports, env, ENVIRONMENT) still comes from the other files.
+services:
+  backend-api:
+    image: ${IFORA_API_IMAGE:?set by scripts/ci-deploy.sh}
+  recipes-worker:
+    image: ${IFORA_WORKER_IMAGE:?set by scripts/ci-deploy.sh}
+  frontend:
+    image: ${IFORA_FRONTEND_IMAGE:?set by scripts/ci-deploy.sh}

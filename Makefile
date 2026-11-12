@@ -104,7 +104,7 @@ secrets-history:
 	$(GITLEAKS) detect --source . --config .gitleaks.toml --redact --no-banner
 
 # ---- Backend tests ----------------------------------------------------------------------------------------------
-# Needs the compose stack and a rebuilt backend-api image (see README "Testing"): tests use the identityforge_test database.
+# Needs the compose stack and a rebuilt backend-api image (see README "Testing"): tests use the ifora_test database.
 test-backend:
 	@scripts/need.sh docker "install Docker Desktop"
 	scripts/test_backend.sh $(PYTEST_ARGS)

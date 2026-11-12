@@ -97,3 +97,6 @@ docs/
 
 # Claude Code local config, agents and memory
 .claude/
+
+# Drone CI secrets
+docker/drone/.env.drone

@@ -1,0 +1,76 @@
+# Drone CI: on every push to main, build the api / recipes-worker / frontend images, push them to GHCR under the
+# repository owner, then roll the demo stack and the local dev/prod stack onto them (scripts/ci-deploy.sh).
+#
+# The repo must be marked "Trusted" in Drone (Settings), because the steps mount the Docker socket and the host's home
+# directory: the deploy needs the stacks' env files and bind-mounted configs, which live outside the repo. The runner's
+# host path is the same as inside the step ($HOME below), so the compose bind mounts resolve on the host.
+# Secrets (Drone UI or CLI): ghcr_user (GitHub login), ghcr_token (PAT with write:packages).
+kind: pipeline
+type: docker
+name: build-and-deploy
+
+platform:
+  os: linux
+  arch: arm64 # Apple Silicon; the images are built and run on this Mac
+
+trigger:
+  branch: [main]
+  event: [push]
+
+clone:
+  depth: 50
+
+volumes:
+  - name: dockersock
+    host:
+      path: /var/run/docker.sock
+  - name: home
+    host:
+      path: /Users/chanderinguva
+
+steps:
+  - name: build-and-push
+    image: docker:27-cli
+    environment:
+      HOME: /Users/chanderinguva
+      GHCR_USER:
+        from_secret: ghcr_user
+      GHCR_TOKEN:
+        from_secret: ghcr_token
+    commands:
+      - apk add --no-cache bash git tar
+      - bash scripts/ci-deploy.sh build
+    volumes:
+      - name: dockersock
+        path: /var/run/docker.sock
+      - name: home
+        path: /Users/chanderinguva
+
+  - name: deploy-demo
+    image: docker:27-cli
+    environment:
+      HOME: /Users/chanderinguva
+    depends_on: [build-and-push]
+    commands:
+      - apk add --no-cache bash git tar
+      - bash scripts/ci-deploy.sh deploy demo
+    volumes:
+      - name: dockersock
+        path: /var/run/docker.sock
+      - name: home
+        path: /Users/chanderinguva
+
+  # After the demo is healthy, so a bad build stops here and never reaches ifora.app.
+  - name: deploy-local
+    image: docker:27-cli
+    environment:
+      HOME: /Users/chanderinguva
+    depends_on: [deploy-demo]
+    commands:
+      - apk add --no-cache bash git tar
+      - bash scripts/ci-deploy.sh deploy local
+    volumes:
+      - name: dockersock
+        path: /var/run/docker.sock
+      - name: home
+        path: /Users/chanderinguva
