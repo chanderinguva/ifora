@@ -42,6 +42,8 @@ class AuditAction(str, Enum):
     USER_PASSWORD_CHANGED = "USER_PASSWORD_CHANGED"
     USER_DELETED = "USER_DELETED"
     PROFILE_UPDATED = "PROFILE_UPDATED"
+    AVATAR_UPDATED = "AVATAR_UPDATED"
+    AVATAR_REMOVED = "AVATAR_REMOVED"
     GROUP_CREATED = "GROUP_CREATED"
     GROUP_UPDATED = "GROUP_UPDATED"
     GROUP_DELETED = "GROUP_DELETED"
@@ -275,6 +277,8 @@ class AuditEvent(TenantOwned, Base):
             AuditAction.USER_PASSWORD_CHANGED,
             AuditAction.USER_DELETED,
             AuditAction.PROFILE_UPDATED,
+            AuditAction.AVATAR_UPDATED,
+            AuditAction.AVATAR_REMOVED,
             AuditAction.PROFILE_ATTRIBUTE_CREATED,
             AuditAction.PROFILE_ATTRIBUTE_UPDATED,
             AuditAction.PROFILE_ATTRIBUTE_DELETED,

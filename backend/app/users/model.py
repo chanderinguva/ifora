@@ -74,6 +74,7 @@ class User(TenantOwned, Base):
     lockout_until = Column(DateTime(timezone=True), nullable=True)
     password_changed_at = Column(DateTime(timezone=True), nullable=True)
     # One-time code an operator/super admin hands to an admin who must enrol a first factor.
+    avatar_etag = Column(String(16), nullable=True)  # set while a profile picture exists (its bytes live in user_avatars)
     enrollment_code_hash = Column(String(64), nullable=True)
     enrollment_code_expires_at = Column(DateTime(timezone=True), nullable=True)
 
@@ -199,6 +200,7 @@ class User(TenantOwned, Base):
             "passkey_count": len(self.passkeys),
             "passkey_required": self.passkey_required,
             "mfa_setup_required": self.needs_mfa_setup,
+            "avatar_etag": self.avatar_etag,
             "enrollment_code_by_email": self.enrollment_code_by_email,
         }
         return result

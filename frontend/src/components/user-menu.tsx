@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { LogOut, Settings, ShieldCheck, UserRound } from "lucide-react";
 import { logout } from "@/lib/auth-client";
 import { http } from "@/lib/http";
+import { Avatar } from "./avatar";
 import { useCurrentUser } from "./auth-guard";
 
 /** Account menu: account settings, switch role view (admins), log out. State is lifted so the user-view banner can open it. */
@@ -66,7 +67,15 @@ export function UserMenu({
 
   const roleLabel = user.acting_as_user ? "user view" : user.is_super_admin ? "super admin" : user.is_admin ? "admin" : "";
   const fullName = [user.first_name, user.last_name].filter(Boolean).join(" ");
-  const initials = (((user.first_name?.[0] ?? "") + (user.last_name?.[0] ?? "")) || (user.email?.[0] ?? "?")).toUpperCase();
+  const [etag, setEtag] = useState<string | null>(user.avatar_etag ?? null);
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent<{ id: number; etag: string | null }>).detail;
+      if (d.id === user.id) setEtag(d.etag);
+    };
+    window.addEventListener("avatar-changed", on);
+    return () => window.removeEventListener("avatar-changed", on);
+  }, [user.id]);
 
   return (
     <div className="relative text-sm" ref={menuRef}>
@@ -75,10 +84,10 @@ export function UserMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         title={roleLabel ? `${user.email} · ${roleLabel}` : user.email}
-        className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground outline-none ring-offset-background hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        className="inline-flex h-9 w-9 items-center justify-center rounded-full outline-none ring-offset-background hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         onClick={() => onOpenChange(!open)}
       >
-        <span aria-hidden="true">{initials}</span>
+        <Avatar user={{ ...user, avatar_etag: etag }} size={36} className="bg-primary text-primary-foreground" />
         {/* the account stays in the accessible name (and the DOM) even though only the initials are drawn */}
         <span className="sr-only">
           <span data-testid="current-user">{user.email}</span>{roleLabel ? ` ${roleLabel}` : ""}
