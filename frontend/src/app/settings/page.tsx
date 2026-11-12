@@ -58,7 +58,7 @@ export default function AccountSettings() {
     loadSessions();
     http<{ items: ActivityRow[] }>("/me/activity").then((r) => setActivity(r.items)).catch(() => {});
     // the factor cards announce changes so the "setup required" banner clears right after enrolling
-    const refresh = () => http<User>("/me/profile").then((u) => setMe((m) => (m ? { ...m, mfa_setup_required: u.mfa_setup_required, mfa_enabled: u.mfa_enabled, passkey_count: u.passkey_count } : u))).catch(() => {});
+    const refresh = () => http<User>("/me/profile").then((u) => setMe((m) => (m ? { ...m, mfa_setup_required: u.mfa_setup_required, enrollment_code_by_email: u.enrollment_code_by_email, mfa_enabled: u.mfa_enabled, passkey_count: u.passkey_count } : u))).catch(() => {});
     window.addEventListener("factors-changed", refresh);
     return () => window.removeEventListener("factors-changed", refresh);
   }, []);
@@ -96,7 +96,7 @@ export default function AccountSettings() {
       {me.mfa_setup_required && (
         <Alert variant="warning" className="mb-4" data-testid="mfa-required-banner">
           <AlertDescription>
-            <strong>Action required:</strong> administrators must protect their account with a passkey or an authenticator app. You need a one-time enrolment code for this: ask a super admin, or the operator (<code>python -m backend.cli issue-enrollment-code &lt;email&gt;</code>). Then set one up under Security below to unlock the admin area.
+            <strong>Action required:</strong> administrators must protect their account with a passkey or an authenticator app. You need a one-time enrolment code for this: {me.enrollment_code_by_email ? "we can email one to you below" : <>ask a super admin, or the operator (<code>python -m backend.cli issue-enrollment-code &lt;email&gt;</code>)</>}. Then set one up under Security below to unlock the admin area.
           </AlertDescription>
         </Alert>
       )}
@@ -169,8 +169,8 @@ export default function AccountSettings() {
       </Card>
 
       <h2 className="mb-3 mt-8 text-lg font-semibold" id="security">Security</h2>
-      <PasskeyCard needsCode={!!me.mfa_setup_required} />
-      <MfaCard needsCode={!!me.mfa_setup_required} />
+      <PasskeyCard needsCode={!!me.mfa_setup_required} emailCode={!!me.enrollment_code_by_email} />
+      <MfaCard needsCode={!!me.mfa_setup_required} emailCode={!!me.enrollment_code_by_email} />
 
       <Card className="mb-6">
         <CardHeader><CardTitle>Change password</CardTitle></CardHeader>

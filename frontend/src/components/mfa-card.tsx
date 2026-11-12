@@ -1,5 +1,6 @@
 "use client";
 
+import { EnrolCodeField } from "@/components/enrol-code-field";
 import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { Button } from "@/components/ui/button";
@@ -14,7 +15,7 @@ type Status = { enabled: boolean; pending: boolean; recovery_codes_remaining: nu
 type Mode = "idle" | "password" | "scan" | "disable" | "regen";
 
 /** Self-service two-step verification: enrol, disable, regenerate recovery codes. */
-export function MfaCard({ needsCode = false }: { needsCode?: boolean }) {
+export function MfaCard({ needsCode = false, emailCode = false }: { needsCode?: boolean; emailCode?: boolean }) {
   const [enrolCode, setEnrolCode] = useState("");
   const [status, setStatus] = useState<Status | null>(null);
   const [mode, setMode] = useState<Mode>("idle");
@@ -140,11 +141,7 @@ export function MfaCard({ needsCode = false }: { needsCode?: boolean }) {
             <Label htmlFor="mfa-pw">Confirm your password to continue</Label>
             <Input id="mfa-pw" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
             {needsCode && (
-              <>
-                <Label htmlFor="mfa-enrol-code">Enrolment code</Label>
-                <Input id="mfa-enrol-code" autoComplete="off" placeholder="XXXX-XXXX-XXXX" value={enrolCode} onChange={(e) => setEnrolCode(e.target.value)} />
-                <p className="text-xs text-muted-foreground">Administrators need a one-time code from a super admin or the operator to set up their first sign-in factor.</p>
-              </>
+              <EnrolCodeField id="mfa-enrol-code" value={enrolCode} onChange={setEnrolCode} canEmail={emailCode} />
             )}
             <div className="flex gap-2">
               <Button type="submit" disabled={!password}>Continue</Button>

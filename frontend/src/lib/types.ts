@@ -14,6 +14,7 @@ export type User = {
   passkey_count?: number;
   passkey_required?: boolean;
   mfa_setup_required?: boolean;
+  enrollment_code_by_email?: boolean;
   /** This session has dropped admin powers ("user view"); only present on /me. */
   acting_as_user?: boolean;
   groups?: { id: number; name: string; type?: string }[];

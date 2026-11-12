@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from backend.app import ratelimit
+from backend.app import mailer, ratelimit
 from backend.app.audit.model import AuditAction
 from backend.app.audit.service import record
 from backend.app.auth import mfa, mfa_service
@@ -216,6 +216,35 @@ def admin_reset_mfa(
     result = mfa_service.reset_all_factors(db, user)
     record(db, AuditAction.MFA_RESET, request, actor, user.id, "user", result)
     db.commit()
+    return {"success": True}
+
+
+@router.post("/me/mfa/enrollment-code/email")
+def email_enrollment_code(request: Request, db: Session = Depends(get_db), auth=Depends(get_session_and_user)):
+    """Mail the signed-in admin a fresh one-time enrolment code at their own address."""
+    check_origin(request)
+    _, user, _ = auth
+    if not user.enrollment_code_by_email:
+        raise HTTPException(status_code=409, detail="Enrolment codes are not emailed for this account")
+    ident = f"u{user.id}"
+    ratelimit.check("enrol_mail", ident, 3)
+    ratelimit.hit("enrol_mail", ident, 600)
+    code = mfa_service.issue_enrollment_code(user)
+    record(
+        db, AuditAction.ENROLLMENT_CODE_ISSUED, request, user, user.id, "user",
+        {"expires_in_hours": mfa_service.ENROLLMENT_CODE_HOURS, "via": "email"},
+    )
+    db.commit()
+    body = (
+        f"Your one-time enrolment code is {code}\n\n"
+        f"Enter it under Account settings > Security to set up your passkey or authenticator app. "
+        f"It works once and expires in {mfa_service.ENROLLMENT_CODE_HOURS} hours.\n\n"
+        "If you did not ask for this, you can ignore this message; the code is useless without your password."
+    )
+    try:
+        mailer.send(mailer.build(user.email, "Your Ifora enrolment code", body))
+    except Exception:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail="The mail server did not accept the message")
     return {"success": True}
 
 
