@@ -1,4 +1,4 @@
-# Drone CI: on every push to main, build the api / recipes-worker / frontend images, push them to GHCR under the
+# Drone CI: on every push to main, first pass backend tests and frontend checks, then build the api / recipes-worker / frontend images, push them to GHCR under the
 # repository owner, then roll the demo stack and the local dev/prod stack onto them (scripts/ci-deploy.sh).
 #
 # The repo must be marked "Trusted" in Drone (Settings), because the steps mount the Docker socket and the host's home
@@ -29,7 +29,35 @@ volumes:
       path: /Users/chanderinguva
 
 steps:
+  # Tests have no Docker socket, host home, or deployment credentials.
+  - name: test-backend
+    image: python:3.12-slim
+    depends_on: []
+    environment:
+      DATABASE_URL: postgresql+psycopg2://ifora_ci:ci_only@ci-postgres:5432/postgres
+      REDIS_URL: redis://ci-redis:6379/0
+      TEST_DB_NAME: ifora_ci_test
+      TEST_REDIS_DB: "15"
+      SESSION_COOKIE_SECURE: "false"
+      PUBLIC_APP_URL: http://localhost:3000
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    commands:
+      - apt-get update
+      - apt-get install -y --no-install-recommends build-essential libpq-dev pkg-config libxml2-dev libxmlsec1-dev libxmlsec1-openssl
+      - pip install --no-cache-dir -r backend/requirements-dev.txt
+      - python scripts/ci-test-backend.py
+
+  - name: check-frontend
+    image: node:20-bookworm-slim
+    depends_on: []
+    commands:
+      - cd frontend
+      - npm ci
+      - npm run lint
+      - npm run type-check
+
   - name: build-and-push
+    depends_on: [test-backend, check-frontend]
     image: docker:27-cli
     environment:
       HOME: /Users/chanderinguva
@@ -74,3 +102,15 @@ steps:
         path: /var/run/docker.sock
       - name: home
         path: /Users/chanderinguva
+
+# Ephemeral services on the pipeline network; no host ports, external networks,
+# persistent volumes, or connections to either deployed stack.
+services:
+  - name: ci-postgres
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ifora_ci
+      POSTGRES_PASSWORD: ci_only
+      POSTGRES_DB: postgres
+  - name: ci-redis
+    image: redis:7-alpine
