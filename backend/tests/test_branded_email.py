@@ -53,7 +53,12 @@ def test_preview_and_live_messages_use_matching_branding(admin, outbox):
     assert 'cid:ifora-identity-logo' in html.get_content()
     assert 'TEST ENVIRONMENT' in html.get_content()
     assert msg.get_content_type() == "multipart/alternative"
-    assert html.get_payload()[1].get("Content-ID") == "<ifora-identity-logo>"
+    logos = [part for part in msg.walk() if part.get("Content-ID") == "<ifora-identity-logo>"]
+    assert len(logos) == 1
+    assert logos[0].get_content_type() == "image/png"
+    assert logos[0].get_content_disposition() == "inline"
+    assert logos[0].get_payload(decode=True).startswith(b"\x89PNG\r\n\x1a\n")
+
 
 
 def test_custom_html_is_escaped_and_not_executable(db, admin):

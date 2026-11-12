@@ -27,7 +27,7 @@ def outbox(monkeypatch):
 def test_public_branding_defaults_need_no_sign_in(anon):
     r = anon.get("/branding")
     assert r.status_code == 200
-    assert r.json() == {"display_name": "Ifora", "custom_name": False, "primary_color": None, "tagline": None, "has_logo": False, "logo_rev": None}
+    assert r.json() == {"display_name": "Ifora", "custom_name": False, "primary_color": None, "tagline": None, "has_logo": False, "logo_rev": None, "environment": "test", "environment_label": "TEST"}
     assert anon.get("/branding/logo").status_code == 404
 
 
@@ -72,7 +72,10 @@ def test_only_permitted_admins_edit_branding(member, anon, super_admin, admin):
 
 def test_templates_list_with_defaults_and_variables(admin):
     r = admin.get("/admin/email-templates").json()
-    assert {i["key"] for i in r["items"]} == {"invite", "reset"}
+    assert {i["key"] for i in r["items"]} == {
+        "invite", "reset", "mfa_enrollment", "email_verification",
+        "account_unlock", "password_changed", "security_alert", "account_deactivated",
+    }
     inv = next(i for i in r["items"] if i["key"] == "invite")
     assert inv["customised"] is False and "{{link}}" in inv["body"] and set(inv["variables"]) == set(T.VARIABLES)
 
@@ -104,18 +107,18 @@ def test_custom_template_is_used_for_real_email_and_can_be_reset(db, admin, outb
     assert r.status_code == 200 and r.json()["customised"] is True
     uid = admin.post("/admin/users", {"email": "tpl@example.com", "first_name": "Tess", "last_name": "T", "send_invite": True}).json()["id"]
     msg = outbox[-1]
-    assert msg["Subject"] == "Welcome to Acme Corp, Tess"
-    assert re.search(r"Join Acme Corp here: http\S+#token=\S+ \(valid 72 hours\)", msg.get_content())
+    assert msg["Subject"] == "[TEST] Welcome to Acme Corp, Tess"
+    assert re.search(r"Join Acme Corp here: http\S+#token=\S+ \(valid 72 hours\)", msg.get_body(preferencelist=("plain",)).get_content())
     admin.delete("/admin/email-templates/invite")
     admin.post(f"/admin/users/{uid}/send-invite")
-    assert outbox[-1]["Subject"] == "You have been invited to Acme Corp"          # built-in text, still branded
+    assert outbox[-1]["Subject"] == "[TEST] You have been invited to Acme Corp"          # built-in text, still branded
 
 
-def test_defaults_match_the_pre_branding_wording(db, admin, outbox):
+def test_defaults_preserve_invite_content_with_environment_subject(db, admin, outbox):
     admin.post("/admin/users", {"email": "plain@example.com", "first_name": "Pat", "last_name": "P", "send_invite": True})
     m = outbox[-1]
-    assert m["Subject"] == "You have been invited to Ifora"
-    assert "Hello Pat," in m.get_content() and "expires in 72 hours" in m.get_content()
+    assert m["Subject"] == "[TEST] You have been invited to Ifora"
+    assert "Hello Pat," in m.get_body(preferencelist=("plain",)).get_content() and "expires in 72 hours" in m.get_body(preferencelist=("plain",)).get_content()
 
 
 def test_values_cannot_inject_headers_or_more_variables(db, admin, outbox):
@@ -129,7 +132,7 @@ def test_values_cannot_inject_headers_or_more_variables(db, admin, outbox):
     admin.post(f"/admin/users/{u['id']}/send-invite")
     msg = outbox[-1]
     assert "\n" not in msg["Subject"] and "Bcc" not in msg.keys()
-    body = msg.get_content()
+    body = msg.get_body(preferencelist=("plain",)).get_content()
     assert body.count("#token=") == 1                                              # the {{link}} inside the name was not expanded
 
 
@@ -139,7 +142,7 @@ def test_stored_template_that_no_longer_validates_falls_back(db, admin, outbox):
     db.add(EmailTemplate(key="reset", subject="Broken", body="no link at all"))
     db.commit()
     subject, body = T.compose(db, "reset", first_name="A", link="https://x.test/l", valid_for="1 hour")
-    assert "https://x.test/l" in body and subject.startswith("Reset your")
+    assert "https://x.test/l" in body and subject == "[TEST] Reset your Ifora password"
 
 
 def test_send_test_goes_only_to_the_signed_in_admin(admin, outbox):
