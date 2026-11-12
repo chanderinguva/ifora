@@ -63,11 +63,19 @@ def main():
     database = validate_endpoints()
     wait_for_services(database)
     backend = Path(__file__).resolve().parents[1] / "backend"
+    workers = os.environ.get("CI_TEST_WORKERS", "2")
+    if workers not in {"1", "2", "3", "4"}:
+        raise SystemExit("CI_TEST_WORKERS must be 1..4 (default 2)")
+    args = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "--durations=25"]
+    if workers != "1":
+        args += ["-n", workers, "--dist=loadfile", "--max-worker-restart=0"]
+    print(f"Running complete backend suite with {workers} isolated worker(s)", flush=True)
     return subprocess.call(
-        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "--durations=25"],
+        args,
         cwd=backend,
     )
 
 
 if __name__ == "__main__":
     sys.exit(main())
+

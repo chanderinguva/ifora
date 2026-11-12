@@ -9,7 +9,9 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-TEST_DB = os.environ.get("TEST_DB_NAME", "ifora_test")
+from backend.tests.ci_resources import worker_resources
+
+TEST_DB, TEST_REDIS_DB = worker_resources(os.environ)
 _base = os.environ["DATABASE_URL"]  # run inside the api container (or export DATABASE_URL)
 _u = urlparse(_base)
 _test_url = urlunparse(_u._replace(path=f"/{TEST_DB}"))
@@ -33,7 +35,7 @@ from cryptography.fernet import Fernet as _F
 os.environ["OIDC_KEY_ENCRYPTION_KEY"] = _F.generate_key().decode()
 # Isolated Redis database for rate-limit state (never the dev db 0)
 _redis_base = os.environ.get("REDIS_URL", "redis://localhost:6379/0").rsplit("/", 1)[0]
-os.environ["REDIS_URL"] = f"{_redis_base}/{os.environ.get('TEST_REDIS_DB', '15')}"
+os.environ["REDIS_URL"] = f"{_redis_base}/{TEST_REDIS_DB}"
 
 
 def _ensure_database():
@@ -92,9 +94,12 @@ def _clean_redis():
     import redis
 
     r = redis.Redis.from_url(os.environ["REDIS_URL"])
-    r.flushdb()
-    yield
-    r.flushdb()
+    try:
+        r.flushdb()
+        yield
+    finally:
+        r.flushdb()
+        r.close()
 
 
 @pytest.fixture(autouse=True)
@@ -203,3 +208,4 @@ def member(db):
     assert a.login(u.email).status_code == 200
     a.user = u
     return a
+

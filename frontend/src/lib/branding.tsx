@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 import { API_URL } from "./api";
+import { deploymentTitle } from "./deployment-title";
 
 export type Branding = { display_name: string; custom_name: boolean; primary_color: string | null; tagline: string | null; has_logo: boolean; logo_rev: string | null; environment: string; environment_label: string };
 export const DEFAULT_BRANDING: Branding = { display_name: "Ifora", custom_name: false, primary_color: null, tagline: null, has_logo: false, logo_rev: null, environment: "unknown", environment_label: "" };
@@ -46,6 +47,12 @@ export function BrandingProvider({ children }: { children: React.ReactNode }) {
   const [branding, setBranding] = useState<Branding>(DEFAULT_BRANDING);
   const [n, setN] = useState(0);
   useEffect(() => {
+    document.title = deploymentTitle(
+      process.env.NEXT_PUBLIC_APP_ENVIRONMENT || branding.environment,
+      branding.display_name,
+    );
+  }, [branding.environment, branding.display_name]);
+  useEffect(() => {
     let alive = true;
     fetch(`${API_URL}/api/v1/branding`).then((r) => (r.ok ? r.json() : null)).then((b) => { if (alive && b) setBranding(b); }).catch(() => {});
     return () => { alive = false; };
@@ -59,3 +66,4 @@ export function BrandingProvider({ children }: { children: React.ReactNode }) {
   }, [branding.primary_color]);
   return <Ctx.Provider value={{ branding, reload: () => setN((x) => x + 1) }}>{children}</Ctx.Provider>;
 }
+

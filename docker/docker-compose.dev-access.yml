@@ -1,0 +1,67 @@
+# Opt-in only, LAST before docker-compose.ci.yml. Requires Compose 2.24+.
+# Configure Cloudflare Access on BOTH hostnames before starting dev-tunnel.
+services:
+  backend-api:
+    environment:
+      - SESSION_COOKIE_SECURE=true
+      - PUBLIC_APP_URL=https://ifora.app
+      - CORS_ORIGINS=["https://ifora.app"]
+      - OIDC_LOGIN_UI_URL=https://ifora.app/oauth/authorize
+      - OIDC_LOGOUT_UI_URL=https://ifora.app/oauth/logout
+      - FORWARDED_ALLOW_IPS=172.31.78.2
+      # Access is an outer gate, not a replacement for Ifora's admin login/MFA.
+      - ACCESS_SSO_ENABLED=false
+    ports: !override
+      - "127.0.0.1:8000:8000"
+    networks:
+      default: {}
+      dev_access: {}
+
+  frontend:
+    environment:
+      # Same-origin API requests share the browser's Access cookie.
+      - NEXT_PUBLIC_API_URL=https://ifora.app
+      - NEXT_PUBLIC_APP_ENVIRONMENT=development
+    build:
+      args:
+        NEXT_PUBLIC_API_URL: https://ifora.app
+        NEXT_PUBLIC_APP_ENVIRONMENT: development
+    ports: !override
+      - "127.0.0.1:3000:3000"
+    networks:
+      default: {}
+      dev_access: {}
+
+  dev-edge:
+    image: caddy:2.8-alpine
+    container_name: ifora-dev-edge
+    restart: unless-stopped
+    depends_on:
+      backend-api:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+    volumes:
+      - ./dev-access/Caddyfile:/etc/caddy/Caddyfile:ro
+    networks:
+      dev_access:
+        ipv4_address: 172.31.78.2
+
+  dev-tunnel:
+    image: cloudflare/cloudflared:2026.10.7
+    container_name: ifora-dev-tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --protocol http2 --edge-ip-version 4 run
+    environment:
+      TUNNEL_TOKEN: ${IFORA_DEV_TUNNEL_TOKEN:?set IFORA_DEV_TUNNEL_TOKEN in docker/.env}
+    depends_on:
+      - dev-edge
+    networks:
+      - dev_access
+
+networks:
+  dev_access:
+    ipam:
+      config:
+        - subnet: 172.31.78.0/24
+          ip_range: 172.31.78.128/25

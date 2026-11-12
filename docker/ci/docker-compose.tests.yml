@@ -1,0 +1,46 @@
+# Disposable PR verification only. Never use a deployed stack's environment file.
+name: ifora-ci-check
+services:
+  ci-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ifora_ci
+      POSTGRES_PASSWORD: ci_only
+      POSTGRES_DB: postgres
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ifora_ci -d postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  ci-redis:
+    image: redis:7-alpine
+    tmpfs:
+      - /data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  tests:
+    image: ifora-ci-backend:py312
+    pull_policy: never
+    working_dir: /workspace
+    volumes:
+      - ../..:/workspace:ro
+    environment:
+      DATABASE_URL: postgresql+psycopg2://ifora_ci:ci_only@ci-postgres:5432/postgres
+      REDIS_URL: redis://ci-redis:6379/0
+      TEST_DB_NAME: ifora_ci_test
+      TEST_REDIS_DB: "15"
+      CI_TEST_WORKERS: ${CI_TEST_WORKERS:-2}
+      SESSION_COOKIE_SECURE: "false"
+      PUBLIC_APP_URL: http://localhost:3000
+      PYTHONDONTWRITEBYTECODE: "1"
+    depends_on:
+      ci-postgres:
+        condition: service_healthy
+      ci-redis:
+        condition: service_healthy
+    command: ["sh", "-c", "python -m unittest discover -s scripts/tests -v && python scripts/ci-test-backend.py"]

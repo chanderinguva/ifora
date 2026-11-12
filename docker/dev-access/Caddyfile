@@ -1,0 +1,52 @@
+# Private dev ingress. Cloudflare handles TLS and Access; no published ports.
+{
+	auto_https off
+	log {
+		output stderr
+		format filter {
+			wrap json
+			request>headers>Cf-Access-Jwt-Assertion delete
+			request>headers>Cookie delete
+			request>headers>Authorization delete
+			request>headers>X-Csrf-Token delete
+			resp_headers>Set-Cookie delete
+		}
+	}
+}
+
+(backend) {
+	reverse_proxy backend-api:8000 {
+		header_up X-Forwarded-For {header.CF-Connecting-IP}
+		header_up X-Forwarded-Proto https
+		header_up -X-Real-IP
+	}
+}
+
+:80 {
+	@blocked path /metrics /docs /redoc /openapi.json
+	handle @blocked {
+		respond 404
+	}
+
+	# Preserve the existing API hostname for integrations and issuer URLs.
+	@api host api.ifora.app
+	handle @api {
+		import backend
+	}
+
+	# Browser calls stay on ifora.app, behind the same Access session.
+	@backend path /api/* /oauth/token /oauth/userinfo /oauth/jwks /oauth/revoke /.well-known/* /saml/metadata /saml/sso /scim/* /health
+	handle @backend {
+		import backend
+	}
+	handle {
+		reverse_proxy frontend:3000 {
+			header_up X-Forwarded-Proto https
+		}
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		-Server
+	}
+}

@@ -1,9 +1,10 @@
 import type { MetadataRoute } from "next";
+import { deploymentTitle } from "@/lib/deployment-title";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Ifora",
-    short_name: "Ifora",
+    name: deploymentTitle(process.env.NEXT_PUBLIC_APP_ENVIRONMENT),
+    short_name: deploymentTitle(process.env.NEXT_PUBLIC_APP_ENVIRONMENT),
     description: "Identity, secure access and automation in one platform.",
     start_url: "/",
     display: "standalone",
@@ -16,3 +17,4 @@ export default function manifest(): MetadataRoute.Manifest {
     ],
   };
 }
+

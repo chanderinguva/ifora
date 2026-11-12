@@ -31,8 +31,10 @@ services:
     ports: !reset []
     environment:
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+      - NEXT_PUBLIC_APP_ENVIRONMENT=demo
     build:
       args:
+        NEXT_PUBLIC_APP_ENVIRONMENT: demo
         # Same origin as the app: the browser calls https://demo.ifora.app/api/v1/... and the edge routes it.
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?set NEXT_PUBLIC_API_URL=https://demo.ifora.app in docker/.env.demo}
 
@@ -72,3 +74,4 @@ networks:
         - subnet: 172.31.77.0/24
           # Auto-assigned addresses come from the upper half, so 172.31.77.2 stays free for the edge.
           ip_range: 172.31.77.128/25
+
