@@ -49,10 +49,21 @@ steps:
         path: /Users/chanderinguva
         read_only: true
 
+  # Reuse dependency layers locally; never publish test images to GHCR.
+  - name: prepare-test-images
+    image: docker:27-cli
+    depends_on: [preflight]
+    commands:
+      - sh scripts/ci-prepare-test-images.sh
+    volumes:
+      - name: dockersock
+        path: /var/run/docker.sock
+
   # Tests have no Docker socket, host home, or deployment credentials.
   - name: test-backend
-    image: python:3.12-slim
-    depends_on: [preflight]
+    image: ifora-ci-backend:py312
+    pull: never
+    depends_on: [prepare-test-images]
     environment:
       DATABASE_URL: postgresql+psycopg2://ifora_ci:ci_only@ci-postgres:5432/postgres
       REDIS_URL: redis://ci-redis:6379/0
@@ -62,17 +73,16 @@ steps:
       PUBLIC_APP_URL: http://localhost:3000
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
     commands:
-      - apt-get update
-      - apt-get install -y --no-install-recommends build-essential libpq-dev pkg-config libxml2-dev libxmlsec1-dev libxmlsec1-openssl
-      - pip install --no-cache-dir -r backend/requirements-dev.txt
       - python scripts/ci-test-backend.py
 
   - name: check-frontend
-    image: node:20-bookworm-slim
-    depends_on: [preflight]
+    image: ifora-ci-frontend:node20
+    pull: never
+    depends_on: [prepare-test-images]
     commands:
       - cd frontend
-      - npm ci
+      - ln -s /opt/ci/frontend/node_modules node_modules
+      - trap 'rm -f node_modules' EXIT
       - npm run lint
       - npm run type-check
 

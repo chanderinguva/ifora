@@ -64,7 +64,7 @@ def main():
     wait_for_services(database)
     backend = Path(__file__).resolve().parents[1] / "backend"
     return subprocess.call(
-        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"],
+        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "--durations=25"],
         cwd=backend,
     )
 
