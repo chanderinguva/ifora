@@ -1,5 +1,6 @@
 # Drone CI for this Mac: server (UI, webhooks, scheduler) + docker runner (executes pipelines on the local Docker daemon).
-# A separate compose project ("ifora-drone"): it cannot touch the "ifora" (dev/prod) or "ifora-demo" stacks.
+# Drone services belong to project "ifora-drone". The shared Docker socket grants the runner daemon-wide access;
+# trusted main-branch pipelines intentionally deploy to "ifora-demo" and "ifora". Project names are not isolation.
 #
 # Setup (one time):
 #   1. GitHub > Settings > Developer settings > OAuth Apps > New. Homepage https://drone.ifora.app,
@@ -9,9 +10,11 @@
 #   3. Cloudflare Zero Trust > Networks > Tunnels > new tunnel "drone", public hostname drone.ifora.app -> http://drone:80.
 #      Put its token in DRONE_TUNNEL_TOKEN. GitHub must reach this host for webhooks and the OAuth callback, so do NOT put
 #      a Cloudflare Access policy on drone.ifora.app (Drone itself only lets DRONE_GITHUB_USER sign in).
-#   4. docker compose -p ifora-drone -f docker/drone/docker-compose.drone.yml --env-file docker/drone/.env.drone --profile tunnel up -d
+#   4. docker compose -p ifora-drone -f docker/drone/docker-compose.drone.yml --env-file docker/drone/.env.drone --profile tunnel up -d drone tunnel
 #   5. Open https://drone.ifora.app, log in with GitHub, Activate the repo (this creates the GitHub webhook),
-#      Settings: tick Trusted, add secrets ghcr_user and ghcr_token (PAT with write:packages).
+#      Add secrets ghcr_user and ghcr_token (PAT with write:packages); do not allow PR access.
+#   6. After reviewing the test-gated .drone.yml, enable Trusted and start the runner with the same compose command
+#      but replace "drone tunnel" with "runner". Cancel stale queued builds before starting it.
 name: ifora-drone
 
 services:
