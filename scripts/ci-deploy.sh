@@ -116,7 +116,11 @@ deploy_local() {
   images_for "${1:-}"
   [ -f "$LOCAL_ENV" ] || die "missing $LOCAL_ENV (set LOCAL_ENV)"
   ensure_image "$IMG_API"; ensure_image "$IMG_WORKER"; ensure_image "$IMG_FE_LOCAL"
-  local src files; src="$(mktemp -d)"; trap 'rm -rf "$src"' EXIT
+  local src files cleanup_cmd
+  src="$(mktemp -d)"
+  # Capture a shell-escaped path now: src is local and is out of scope at EXIT.
+  printf -v cleanup_cmd 'rm -rf -- %q' "$src"
+  trap "$cleanup_cmd" EXIT
   export_tree "$src"
   files=(-f "$src/docker/docker-compose.yml")
   [ -f "$LOCAL_OVERRIDE" ] && files+=(-f "$LOCAL_OVERRIDE")
