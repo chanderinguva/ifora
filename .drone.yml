@@ -5,6 +5,7 @@
 # directory: the deploy needs the stacks' env files and bind-mounted configs, which live outside the repo. The runner's
 # host path is the same as inside the step ($HOME below), so the compose bind mounts resolve on the host.
 # Secrets (Drone UI or CLI): ghcr_user (GitHub login), ghcr_token (PAT with write:packages).
+# Optional notifications: slack_webhook (Slack incoming webhook URL, no PR access).
 kind: pipeline
 type: docker
 name: build-and-deploy
@@ -141,6 +142,62 @@ steps:
       - name: home
         path: /Users/chanderinguva
 
+  # Notifications run alongside deployments, never as deployment prerequisites.
+  # Pin the verified multi-architecture Slack plugin (includes linux/arm64).
+  - name: slack-images-published
+    image: plugins/slack@sha256:9d15ee6c5bcbb5aafd52a9b7680c61c098bdac1c3940f7f0a2ac08aa964b42d6
+    depends_on: [build-and-push]
+    failure: ignore
+    settings:
+      webhook:
+        from_secret: slack_webhook
+      template: >-
+        Ifora build #${DRONE_BUILD_NUMBER}: tests passed and images published.
+        Deployments are starting. <${DRONE_BUILD_LINK}|View build>
+    when:
+      status: [success]
+
+  - name: slack-demo-deployed
+    image: plugins/slack@sha256:9d15ee6c5bcbb5aafd52a9b7680c61c098bdac1c3940f7f0a2ac08aa964b42d6
+    depends_on: [deploy-demo]
+    failure: ignore
+    settings:
+      webhook:
+        from_secret: slack_webhook
+      template: >-
+        Ifora build #${DRONE_BUILD_NUMBER}: demo deployment passed health checks.
+        Dev/prod deployment is next. <${DRONE_BUILD_LINK}|View build>
+    when:
+      status: [success]
+
+  - name: slack-pipeline-succeeded
+    image: plugins/slack@sha256:9d15ee6c5bcbb5aafd52a9b7680c61c098bdac1c3940f7f0a2ac08aa964b42d6
+    depends_on: [deploy-local, slack-images-published, slack-demo-deployed]
+    failure: ignore
+    settings:
+      webhook:
+        from_secret: slack_webhook
+      template: >-
+        Ifora build #${DRONE_BUILD_NUMBER} succeeded: tests and image publishing passed;
+        demo and dev/prod deployments both passed health checks.
+        Commit ${DRONE_COMMIT_SHA}. <${DRONE_BUILD_LINK}|View build>
+    when:
+      status: [success]
+
+  - name: slack-pipeline-failed
+    image: plugins/slack@sha256:9d15ee6c5bcbb5aafd52a9b7680c61c098bdac1c3940f7f0a2ac08aa964b42d6
+    depends_on: [preflight, prepare-test-images, test-backend, check-frontend, build-and-push, deploy-demo, deploy-local, slack-images-published, slack-demo-deployed]
+    failure: ignore
+    settings:
+      webhook:
+        from_secret: slack_webhook
+      template: >-
+        Ifora build #${DRONE_BUILD_NUMBER} failed. Check the failed step;
+        a deployment may have completed before a later failure. No automatic rollback.
+        Commit ${DRONE_COMMIT_SHA}. <${DRONE_BUILD_LINK}|View failure>
+    when:
+      status: [failure]
+
 # Ephemeral services on the pipeline network; no host ports, external networks,
 # persistent volumes, or connections to either deployed stack.
 services:
@@ -152,3 +209,4 @@ services:
       POSTGRES_DB: postgres
   - name: ci-redis
     image: redis:7-alpine
+

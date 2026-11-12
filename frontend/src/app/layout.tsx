@@ -1,25 +1,28 @@
 /** Root layout for the Ifora frontend. */
 
 import type { Metadata, Viewport } from "next";
-import { Inter, JetBrains_Mono, Lora } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { BrandingProvider } from "@/lib/branding";
 
-const inter = Inter({
-  subsets: ["latin"],
+const inter = localFont({
+  src: "./fonts/inter.woff2",
+  weight: "100 900",
   display: "swap",
   variable: "--font-inter",
 });
 
-const mono = JetBrains_Mono({
-  subsets: ["latin"],
+const mono = localFont({
+  src: "./fonts/jetbrains-mono.woff2",
+  weight: "100 800",
   display: "swap",
   variable: "--font-mono",
 });
 
-const lora = Lora({
-  subsets: ["latin"],
+const lora = localFont({
+  src: "./fonts/lora.woff2",
+  weight: "400 700",
   display: "swap",
   variable: "--font-lora",
 });
