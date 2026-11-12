@@ -35,6 +35,7 @@ services:
       TEST_DB_NAME: ifora_ci_test
       TEST_REDIS_DB: "15"
       CI_TEST_WORKERS: ${CI_TEST_WORKERS:-2}
+      CI_TEST_PROFILE: ${CI_TEST_PROFILE:-0}
       SESSION_COOKIE_SECURE: "false"
       PUBLIC_APP_URL: http://localhost:3000
       PYTHONDONTWRITEBYTECODE: "1"
