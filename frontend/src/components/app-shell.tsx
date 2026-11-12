@@ -10,6 +10,8 @@ import { Logo, LogoLink } from "./logo";
 import { SidebarNav, type NavGroup } from "./sidebar-nav";
 import { ThemeToggle } from "./theme-toggle";
 import { UserMenu } from "./user-menu";
+import { useBranding } from "@/lib/branding";
+import { EnvironmentBanner } from "./environment-banner";
 
 export type { NavGroup, NavItem } from "./sidebar-nav";
 
@@ -65,6 +67,7 @@ function MobileDrawer({ open, onClose, groups, home, title }: { open: boolean; o
 
 export function AppShell({ title, nav, children }: { title: string; nav: NavGroup[]; children: React.ReactNode }) {
   const user = useCurrentUser();
+  const { branding } = useBranding();
   const pathname = usePathname();
   const home = nav[0].items[0].href;
 
@@ -216,6 +219,7 @@ export function AppShell({ title, nav, children }: { title: string; nav: NavGrou
           </div>
         </header>
 
+        <EnvironmentBanner environment={branding.environment} label={branding.environment_label} />
         {user.is_admin && user.acting_as_user && (
           <div role="status" data-testid="user-view-banner" className="flex flex-wrap items-center justify-between gap-2 border-b bg-selected px-6 py-2 text-sm text-selected-foreground">
             <span>You are in <strong>user view</strong>. Administrator functions are switched off for this session.</span>

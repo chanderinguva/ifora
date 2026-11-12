@@ -3,8 +3,8 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { API_URL } from "./api";
 
-export type Branding = { display_name: string; custom_name: boolean; primary_color: string | null; tagline: string | null; has_logo: boolean; logo_rev: string | null };
-export const DEFAULT_BRANDING: Branding = { display_name: "Ifora", custom_name: false, primary_color: null, tagline: null, has_logo: false, logo_rev: null };
+export type Branding = { display_name: string; custom_name: boolean; primary_color: string | null; tagline: string | null; has_logo: boolean; logo_rev: string | null; environment: string; environment_label: string };
+export const DEFAULT_BRANDING: Branding = { display_name: "Ifora", custom_name: false, primary_color: null, tagline: null, has_logo: false, logo_rev: null, environment: "unknown", environment_label: "" };
 
 const Ctx = createContext<{ branding: Branding; reload: () => void }>({ branding: DEFAULT_BRANDING, reload: () => {} });
 export const useBranding = () => useContext(Ctx);

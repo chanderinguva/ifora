@@ -143,7 +143,7 @@ services:
       - RECIPES_EMAIL_ALLOWED_DOMAINS=${RECIPES_EMAIL_ALLOWED_DOMAINS:-}
       - RECIPES_ENABLED=${RECIPES_ENABLED:-true}
       - RECIPES_WORKER_HEARTBEAT_FILE=/tmp/recipes-worker.alive
-      - ENVIRONMENT=development
+      - ENVIRONMENT=${ENVIRONMENT:-development}
     healthcheck:
       test: ["CMD", "python", "-c", "import os,time,sys; sys.exit(0 if time.time()-os.path.getmtime('/tmp/recipes-worker.alive') < 30 else 1)"]
       interval: 15s

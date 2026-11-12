@@ -26,8 +26,8 @@ def sent(monkeypatch):
 
 
 def code_from(msg):
-    m = re.search(r"\b([A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4})\b", msg.get_content())
-    assert m, msg.get_content()
+    m = re.search(r"\b([A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4})\b", msg.get_body(preferencelist=("plain",)).get_content())
+    assert m, msg.get_body(preferencelist=("plain",)).get_content()
     return m.group(1)
 
 

@@ -13,6 +13,7 @@ import { KeyRound } from "lucide-react";
 import { ExpiredPasswordForm } from "@/components/password-form";
 import { useBranding } from "@/lib/branding";
 import { Logo } from "@/components/logo";
+import { EnvironmentBanner } from "@/components/environment-banner";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { inAdminView } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
@@ -144,7 +145,8 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center bg-muted">
+    <div className="relative flex min-h-screen flex-col items-center justify-center bg-muted">
+      <div className="absolute top-0 w-full"><EnvironmentBanner environment={branding.environment} label={branding.environment_label} /></div>
       <ThemeToggle className="absolute right-4 top-4 bg-background" />
       <Card className="w-full max-w-md">
         <CardHeader>

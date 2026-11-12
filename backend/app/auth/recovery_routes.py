@@ -66,19 +66,19 @@ def send_link(user: User, purpose: str, raw: str, db: Session) -> bool:
 
     url = password_tokens.link(raw, purpose)
     valid = f"{settings.INVITE_HOURS} hours" if purpose == "invite" else f"{settings.PASSWORD_RESET_MINUTES} minutes"
-    subject, body = templates.compose(db, "invite" if purpose == "invite" else "reset", first_name=user.first_name, link=url, valid_for=valid)
+    subject, body, html, logo = templates.rich_email(db, "invite" if purpose == "invite" else "reset", first_name=user.first_name, link=url, valid_for=valid)
     try:
-        mailer.send(mailer.build(user.email, subject, body), timeout=10)
+        mailer.send(mailer.build(user.email, subject, body, html=html, logo=logo), timeout=10)
         return True
     except Exception as e:  # noqa: BLE001 - never leak delivery details to an anonymous caller
         logger.warning("mail.send_failed", purpose=purpose, user_id=user.id, error=type(e).__name__)
         return False
 
 
-def _send_reset(user_id: int, raw: str) -> None:
+def _send_reset(user_id: int, raw: str, tenant_id: int) -> None:
     from backend.app.tenancy import tenant_session
 
-    db = tenant_session()
+    db = tenant_session(tenant_id)
     try:
         user = db.get(User, user_id)
         if user is not None:
@@ -102,7 +102,7 @@ def forgot_password(body: ForgotBody, request: Request, tasks: BackgroundTasks, 
         record(db, AuditAction.PASSWORD_RESET_REQUESTED, request, None, user.id, "user", {})
         db.commit()
         # After the response: SMTP takes a visible amount of time, which would tell a caller the address exists.
-        tasks.add_task(_send_reset, user.id, raw)
+        tasks.add_task(_send_reset, user.id, raw, db.info["tenant_id"])
     return _GENERIC
 
 

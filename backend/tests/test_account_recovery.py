@@ -21,7 +21,7 @@ def outbox(monkeypatch):
 
 
 def token_of(msg):
-    return re.search(r"#token=([A-Za-z0-9_\-]+)", msg.get_content()).group(1)
+    return re.search(r"#token=([A-Za-z0-9_\-]+)", msg.get_body(preferencelist=("plain",)).get_content()).group(1)
 
 
 def test_forgot_password_sends_a_link_and_reset_works_once(db, outbox):
@@ -29,7 +29,7 @@ def test_forgot_password_sends_a_link_and_reset_works_once(db, outbox):
     anon = Api()
     r = anon.post("/auth/forgot-password", {"email": u.email}, csrf=False)
     assert r.status_code == 200 and len(outbox) == 1
-    assert outbox[0]["To"] == u.email and "30 minutes" in outbox[0].get_content()
+    assert outbox[0]["To"] == u.email and "30 minutes" in outbox[0].get_body(preferencelist=("plain",)).get_content()
     tok = token_of(outbox[0])
     db.expire_all()
     assert tok not in str(db.query(PasswordToken.token_hash).all())            # only a keyed hash is stored
@@ -103,7 +103,7 @@ def test_invite_flow(db, admin, outbox):
     r = admin.post("/admin/users", {"email": "newbie@example.com", "first_name": "N", "last_name": "B", "send_invite": True})
     assert r.status_code == 201, r.text
     assert r.json()["status"] == "provisioned" and r.json()["invitation_sent"] is True and "temporary_password" not in r.json()
-    assert "72 hours" in outbox[0].get_content()
+    assert "72 hours" in outbox[0].get_body(preferencelist=("plain",)).get_content()
     assert Api().login("newbie@example.com", STRONG).status_code == 401              # not active, no usable password
     assert Api().post("/auth/reset-password", {"token": token_of(outbox[0]), "new_password": NEW}, csrf=False).status_code == 200
     s = Api()
