@@ -29,10 +29,30 @@ volumes:
       path: /Users/chanderinguva
 
 steps:
+  # Fail fast on credentials/tooling before spending time on the full test suite.
+  - name: preflight
+    image: docker:27-cli
+    depends_on: []
+    environment:
+      HOME: /Users/chanderinguva
+      GHCR_USER:
+        from_secret: ghcr_user
+      GHCR_TOKEN:
+        from_secret: ghcr_token
+    commands:
+      - apk add --no-cache bash git tar
+      - bash scripts/ci-docker.sh preflight
+    volumes:
+      - name: dockersock
+        path: /var/run/docker.sock
+      - name: home
+        path: /Users/chanderinguva
+        read_only: true
+
   # Tests have no Docker socket, host home, or deployment credentials.
   - name: test-backend
     image: python:3.12-slim
-    depends_on: []
+    depends_on: [preflight]
     environment:
       DATABASE_URL: postgresql+psycopg2://ifora_ci:ci_only@ci-postgres:5432/postgres
       REDIS_URL: redis://ci-redis:6379/0
@@ -49,7 +69,7 @@ steps:
 
   - name: check-frontend
     image: node:20-bookworm-slim
-    depends_on: []
+    depends_on: [preflight]
     commands:
       - cd frontend
       - npm ci
@@ -67,7 +87,7 @@ steps:
         from_secret: ghcr_token
     commands:
       - apk add --no-cache bash git tar
-      - bash scripts/ci-deploy.sh build
+      - bash scripts/ci-docker.sh build
     volumes:
       - name: dockersock
         path: /var/run/docker.sock
@@ -78,10 +98,14 @@ steps:
     image: docker:27-cli
     environment:
       HOME: /Users/chanderinguva
+      GHCR_USER:
+        from_secret: ghcr_user
+      GHCR_TOKEN:
+        from_secret: ghcr_token
     depends_on: [build-and-push]
     commands:
       - apk add --no-cache bash git tar
-      - bash scripts/ci-deploy.sh deploy demo
+      - bash scripts/ci-docker.sh deploy demo
     volumes:
       - name: dockersock
         path: /var/run/docker.sock
@@ -93,10 +117,14 @@ steps:
     image: docker:27-cli
     environment:
       HOME: /Users/chanderinguva
+      GHCR_USER:
+        from_secret: ghcr_user
+      GHCR_TOKEN:
+        from_secret: ghcr_token
     depends_on: [deploy-demo]
     commands:
       - apk add --no-cache bash git tar
-      - bash scripts/ci-deploy.sh deploy local
+      - bash scripts/ci-docker.sh deploy local
     volumes:
       - name: dockersock
         path: /var/run/docker.sock
