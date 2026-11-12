@@ -24,6 +24,7 @@ export type Definition = {
 
 export type RecipeSummary = {
   id: number;
+  folder_id?: number | null;
   name: string;
   description: string | null;
   enabled: boolean;
@@ -77,7 +78,7 @@ export type RecipeMeta = {
 /** A pre-built connector from the server's catalog (ADR 026). */
 export type ConnectorField = { key: string; label: string; secret: boolean; pattern: string | null; max_length: number };
 export type ConnectorInput = { key: string; label: string; type: "string" | "integer" | "boolean" | "select"; required: boolean; default: unknown; options: string[]; max_length: number; multiline?: boolean };
-export type ConnectorAction = { id: string; label: string; description: string; method: string; read_only: boolean; idempotent: boolean; inputs: ConnectorInput[]; outputs: string[] };
+export type ConnectorAction = { id: string; label: string; description: string; method: string; read_only: boolean; idempotent: boolean; inputs: ConnectorInput[]; outputs: string[]; required_scopes?: string[]; scope_by_input?: Record<string, Record<string, string[]>> };
 export type ConnectorInfo = {
   id: string; version: number; name: string; category: string; description: string; hosts: string[];
   auth: { scheme: string; fields: ConnectorField[] }; actions: ConnectorAction[];
@@ -118,10 +119,10 @@ export type Job = {
 export type Connection = {
   id: number;
   name: string;
-  kind: "bearer" | "header" | "oauth2_client_credentials" | "slack_webhook" | "connector";
+  kind: "bearer" | "header" | "oauth2_client_credentials" | "slack_webhook" | "connector" | "http";
   connector_id?: string | null;
   connector_version?: number | null;
-  config?: Record<string, string> | null;
+  config?: Record<string, any> | null;
   header_name: string | null;
   allowed_host: string;
   allowed_paths?: string[];
@@ -133,7 +134,34 @@ export type Connection = {
   can_use?: boolean;
   can_manage?: boolean;
   allowed_users?: number[] | null;
+  sharing_scope?: "legacy" | "organization" | "folder";
+  folder_ids?: number[];
+  use_group_ids?: number[];
+  manage_group_ids?: number[];
+  granted_scopes?: string[] | null;
+  scopes_checked_at?: string | null;
+  oauth_authorized?: boolean;
 };
+
+export type RecipeFolder = { id: number; name: string; use_group_ids: number[]; manage_group_ids: number[]; can_manage: boolean };
+
+export function availableConnection(c: Connection, folderId?: number | null): boolean {
+  return c.can_use !== false && (!c.sharing_scope || c.sharing_scope === "legacy" || (c.sharing_scope === "organization" && !c.folder_ids?.length) || (c.folder_ids ?? []).includes(folderId ?? -1));
+}
+
+export function actionScopes(a: ConnectorAction, inputs: Record<string, unknown> = {}): string[] {
+  const scopes = [...(a.required_scopes ?? [])];
+  for (const [key, choices] of Object.entries(a.scope_by_input ?? {})) {
+    const raw = String(inputs[key] ?? a.inputs.find((i) => i.key === key)?.default ?? "");
+    const value = key === "channel" && choices[raw.slice(0, 1)] ? raw.slice(0, 1) : raw.toLowerCase();
+    scopes.push(...(choices[value] ?? []));
+  }
+  return [...new Set(scopes)];
+}
+
+export function actionAllowed(a: ConnectorAction, c: Connection | undefined, inputs: Record<string, unknown> = {}): boolean {
+  return c?.granted_scopes == null || actionScopes(a, inputs).every((s) => c.granted_scopes!.includes(s));
+}
 
 export const OPERATOR_LABELS: Record<string, string> = {
   equals: "equals", not_equals: "does not equal", contains: "contains", starts_with: "starts with",

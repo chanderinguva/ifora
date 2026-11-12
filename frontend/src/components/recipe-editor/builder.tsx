@@ -14,7 +14,7 @@ import { Studio } from "@/components/recipe-editor/studio";
 import { FunctionsContext } from "@/components/recipe-editor/pill-context";
 import { Select, type Ctx } from "@/components/recipe-editor/forms";
 import { http, qs, type Page } from "@/lib/http";
-import type { Connection, Definition, Job, RecipeMeta, RecipeSummary } from "@/lib/recipes";
+import { availableConnection, type Connection, type Definition, type Job, type RecipeMeta, type RecipeSummary, type RecipeFolder } from "@/lib/recipes";
 import type { Group, User } from "@/lib/types";
 
 
@@ -27,6 +27,8 @@ export function RecipeBuilder() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
+  const [folders, setFolders] = useState<RecipeFolder[]>([]);
+  const [folderId, setFolderId] = useState<number | null>(null);
   const [connAvail, setConnAvail] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -38,7 +40,7 @@ export function RecipeBuilder() {
   const [hist] = useState({ past: [] as Definition[], future: [] as Definition[], last: 0, rev: 0 });
   const [resultRev, setResultRev] = useState(0);
 
-  const adopt = (r: RecipeSummary) => { setRecipe(r); setName(r.name); if (r.draft) setDef(r.draft); setDirty(false); };
+  const adopt = (r: RecipeSummary) => { setRecipe(r); setName(r.name); setFolderId(r.folder_id ?? null); if (r.draft) setDef(r.draft); setDirty(false); };
   const load = useCallback(() => {
     http<RecipeSummary>(`/admin/recipes/${id}`).then(adopt).catch((e) => setMsg({ ok: false, text: e.message }));
     http<{ items: { version: number; published_at: string }[] }>(`/admin/recipes/${id}/versions`).then((v) => setVersions(v.items)).catch(() => {});
@@ -50,10 +52,11 @@ export function RecipeBuilder() {
     http<Page<Group>>(`/admin/groups${qs({ count: 100 })}`).then((r) => setGroups(r.Resources.filter((g) => !g.is_system_group))).catch(() => {});
     http<Page<User>>(`/admin/users${qs({ count: 100 })}`).then((r) => setUsers(r.Resources)).catch(() => {});
     http<{ items: Connection[] }>("/admin/recipe-connections").then((r) => setConnections(r.items)).catch(() => {});
+    http<{ items: RecipeFolder[] }>("/admin/recipe-folders").then((r) => setFolders(r.items)).catch(() => {});
     http<{ connections_available: boolean }>("/admin/recipes/status").then((s) => setConnAvail(s.connections_available)).catch(() => {});
   }, []);
 
-  const ctx: Ctx | null = useMemo(() => (meta && def ? { meta, groups, connections, connectionsAvailable: connAvail, trigger: def.trigger.type, root: def.steps } : null), [meta, def, groups, connections, connAvail]);
+  const ctx: Ctx | null = useMemo(() => (meta && def ? { meta, groups, connections: connections.filter((c) => availableConnection(c, folderId)), folderId, connectionAdded: (c: Connection) => setConnections((items) => [...items.filter((x) => x.id !== c.id), c]), connectionsAvailable: connAvail, trigger: def.trigger.type, root: def.steps } : null), [meta, def, groups, connections, connAvail, folderId]);
   if (!recipe || !def || !meta || !ctx) return <div><PageHeader title="Recipe" />{msg && <Alert variant="destructive"><AlertDescription>{msg.text}</AlertDescription></Alert>}</div>;
 
   const trig = meta.triggers.find((t) => t.type === def.trigger.type)!;
@@ -75,7 +78,7 @@ export function RecipeBuilder() {
     setMsg(null);
     try { await fn(); if (ok) setMsg({ ok: true, text: ok }); } catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : "Failed" }); }
   }
-  const save = async () => { const r = await http<RecipeSummary>(`/admin/recipes/${id}`, { method: "PUT", body: { name, description: recipe.description, definition: def } }); adopt(r); load(); return r; };
+  const save = async () => { const r = await http<RecipeSummary>(`/admin/recipes/${id}`, { method: "PUT", body: { name, description: recipe.description, definition: def, folder_id: folderId } }); adopt(r); load(); return r; };
 
   return (
     <FunctionsContext.Provider value={meta.functions ?? []}>
@@ -97,6 +100,7 @@ export function RecipeBuilder() {
 
       <div className="mb-4 flex flex-wrap items-end gap-3">
         <div className="space-y-1"><Label htmlFor="rb-name">Recipe name</Label><Input id="rb-name" className="w-72" maxLength={100} value={name} onChange={(e) => { setName(e.target.value); setDirty(true); }} /></div>
+        <div className="space-y-1"><Label htmlFor="rb-folder">Folder</Label><select id="rb-folder" className={fieldClass} value={folderId ?? ""} disabled={!canManage} onChange={(e) => { setFolderId(e.target.value ? Number(e.target.value) : null); setDirty(true); }}><option value="">Unfiled</option>{folders.filter((f) => f.can_manage || f.id === folderId).map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}</select></div>
         <Button disabled={!dirty || !name.trim() || !canEdit} onClick={() => act(save, "Draft saved")}>Save draft</Button>
         <Button variant="secondary" disabled={def.steps.length === 0 || !canManage} onClick={() => act(async () => { if (dirty) await save(); const r = await http<RecipeSummary>(`/admin/recipes/${id}/publish`, { method: "POST" }); adopt(r); if (r.webhook_secret) setSecret(r.webhook_secret); load(); }, "Published as a new immutable version")}>Publish</Button>
         {recipe.enabled

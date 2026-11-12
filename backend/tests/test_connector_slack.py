@@ -15,7 +15,7 @@ from tests.recipe_helpers import Remote, public_resolver
 
 S = registry.get("slack")
 SECRETS = {"token": "xoxb-SECRET-TOKEN-1"}
-GOOD = {"email": "a@b.co", "channel": "C0123ABCD", "user_id": "U0123ABCD", "text": "Hello\nworld", "thread_ts": "1700000000.000100"}
+GOOD = {"email": "a@b.co", "channel": "C0123ABCD", "user_id": "U0123ABCD", "text": "Hello\nworld", "thread_ts": "1700000000.000100", "name": "operations", "cursor": ""}
 
 
 def act(aid):
@@ -128,7 +128,7 @@ def test_ids_cannot_change_the_request_shape(aid):
             path, _, query = p.path_and_query.partition("?")
             assert p.host == "slack.com" and path == a.path and len(query.split("&") if query else []) == len(a.query)
             if p.body:
-                assert set(json.loads(p.body)) <= {"channel", "text", "thread_ts", "users", "user"}
+                assert set(json.loads(p.body)) <= {"channel", "text", "thread_ts", "users", "user", "name", "is_private"}
 
 
 def test_free_text_stays_inside_the_json_body():

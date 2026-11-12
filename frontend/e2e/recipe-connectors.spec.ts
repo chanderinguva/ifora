@@ -16,27 +16,26 @@ test("connect a pre-built connector, see it listed, test it, edit without re-ent
 
   // the form is generated from the connector's fields and tells you what is missing
   await page.getByRole("button", { name: "Connect GitHub" }).click();
-  const form = page.getByTestId("connector-connection-editor");
-  await expect(form).toContainText("Connect GitHub");
-  await expect(page.getByTestId("connector-problem")).toBeVisible();
-  await expect(form.getByRole("button", { name: "Save connection" })).toBeDisabled();
+  const form = page.getByTestId("connection-editor");
+  await expect(form.getByLabel("Connection name")).toBeVisible();
+  await expect(form.getByLabel("Organisation")).toHaveAttribute("required", "");
 
   // a value the definition forbids is refused by the server
-  await form.getByLabel("Name", { exact: true }).fill(connName);
+  await form.getByLabel("Connection name", { exact: true }).fill(connName);
   await form.getByLabel("Organisation").fill("not/valid");
   await form.getByLabel("Personal access token or app token").fill("ghp_e2e_fake_token_value");
-  await form.getByRole("button", { name: "Save connection" }).click();
-  await expect(page.getByRole("status").filter({ hasText: "invalid format" })).toBeVisible();
+  await form.getByRole("button", { name: "Create connection" }).click();
+  await expect(form.getByRole("alert").filter({ hasText: "invalid format" })).toBeVisible();
 
   await form.getByLabel("Organisation").fill("acme-e2e");
-  await form.getByRole("button", { name: "Save connection" }).click();
+  await form.getByRole("button", { name: "Create connection" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Connection saved" })).toBeVisible();
 
   // listed, secret hidden
   const row = page.getByTestId("connections-table").locator("tr", { hasText: connName });
   await expect(row).toContainText("GitHub");
   await expect(row).toContainText("api.github.com");
-  await expect(row).toContainText("stored, hidden");
+  await expect(row).toContainText("Credentials hidden");
   await expect(page.locator("body")).not.toContainText("ghp_e2e_fake_token_value");
 
   // the test button answers with a message either way (the fake token is refused, or the sandbox has no egress)
@@ -64,11 +63,11 @@ test("the editor offers the connector action step and its outputs become datapil
 
   await page.goto("/admin/recipes/connections");
   await page.getByRole("button", { name: "Connect GitHub" }).click();
-  const form = page.getByTestId("connector-connection-editor");
-  await form.getByLabel("Name", { exact: true }).fill(name);
+  const form = page.getByTestId("connection-editor");
+  await form.getByLabel("Connection name", { exact: true }).fill(name);
   await form.getByLabel("Organisation").fill("acme-e2e");
   await form.getByLabel("Personal access token or app token").fill("ghp_e2e_fake_token_value");
-  await form.getByRole("button", { name: "Save connection" }).click();
+  await form.getByRole("button", { name: "Create connection" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Connection saved" })).toBeVisible();
 
   await page.goto("/admin/recipes");
@@ -114,10 +113,10 @@ test("a Slack bot-token connection is offered as Slack actions, and the older we
 
   await page.goto("/admin/recipes/connections");
   await page.getByRole("button", { name: "Connect Slack" }).click();
-  const form = page.getByTestId("connector-connection-editor");
-  await form.getByLabel("Name", { exact: true }).fill(name);
+  const form = page.getByTestId("connection-editor");
+  await form.getByLabel("Connection name", { exact: true }).fill(name);
   await form.getByLabel(/Bot token/).fill("xoxb-e2e-fake-token-value");
-  await form.getByRole("button", { name: "Save connection" }).click();
+  await form.getByRole("button", { name: "Create connection" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Connection saved" })).toBeVisible();
 
   await page.goto("/admin/recipes");

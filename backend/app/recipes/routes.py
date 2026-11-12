@@ -31,8 +31,10 @@ from backend.app.connectors import registry as connector_registry
 from backend.app.recipes import conditions as cond
 from backend.app.recipes import crypto, definition as defn, engine, formula, portable
 from backend.app.recipes import templates as tpl
+from backend.app.recipes import access
+from backend.app.recipes.sharing import SharingBody, apply_sharing, require_folder
 from backend.app.recipes.models import (
-    LookupTable, Recipe, RecipeConnection, RecipeJob, RecipeJobStep, RecipeVersion,
+    LookupTable, Recipe, RecipeConnection, RecipeJob, RecipeJobStep, RecipeVersion, RecipeFolder,
 )
 from backend.app.recipes.redact import redact
 from backend.app.users.model import User
@@ -71,6 +73,7 @@ def _recipe_dict(db: Session, r: Recipe, detail: bool = False, viewer: Optional[
     last = db.query(RecipeJob).filter(RecipeJob.recipe_id == r.id, RecipeJob.mode == "live").order_by(RecipeJob.id.desc()).first()
     d = {
         "id": r.id,
+        "folder_id": r.folder_id,
         "name": r.name,
         "description": r.description,
         "enabled": r.enabled,
@@ -148,12 +151,18 @@ def _get(db: Session, rid: int) -> Recipe:
 
 def can_edit(user: User, r: Recipe) -> bool:
     """Draft editing and dry runs: the owner, listed editors and super admins."""
-    return bool(user.is_super_admin or user.id == r.owner_id or user.id in (r.editors or []))
+    from sqlalchemy.orm import object_session
+    db = object_session(r)
+    folder = db.get(RecipeFolder, r.folder_id) if db and r.folder_id else None
+    return bool(user.is_super_admin or user.id == r.owner_id or user.id in (r.editors or []) or (folder and access.can_use_folder(user, folder)))
 
 
 def can_manage(user: User, r: Recipe) -> bool:
     """Publish, enable, run, delete, job control, access settings: the owner and super admins. Editors cannot."""
-    return bool(user.is_super_admin or user.id == r.owner_id)
+    from sqlalchemy.orm import object_session
+    db = object_session(r)
+    folder = db.get(RecipeFolder, r.folder_id) if db and r.folder_id else None
+    return bool(user.is_super_admin or user.id == r.owner_id or (folder and access.can_manage_folder(user, folder)))
 
 
 def _need(db: Session, rid: int, actor: User, level: str) -> Recipe:
@@ -163,9 +172,9 @@ def _need(db: Session, rid: int, actor: User, level: str) -> Recipe:
     return r
 
 
-def _validated(db: Session, definition: Any, for_publish: bool = False, actor: Optional[User] = None) -> dict:
+def _validated(db: Session, definition: Any, for_publish: bool = False, actor: Optional[User] = None, folder_id=None) -> dict:
     try:
-        return defn.validate_definition(db, definition, for_publish=for_publish, actor=actor)
+        return defn.validate_definition(db, definition, for_publish=for_publish, actor=actor, folder_id=folder_id)
     except defn.DefinitionError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -407,6 +416,7 @@ class RecipeBody(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     description: Optional[str] = Field(None, max_length=500)
     definition: Optional[Dict[str, Any]] = None
+    folder_id: Optional[int] = None
 
 
 @router.get("")
@@ -414,12 +424,13 @@ def list_recipes(db: Session = Depends(get_db), actor: User = Depends(require_ad
     return {"items": [_recipe_dict(db, r, viewer=actor) for r in db.query(Recipe).order_by(Recipe.id).all()]}
 
 
-def _create(db: Session, actor: User, request: Request, name: str, description: Optional[str], definition: Any, meta: Optional[dict] = None) -> Recipe:
+def _create(db: Session, actor: User, request: Request, name: str, description: Optional[str], definition: Any, meta: Optional[dict] = None, folder_id=None) -> Recipe:
     if db.query(func.count(Recipe.id)).scalar() >= settings.RECIPES_MAX_RECIPES:
         raise HTTPException(status_code=409, detail=f"At most {settings.RECIPES_MAX_RECIPES} recipes")
-    d = _validated(db, definition, actor=actor)
+    require_folder(db, actor, folder_id)
+    d = _validated(db, definition, actor=actor, folder_id=folder_id)
     r = Recipe(public_id=secrets.token_urlsafe(16).replace("-", "a").replace("_", "b")[:22], name=name.strip(),
-               description=description, enabled=False, draft=d, created_by=actor.id, owner_id=actor.id, editors=[])
+               description=description, enabled=False, draft=d, created_by=actor.id, owner_id=actor.id, editors=[], folder_id=folder_id)
     db.add(r)
     try:
         db.flush()
@@ -433,7 +444,7 @@ def _create(db: Session, actor: User, request: Request, name: str, description: 
 
 @router.post("", status_code=201)
 def create_recipe(body: RecipeBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
-    r = _create(db, actor, request, body.name, body.description, body.definition if body.definition is not None else defn.blank_definition())
+    r = _create(db, actor, request, body.name, body.description, body.definition if body.definition is not None else defn.blank_definition(), folder_id=body.folder_id)
     return _recipe_dict(db, r, detail=True, viewer=actor)
 
 
@@ -448,6 +459,7 @@ class FromTemplateBody(BaseModel):
     template_id: str = Field(..., max_length=60)
     name: str = Field(..., min_length=1, max_length=100)
     params: Dict[str, Any] = Field(default_factory=dict)
+    folder_id: Optional[int] = None
 
 
 @router.post("/from-template", status_code=201)
@@ -466,8 +478,16 @@ def from_template(body: FromTemplateBody, request: Request, db: Session = Depend
                 raise bad
         elif spec["type"] == "slack_connection":
             c = db.get(RecipeConnection, v) if isinstance(v, int) and not isinstance(v, bool) else None
-            if c is None or c.kind != "slack_webhook":
+            if c is None or not (c.kind == "slack_webhook" or (c.kind == "connector" and c.connector_id == "slack")):
                 raise bad
+            if not access.can_use_in_recipe(actor, c, body.folder_id):
+                raise HTTPException(403, "This connection is not available to this recipe")
+            p["slack_bot"] = c.kind == "connector"
+            if p["slack_bot"]:
+                channel = body.params.get("channel", "")
+                if not isinstance(channel, str) or not re.fullmatch(r"[CGDUW][A-Z0-9]{2,20}", channel):
+                    raise HTTPException(422, "Choose a Slack channel or user ID for this bot connection")
+                p["channel"] = channel
         elif spec["type"] == "attribute":
             if v not in managed:
                 raise bad
@@ -477,7 +497,7 @@ def from_template(body: FromTemplateBody, request: Request, db: Session = Depend
         elif not isinstance(v, str) or not 1 <= len(v) <= 200:
             raise bad
         p[k] = v
-    r = _create(db, actor, request, body.name, t["description"], t["build"](p), {"template": t["id"]})
+    r = _create(db, actor, request, body.name, t["description"], t["build"](p), {"template": t["id"]}, folder_id=body.folder_id)
     return _recipe_dict(db, r, detail=True, viewer=actor)
 
 
@@ -555,8 +575,21 @@ def get_recipe(recipe_id: int, db: Session = Depends(get_db), actor: User = Depe
 @router.put("/{recipe_id}")
 def update_recipe(recipe_id: int, body: RecipeBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
     r = _need(db, recipe_id, actor, "edit")
+    target_folder = body.folder_id if "folder_id" in body.model_fields_set else r.folder_id
+    if target_folder != r.folder_id:
+        if not can_manage(actor, r):
+            raise HTTPException(403, "Only a recipe manager may move a recipe")
+        require_folder(db, actor, target_folder, manage=True)
+        # Also check the published version; moving a draft cannot invalidate a live recipe silently.
+        if r.published_version:
+            v = db.query(RecipeVersion).filter_by(recipe_id=r.id, version=r.published_version).first()
+            if v:
+                _validated(db, v.definition, actor=actor, folder_id=target_folder)
     if body.definition is not None:
-        r.draft = _validated(db, body.definition, actor=actor)
+        r.draft = _validated(db, body.definition, actor=actor, folder_id=target_folder)
+    elif target_folder != r.folder_id:
+        _validated(db, r.draft, actor=actor, folder_id=target_folder)
+    r.folder_id = target_folder
     r.name, r.description, r.updated_at = body.name.strip(), body.description, NOW()
     try:
         db.flush()
@@ -587,7 +620,7 @@ def _new_webhook_secret(r: Recipe) -> str:
 @router.post("/{recipe_id}/publish")
 def publish(recipe_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
     r = _need(db, recipe_id, actor, "manage")
-    d = _validated(db, r.draft, for_publish=True, actor=actor)
+    d = _validated(db, r.draft, for_publish=True, actor=actor, folder_id=r.folder_id)
     secret = None
     if d["trigger"]["type"] == "webhook":
         if not crypto.available():
@@ -668,7 +701,7 @@ def restore_version(recipe_id: int, version: int, request: Request, db: Session 
     v = db.query(RecipeVersion).filter(RecipeVersion.recipe_id == recipe_id, RecipeVersion.version == version).first()
     if v is None:
         raise HTTPException(status_code=404, detail="Version not found")
-    r.draft = _validated(db, v.definition, actor=actor)   # the catalog may have changed since: say so rather than save a broken draft
+    r.draft = _validated(db, v.definition, actor=actor, folder_id=r.folder_id)
     r.updated_at = NOW()
     _audit(db, AuditAction.RECIPE_UPDATED, actor, r.id, {"name": r.name, "restored_version": version}, request)
     db.commit()
@@ -734,7 +767,7 @@ def _sample_trigger(db: Session, d: dict, body: RunBody, admin: User) -> dict:
 def test_run(recipe_id: int, body: RunBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
     """Dry run of the DRAFT: nothing is written and no request is sent."""
     r = _need(db, recipe_id, actor, "edit")
-    d = _validated(db, r.draft, actor=actor)
+    d = _validated(db, r.draft, actor=actor, folder_id=r.folder_id)
     ctx = _sample_trigger(db, d, body, actor)
     _audit(db, AuditAction.RECIPE_TEST_RUN, actor, r.id, {"trigger": d["trigger"]["type"]}, request)
     job = engine.run_dry(db, r, d, ctx)
@@ -749,7 +782,7 @@ class PreviewBody(RunBody):
 def formula_preview(recipe_id: int, body: PreviewBody, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
     """Evaluate fields (pills and formulas) against a sample event. Reads only; earlier steps' outputs are not available."""
     r = _need(db, recipe_id, actor, "edit")
-    d = _validated(db, r.draft, actor=actor)
+    d = _validated(db, r.draft, actor=actor, folder_id=r.folder_id)
     data = {"trigger": _sample_trigger(db, d, body, actor), "steps": {}, "recipe": {"id": r.id, "name": r.name, "version": 0}, "job": {"id": 0}}
     items = []
     for t in body.templates:
@@ -785,7 +818,7 @@ _HEADER = re.compile(r"^[A-Za-z0-9-]{1,100}$")
 _FORBIDDEN = {"host", "content-length", "transfer-encoding", "connection", "upgrade", "te", "trailer", "expect"}
 
 
-class ConnectionBody(BaseModel):
+class ConnectionBody(SharingBody):
     name: str = Field(..., min_length=1, max_length=100)
     kind: str = Field(..., pattern="^(bearer|header|oauth2_client_credentials|slack_webhook)$")
     header_name: Optional[str] = Field(None, max_length=100)
@@ -808,6 +841,10 @@ def _conn_dict(c: RecipeConnection, viewer: Optional[User] = None) -> dict:
         "id": c.id, "name": c.name, "kind": c.kind, "header_name": c.header_name, "allowed_host": c.allowed_host,
         "allowed_paths": c.allowed_paths or [], "client_id": c.client_id, "token_url": c.token_url, "scope": c.scope,
         "connector_id": c.connector_id, "connector_version": c.connector_version, "config": c.config or {},
+        "sharing_scope": c.sharing_scope, "folder_ids": c.folder_ids or [],
+        "use_group_ids": c.use_group_ids or [], "manage_group_ids": (c.manage_group_ids or []) if manage else [],
+        "granted_scopes": c.granted_scopes, "scopes_checked_at": c.scopes_checked_at.isoformat() if c.scopes_checked_at else None,
+        "oauth_authorized": bool(c.kind == "http" and (c.config or {}).get("auth_type") == "oauth2_authorization_code" and c.scopes_checked_at),
         "has_secret": True, "created_at": c.created_at.isoformat(), "updated_at": c.updated_at.isoformat(),
     }
 
@@ -884,6 +921,7 @@ def create_connection(body: ConnectionBody, request: Request, db: Session = Depe
                          allowed_host=host, secret_enc=crypto.encrypt(body.secret), created_by=actor.id)
     _apply_extras(c, body)
     c.allowed_users = _acl_ids(db, body.allowed_users)
+    apply_sharing(db, actor, c, body, creating=True)
     db.add(c)
     try:
         db.flush()
@@ -906,13 +944,18 @@ def update_connection(cid: int, body: ConnectionBody, request: Request, db: Sess
         raise HTTPException(status_code=403, detail="Only the creator of this connection or a super admin can change it")
     if c.connector_id:
         raise HTTPException(status_code=409, detail="This is a connector connection: change it through /admin/connectors")
+    if c.kind == "http":
+        raise HTTPException(409, "Change HTTP connections through /admin/recipe-connections/http")
     _need_key()
     host = _conn_checks(body)
+    if (c.kind != body.kind or c.allowed_host != host) and not body.secret:
+        raise HTTPException(422, "Re-enter the credential when changing its authentication type or host")
     c.name, c.kind, c.allowed_host = body.name.strip(), body.kind, host
     if body.allowed_users is not None:
         c.allowed_users = _acl_ids(db, body.allowed_users)
     c.header_name = body.header_name if body.kind == "header" else None
     _apply_extras(c, body)
+    apply_sharing(db, actor, c, body)
     rotated = bool(body.secret)
     if body.secret:
         c.secret_enc = crypto.encrypt(body.secret)
@@ -960,10 +1003,9 @@ def delete_connection(cid: int, request: Request, db: Session = Depends(get_db),
     if not access.can_manage_connection(actor, c):
         raise HTTPException(status_code=403, detail="Only the creator of this connection or a super admin can delete it")
     name = c.name
-    if c.connector_id:
-        used = _recipes_using_connection(db, cid)
-        if used:
-            raise HTTPException(status_code=409, detail="Used by recipes: " + ", ".join(used[:5]) + ". Remove or change those steps first.")
+    used = _recipes_using_connection(db, cid)
+    if used:
+        raise HTTPException(status_code=409, detail="Used by recipes: " + ", ".join(used[:5]) + ". Remove or change those steps first.")
     db.delete(c)
     record(db, AuditAction.RECIPE_CONNECTION_DELETED, request, actor, cid, "recipe_connection", {"name": name})
     db.commit()

@@ -253,6 +253,19 @@ def _oauth_token(rc: RunCtx, conn: RecipeConnection, client_secret: str, policy)
     return token
 
 
+def _check_runtime_connection(rc, conn):
+    if conn.sharing_scope == "legacy":
+        return
+    from backend.app.recipes.models import Recipe
+    from backend.app.recipes.access import can_use_in_recipe
+    from backend.app.admin_roles.permissions import effective
+    from backend.app.admin_roles.resolve import roles_of
+    recipe = rc.db.get(Recipe, rc.recipe_id)
+    actor = rc.db.get(User, recipe.owner_id) if recipe and recipe.owner_id else None
+    if actor is None or actor.status != "active" or not actor.is_admin or not (actor.is_super_admin or effective(roles_of(rc.db, actor.id)).get("automation") == "write") or not can_use_in_recipe(actor, conn, recipe.folder_id):
+        raise StepError("The recipe owner no longer has permission to use this connection")
+
+
 def _http(rc: RunCtx, cfg: dict):
     method = cfg["method"]
     url = str(rc.render(cfg["url"], tainted_ok=True))
@@ -267,23 +280,42 @@ def _http(rc: RunCtx, cfg: dict):
             conn = rc.db.get(RecipeConnection, cfg["connection_id"])
             if conn is None:
                 raise StepError("connection not found")
+            _check_runtime_connection(rc, conn)
             conn_name = conn.name
             if conn.kind == "slack_webhook":
                 raise StepError("Slack connections can only be used by the Slack step")
             if conn.kind == "connector":
                 raise StepError("Connector connections can only be used by connector steps")
-            _, host, _, path = validate_url(url, policy)
+            scheme, host, port, path = validate_url(url, policy)
             if host != conn.allowed_host.lower():
                 raise StepError("this connection may only be used for " + conn.allowed_host)
             if not path_allowed(path, conn.allowed_paths):
                 raise StepError("this connection may not be used for that path")
+            if conn.kind == "http" and (scheme != "https" or port != 443):
+                raise StepError("HTTP connections require the pinned HTTPS origin on port 443")
             if not rc.dry:
                 try:
                     secret_value = crypto.decrypt(conn.secret_enc)
                 except crypto.RecipeKeyError as e:
                     raise StepError(str(e))
                 rc.secrets.append(secret_value)
-                if conn.kind == "bearer":
+                if conn.kind == "http":
+                    from backend.app.recipes import http_auth
+                    try:
+                        auth = http_auth.config(conn.config)
+                        sec = http_auth.values(conn)
+                        if auth.auth_type.startswith("oauth2"):
+                            token, derived = http_auth.access_token(rc.db, conn, auth, policy=policy,
+                                resolver=http_overrides.get("resolver"), transport=http_overrides.get("transport"))
+                            rc.secrets.extend(derived)
+                            auth = http_auth.HttpConfig(auth_type="bearer")
+                            sec = {"token": token}
+                        url, headers, body, sensitive = http_auth.inject(auth, sec, url, headers, body)
+                        rc.secrets.extend(sensitive)
+                        body_bytes = None if body is None else body.encode()
+                    except http_auth.AuthError as e:
+                        raise StepError(str(e)) from None
+                elif conn.kind == "bearer":
                     headers["Authorization"] = f"Bearer {secret_value}"
                 elif conn.kind == "oauth2_client_credentials":
                     token = _oauth_token(rc, conn, secret_value, policy)
@@ -301,11 +333,17 @@ def _http(rc: RunCtx, cfg: dict):
     inp = redact({
         "method": method, "url": _SENSITIVE_QS.sub(r"\1[REDACTED]", url),
         "headers": {k: v for k, v in headers.items() if k != "Idempotency-Key"},
-        "body": (body_bytes.decode(errors="replace")[:2000] if body_bytes is not None else None),
+        "body": (redact_text(body_bytes.decode(errors="replace")[:2000]) if body_bytes is not None else None),
         "connection": conn_name,
     })
-    if secret_value:
-        inp = scrub(inp, [secret_value])
+    inp = scrub(inp, rc.secrets)
+    if cfg.get("connection_id") is not None and conn.kind == "http":
+        # Generic headers/bodies may contain credentials under arbitrary names.
+        inp["headers"] = {k: "[REDACTED]" for k in inp["headers"]}
+        inp["body"] = "[REDACTED]" if body_bytes is not None else None
+        from urllib.parse import urlsplit, urlunsplit
+        parts = urlsplit(url)
+        inp["url"] = urlunsplit((parts.scheme, parts.netloc, parts.path, "[REDACTED]" if parts.query else "", ""))
     if rc.dry:
         return inp, {"dry_run": True, "status_code": None, "ok": None, "body": "", "json": None}
     try:
@@ -339,6 +377,8 @@ def _http(rc: RunCtx, cfg: dict):
 
 def _slack(rc: RunCtx, cfg: dict):
     conn = rc.db.get(RecipeConnection, cfg["connection_id"])
+    if conn is not None:
+        _check_runtime_connection(rc, conn)
     if conn is None or conn.kind != "slack_webhook":
         raise StepError("choose a Slack webhook connection")
     raw = str(rc.render(cfg["message"], tainted_ok=True))[:3000]
@@ -470,7 +510,11 @@ def _connector_action(rc: RunCtx, cfg: dict):
     conn = rc.db.get(RecipeConnection, cfg["connection_id"])
     if conn is None or conn.kind != "connector" or conn.connector_id != c.id:
         raise StepError(f"choose a {c.name} connection")
+    _check_runtime_connection(rc, conn)
     raw = {k: rc.render(v) for k, v in cfg["inputs"].items()}
+    from backend.app.connectors.scopes import action_available
+    if not action_available(a, conn.granted_scopes, raw):
+        raise StepError("This connection is missing a required action scope")
     secrets: dict = {}
     try:
         config, _ = ce.validate_config(c, conn.config or {}, {}, partial_secrets=True)   # the stored settings still match the definition

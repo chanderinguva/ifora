@@ -167,7 +167,10 @@ TEMPLATES: List[dict] = [
                    {"key": "min_failures", "label": "After this many failures", "type": "number"}],
         "build": lambda p: {
             "trigger": {"type": "login.failed", "config": {"min_failures": int(p["min_failures"])}, "filter": []},
-            "steps": [{"id": "s1", "type": "send_slack", "config": {"connection_id": p["connection"],
+            "steps": [{"id": "s1", "type": "connector_action", "config": {"connector": "slack", "action": "post_message",
+                       "connection_id": p["connection"], "inputs": {"channel": p["channel"],
+                       "text": "{{trigger.user.email}} has {{trigger.login.consecutive_failures}} failed sign-ins in a row"}}}]
+                       if p.get("slack_bot") else [{"id": "s1", "type": "send_slack", "config": {"connection_id": p["connection"],
                        "message": "{{trigger.user.email}} has {{trigger.login.consecutive_failures}} failed sign-ins in a row"}}],
         },
     },

@@ -19,6 +19,7 @@ reply:
   retry_codes: [ratelimited, internal_error, service_unavailable, fatal_error, request_timeout]
 actions:
   - id: lookup_user_by_email
+    required_scopes: ["users:read.email"]
     label: Find user by email
     description: Needs the users:read.email scope.
     method: GET
@@ -36,6 +37,7 @@ actions:
       invalid_auth: The bot token was refused.
 
   - id: post_message
+    required_scopes: ["chat:write"]
     label: Post a message
     description: Posts to a channel the bot is in, or to a person's user id (a direct message).
     method: POST
@@ -57,6 +59,8 @@ actions:
       invalid_auth: The bot token was refused.
 
   - id: invite_to_channel
+    scope_by_input:
+      channel: {C: ["channels:manage"], G: ["groups:write"]}
     label: Add user to channel
     method: POST
     path: /api/conversations.invite
@@ -76,6 +80,8 @@ actions:
       invalid_auth: The bot token was refused.
 
   - id: remove_from_channel
+    scope_by_input:
+      channel: {C: ["channels:manage"], G: ["groups:write"]}
     label: Remove user from channel
     method: POST
     path: /api/conversations.kick
@@ -92,3 +98,41 @@ actions:
       missing_scope: The app needs the channels:manage or groups:write scope.
       invalid_auth: The bot token was refused.
     idempotent: true
+
+  - id: create_channel
+    label: Create channel
+    description: Create a public or private channel. The app needs channels:manage for public channels or groups:write for private channels.
+    method: POST
+    path: /api/conversations.create
+    scope_by_input:
+      is_private: {"false": ["channels:manage"], "true": ["groups:write"]}
+    inputs:
+      - {key: name, label: Channel name, type: string, required: true, pattern: '^[a-z0-9_-]{1,80}$', max_length: 80}
+      - {key: is_private, label: Private channel, type: boolean, default: false}
+    body: {name: "{name}", is_private: "{is_private}"}
+    outputs:
+      - {key: channel_id, from: "$.channel.id"}
+      - {key: channel_name, from: "$.channel.name"}
+    body_errors:
+      name_taken: A channel with this name already exists.
+      invalid_name: Choose a valid Slack channel name.
+      restricted_action: Workspace policy does not allow this app to create the channel.
+      missing_scope: Reinstall the app with channels:manage for public channels or groups:write for private channels.
+      invalid_auth: The bot token was refused.
+
+  - id: list_channels
+    label: List channels
+    description: Lists public channels visible to the app. Requires channels:read.
+    method: GET
+    path: /api/conversations.list
+    required_scopes: ["channels:read"]
+    query: {types: public_channel, exclude_archived: "true", limit: "100", cursor: "{cursor}"}
+    inputs:
+      - {key: cursor, label: Next page cursor, type: string, pattern: '^[A-Za-z0-9_=-]{0,200}$', max_length: 200, default: ""}
+    outputs:
+      - {key: channel_ids, from: "$.channels[*].id"}
+      - {key: channel_names, from: "$.channels[*].name"}
+      - {key: next_cursor, from: "$.response_metadata.next_cursor"}
+    body_errors:
+      missing_scope: The app needs channels:read.
+      invalid_auth: The bot token was refused.

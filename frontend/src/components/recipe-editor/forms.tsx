@@ -10,11 +10,13 @@ import { fieldClass } from "@/components/bits";
 import { PillInput } from "@/components/recipe-bits";
 import { ConnectorActionForm, connectorStartingConfig } from "@/components/recipe-editor/connector-form";
 import { OPERATOR_LABELS, decisionPills, stepPills, stepsBefore, type Comparison, type Connection, type Definition, type Pill, type RecipeMeta, type StepNode } from "@/lib/recipes";
+import { InlineConnection, AuthorizeConnection } from "@/components/connection-editor";
 import type { Group } from "@/lib/types";
 
 // Step and trigger forms used by the studio editor.
 
 export type Ctx = {
+  folderId?: number | null; connectionAdded?: (c: Connection) => void;
   meta: RecipeMeta; groups: Group[]; connections: Connection[]; connectionsAvailable: boolean; trigger: string; root: StepNode[]; other?: StepNode[]; handler?: boolean; inLoop?: boolean; callOutputs?: string[];
 };
 
@@ -162,6 +164,9 @@ export function StepForm({ step, ctx, onChange }: { step: StepNode; ctx: Ctx; on
             <Select label="Connection" value={cfg.connection_id ?? ""} onChange={(v) => set({ connection_id: v ? Number(v) : null })}>
               <option value="">None (no credentials)</option>{ctx.connections.filter((c) => c.kind !== "slack_webhook" && c.kind !== "connector").map((c) => <option key={c.id} value={c.id}>{c.name} → {c.allowed_host}</option>)}
             </Select>
+            <InlineConnection folderId={ctx.folderId} connector="http" onCreated={(c) => { ctx.connectionAdded?.(c); if (c.kind !== "connector" && c.kind !== "slack_webhook") set({ connection_id: c.id }); }} />
+            {ctx.connections.filter((c) => c.id === cfg.connection_id).map((c) => <AuthorizeConnection key={c.id} connection={c} onRefresh={ctx.connectionAdded} />)}
+            <p className="text-xs text-muted-foreground">Store credentials in the connection, including secret header, query and body fields. Keep only non-secret values below.</p>
             {!ctx.connectionsAvailable && <p className="text-xs text-muted-foreground">Connections are unavailable until RECIPE_ENCRYPTION_KEY is configured.</p>}
             <p className="text-xs text-muted-foreground">The secret is attached by the server and only sent to the connection’s own host. Requests to private or internal addresses are blocked.</p></div>
           <div className="space-y-1"><Label>Headers</Label>
@@ -178,7 +183,7 @@ export function StepForm({ step, ctx, onChange }: { step: StepNode; ctx: Ctx; on
       );
     }
     case "connector_action":
-      return <ConnectorActionForm cfg={cfg} set={set} connections={ctx.connections} meta={ctx.meta} pills={pills} payload={payload} available={ctx.connectionsAvailable} />;
+      return <ConnectorActionForm cfg={cfg} set={set} connections={ctx.connections} meta={ctx.meta} pills={pills} payload={payload} available={ctx.connectionsAvailable} folderId={ctx.folderId} onCreated={ctx.connectionAdded} />;
     case "send_slack":
       return (
         <div className="space-y-3">

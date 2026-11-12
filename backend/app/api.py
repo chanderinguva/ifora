@@ -179,6 +179,10 @@ def create_app() -> FastAPI:
 
     from backend.app.connectors.routes import router as connectors_router
     from backend.app.connectors.routes import tests_router as connector_tests_router
+    from backend.app.recipes.connection_routes import router as connection_workspaces_router
+    from backend.app.recipes.oauth_logs import install as install_oauth_log_filter
+    install_oauth_log_filter()
+    app.include_router(connection_workspaces_router, prefix="/api/v1")
 
     for r in (recipes_router, recipe_conn_router, connector_tests_router, recipe_hooks_router, lookup_router, connectors_router):
         app.include_router(r, prefix="/api/v1")

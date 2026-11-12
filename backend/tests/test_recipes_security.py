@@ -243,8 +243,11 @@ def test_secret_injected_but_never_stored_logged_or_echoed(db, admin, rkey, monk
     c = make_conn(admin)
     remote = Remote([httpx.Response(200, json={"echo": f"Bearer {SECRET}", "access_token": "tok-from-remote", "fine": "yes"})])
     install_remote(monkeypatch, remote)
+    refused = admin.post("/admin/recipes", {"name": "No pasted query credentials", "definition": definition("user.created", [
+        step("call", "http_request", {"method": "POST", "url": "https://api.partner.com/v1/users?api_key=URLKEY", "connection_id": c["id"]})])})
+    assert refused.status_code == 422 and "URLKEY" not in refused.text
     rid = make_recipe(admin, definition("user.created", [
-        step("call", "http_request", {"method": "POST", "url": "https://api.partner.com/v1/users?api_key=URLKEY&x=1",
+        step("call", "http_request", {"method": "POST", "url": "https://api.partner.com/v1/users?x=1",
                                        "headers": {"Authorization": "literal-token", "X-Trace": "t"}, "body": "{}", "connection_id": c["id"]}),
         step("after", "log", {"message": "fine={{steps.call.output.json.fine}}"}),
     ]))
@@ -254,7 +257,7 @@ def test_secret_injected_but_never_stored_logged_or_echoed(db, admin, rkey, monk
     assert j.status == "succeeded", j.error
     assert remote.requests[0].headers["authorization"] == f"Bearer {SECRET}"  # it really is sent to the right host
     detail = admin.get(f"/admin/recipes/jobs/{j.id}")
-    blob = detail.text + dump([(s.input, s.output, s.error) for s in steps_of(db, j.id)]) + dump(j.step_outputs) + dump(j.trigger)
+    blob = detail.text + dump([(s.input, s.output, s.error) for s in steps_of(db, j.id)]) + dump(j.step_outputs) + dump(j.trigger) + dump(j.definition)
     for needle in (SECRET, "literal-token", "tok-from-remote", "URLKEY"):
         assert needle not in blob, needle
     body = detail.json()

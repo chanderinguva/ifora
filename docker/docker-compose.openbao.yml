@@ -1,0 +1,85 @@
+# Optional overlay, one isolated OpenBao per Compose project. Never use server -dev.
+# Prepare IFORA_OPENBAO_DIR outside the checkout with scripts/openbao-setup.py.
+services:
+  openbao:
+    image: openbao/openbao:2.7.2
+    entrypoint: ["bao"]
+    command: ["server", "-config=/openbao/config/server.hcl"]
+    user: "0:0"
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 512m
+    memswap_limit: 512m
+    environment:
+      BAO_ADDR: https://127.0.0.1:8200
+      BAO_CACERT: /openbao/tls/ca.crt
+    ports:
+      - "127.0.0.1:${IFORA_OPENBAO_PORT:-18200}:8200"
+    volumes:
+      - openbao-data:/openbao/data
+      - openbao-audit:/openbao/audit
+      - ${IFORA_OPENBAO_DIR:?set a private directory outside the checkout}/server.hcl:/openbao/config/server.hcl:ro
+      - ${IFORA_OPENBAO_DIR}/server.crt:/openbao/tls/server.crt:ro
+      - ${IFORA_OPENBAO_DIR}/server.key:/openbao/tls/server.key:ro
+      - ${IFORA_OPENBAO_DIR}/ca.crt:/openbao/tls/ca.crt:ro
+    tmpfs: ["/tmp"]
+    networks: [secrets]
+    healthcheck:
+      test: ["CMD", "bao", "status", "-tls-server-name=openbao"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  backend-api:
+    environment:
+      RECIPE_SECRET_PROVIDER: openbao
+      RECIPE_OPENBAO_URL: https://openbao:8200
+      RECIPE_OPENBAO_CA_FILE: /run/secrets/openbao-ca
+      RECIPE_OPENBAO_ROLE_ID_FILE: /run/secrets/openbao-role-id
+      RECIPE_OPENBAO_SECRET_ID_FILE: /run/secrets/openbao-secret-id
+    secrets:
+      - source: openbao-ca
+        target: openbao-ca
+      - source: openbao-api-role
+        target: openbao-role-id
+      - source: openbao-api-secret
+        target: openbao-secret-id
+    networks: [default, secrets]
+
+  recipes-worker:
+    environment:
+      RECIPE_SECRET_PROVIDER: openbao
+      RECIPE_OPENBAO_URL: https://openbao:8200
+      RECIPE_OPENBAO_CA_FILE: /run/secrets/openbao-ca
+      RECIPE_OPENBAO_ROLE_ID_FILE: /run/secrets/openbao-role-id
+      RECIPE_OPENBAO_SECRET_ID_FILE: /run/secrets/openbao-secret-id
+    secrets:
+      - source: openbao-ca
+        target: openbao-ca
+      - source: openbao-worker-role
+        target: openbao-role-id
+      - source: openbao-worker-secret
+        target: openbao-secret-id
+    networks: [default, secrets]
+
+networks:
+  secrets:
+    internal: true
+
+volumes:
+  openbao-data:
+  openbao-audit:
+
+secrets:
+  openbao-ca:
+    file: ${IFORA_OPENBAO_DIR}/ca.crt
+  openbao-api-role:
+    file: ${IFORA_OPENBAO_DIR}/api-role-id
+  openbao-api-secret:
+    file: ${IFORA_OPENBAO_DIR}/api-secret-id
+  openbao-worker-role:
+    file: ${IFORA_OPENBAO_DIR}/worker-role-id
+  openbao-worker-secret:
+    file: ${IFORA_OPENBAO_DIR}/worker-secret-id
