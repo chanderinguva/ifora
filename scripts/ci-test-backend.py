@@ -67,6 +67,8 @@ def main():
     if workers not in {"1", "2", "3", "4"}:
         raise SystemExit("CI_TEST_WORKERS must be 1..4 (default 2)")
     args = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "--durations=25"]
+    if os.environ.get("CI_TEST_PROFILE") == "1":
+        args += ["-p", "tests.ci_profile", "--junitxml=/tmp/ifora-ci-profile/junit.xml"]
     if workers != "1":
         args += ["-n", workers, "--dist=loadfile", "--max-worker-restart=0"]
     print(f"Running complete backend suite with {workers} isolated worker(s)", flush=True)

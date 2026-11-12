@@ -65,6 +65,16 @@ class WorkerIsolation(unittest.TestCase):
                     self.assertEqual(args[args.index("-n") + 1], workers)
                     self.assertIn("--dist=loadfile", args)
 
+    def test_fixture_profiling_is_opt_in(self):
+        from unittest.mock import patch
+        for enabled in ("0", "1"):
+            with patch.dict(os.environ, {**self.env(), "CI_TEST_PROFILE": enabled}), \
+                 patch.object(backend, "wait_for_services"), patch.object(backend.subprocess, "call", return_value=0) as call:
+                self.assertEqual(backend.main(), 0)
+                args = call.call_args.args[0]
+                self.assertEqual("tests.ci_profile" in args, enabled == "1")
+                self.assertEqual("--junitxml=/tmp/ifora-ci-profile/junit.xml" in args, enabled == "1")
+
 
 class SlackThread(unittest.TestCase):
     def setUp(self):

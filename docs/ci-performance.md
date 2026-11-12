@@ -41,3 +41,68 @@ This project has no published ports, shared data volumes, Docker socket or home
 mount. Its database and Redis storage are disposable tmpfs. The cleanup command
 targets only `ifora-ci-check`. Record the test count and elapsed time; do not
 merge on helper tests alone if the full parallel suite fails.
+
+## Measure the next optimization
+
+Build #10 completed in 9m41s: backend 8m09s, frontend 15s, warm images 21s,
+demo deployment 25s and dev deployment 34s. Backend is the critical path.
+The isolated two-worker Mac verification took 4m39s. Its PostgreSQL/Redis data
+directories use tmpfs, whereas Drone's service configuration does not. That is
+a concrete storage difference, not proof of its contribution to runtime.
+More workers are an experiment, not a guaranteed improvement.
+
+From a checkout containing the benchmark scripts, with Docker running and no
+Drone build or other benchmark active:
+
+```sh
+python3 scripts/ci-benchmark-backend.py
+```
+
+The existing `ifora-ci-backend:py312` dependency image is reused. If missing,
+build it with the command above. Each configuration runs the complete suite,
+so allow roughly 15–30 minutes for 2, 3 and 4 workers. Keep the Mac plugged in
+and awake, and avoid other heavy work. A second pass reduces timing noise:
+
+```sh
+python3 scripts/ci-benchmark-backend.py --repeats 2
+```
+
+The tool uses a unique `ifora-ci-benchmark-<pid>` project and creates fresh
+PostgreSQL/Redis containers for every run. By default an override removes tmpfs,
+matching Drone's disk-backed service storage (Compose 2.24+ required; the Mac has
+2.33). Compare storage separately with the same worker count:
+
+```sh
+python3 scripts/ci-benchmark-backend.py --workers 2 --storage disk
+python3 scripts/ci-benchmark-backend.py --workers 2 --storage memory
+```
+
+Record the storage mode alongside worker timings; do not mix storage modes when
+selecting workers. Changing Drone's storage requires its own measured validation.
+The tool removes only that project's
+containers/network/volumes afterward, including on Ctrl+C. It does not restart
+Drone or either deployed stack, publish ports, or mount the Docker socket/home
+inside test containers. Benchmark load still competes for the Mac's resources.
+Force-killing Python or shutting down Docker can prevent cleanup; recover using
+the exact project name printed in Docker's output, never a global prune.
+
+Results under gitignored `.ci/benchmarks/<timestamp>-<pid>/` include:
+
+- `summary.json`: commit, complete suite counts, exit codes, wall times and fastest
+  measured configuration (median for repeated runs). No recommendation is made
+  if runs fail, reports are missing, or test/skip counts differ.
+- Per-run `tests.log`, JUnit XML and per-worker JSON fixture timings.
+- `resources.jsonl`: five-second samples for benchmark containers only, including
+  CPU, memory and block I/O. These do not measure overall Mac pressure or prove
+  the cause of the earlier Drone/local timing gap.
+
+Profiling is opt-in (`CI_TEST_PROFILE=1`). Normal Drone runs retain two workers
+and their existing pytest options. The profiler measures fixture **setup** and
+aggregate setup/call/teardown phases; fixture times are inclusive and may overlap,
+so do not add them together as independent wall times. Use `_clean_db` and
+`_clean_redis` measurements to decide whether cleanup warrants a separate change.
+No transactions, truncation, cryptography, test selection or deployment health
+checks are weakened by this measurement PR.
+
+Pick a worker count only after comparable successful runs and a subsequent Drone
+validation. Share `summary.json` and worker JSON files to review the results.

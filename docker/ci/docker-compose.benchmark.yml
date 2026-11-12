@@ -1,0 +1,8 @@
+# Match Drone service storage instead of the verification stack's tmpfs.
+# Docker creates disposable anonymous volumes for the images' data directories.
+# Requires Compose 2.24+ for !reset (the Mac has 2.33).
+services:
+  ci-postgres:
+    tmpfs: !reset []
+  ci-redis:
+    tmpfs: !reset []
