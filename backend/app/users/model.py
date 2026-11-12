@@ -172,6 +172,14 @@ class User(TenantOwned, Base):
 
         return bool(settings.ADMIN_MFA_REQUIRED and self.is_admin and not self.has_second_factor)
 
+    @property
+    def enrollment_code_by_email(self) -> bool:
+        """True when this user may have their enrolment code mailed to them (never for super admins)."""
+        from backend.app import mailer
+        from backend.app.config import settings
+
+        return bool(settings.ENROLLMENT_CODE_EMAIL and self.needs_mfa_setup and not self.is_super_admin and mailer.configured())
+
     def to_dict(self, include_sensitive: bool = False) -> Dict[str, Any]:
         """Convert to dictionary."""
         result = {
@@ -191,5 +199,6 @@ class User(TenantOwned, Base):
             "passkey_count": len(self.passkeys),
             "passkey_required": self.passkey_required,
             "mfa_setup_required": self.needs_mfa_setup,
+            "enrollment_code_by_email": self.enrollment_code_by_email,
         }
         return result

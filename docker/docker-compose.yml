@@ -76,6 +76,7 @@ services:
       - WEBAUTHN_RP_NAME=${WEBAUTHN_RP_NAME:-Ifora}
       - WEBAUTHN_ORIGINS=${WEBAUTHN_ORIGINS:-["http://localhost:3000"]}
       # Sign-in through Cloudflare Access (demo only; off by default). See docker/.env.example.
+      - ENROLLMENT_CODE_EMAIL=${ENROLLMENT_CODE_EMAIL:-false}
       - ACCESS_SSO_ENABLED=${ACCESS_SSO_ENABLED:-false}
       - ACCESS_TEAM_DOMAIN=${ACCESS_TEAM_DOMAIN:-}
       - ACCESS_AUD=${ACCESS_AUD:-}

@@ -113,6 +113,9 @@ class Settings(BaseSettings):
     # Sign-in through Cloudflare Access (demo environments). Off by default. When on, a request that carries a valid
     # Access identity token (Cf-Access-Jwt-Assertion) for ACCESS_AUD from ACCESS_TEAM_DOMAIN can start a session for
     # the matching non-admin account; unknown emails get an account when ACCESS_SSO_AUTO_CREATE is true.
+    # Let admins who must enrol a first factor have the one-time enrolment code emailed to their own
+    # address (instead of asking a super admin / operator). Never applies to super admins.
+    ENROLLMENT_CODE_EMAIL: bool = Field(default=False)
     ACCESS_SSO_ENABLED: bool = Field(default=False)
     ACCESS_TEAM_DOMAIN: str = Field(default="")  # e.g. "myteam.cloudflareaccess.com" (no scheme)
     ACCESS_AUD: str = Field(default="")  # the Access application's audience (AUD) tag
