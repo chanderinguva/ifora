@@ -2,6 +2,8 @@
 # Production: docker compose build --build-arg ... with FRONTEND_TARGET=prod (see docker/.env.example): a compiled build
 # served by `next start`, run as a non-root user. NEXT_PUBLIC_* values are fixed at build time.
 FROM node:20-alpine AS base
+ARG NEXT_PUBLIC_APP_ENVIRONMENT=development
+ENV NEXT_PUBLIC_APP_ENVIRONMENT=$NEXT_PUBLIC_APP_ENVIRONMENT
 WORKDIR /app
 RUN adduser -D appuser && chown appuser:appuser /app
 USER appuser
@@ -33,4 +35,5 @@ COPY --from=build --chown=appuser:appuser /app/next.config.js ./next.config.js
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s CMD wget -qO- http://127.0.0.1:3000/login >/dev/null || exit 1
 CMD ["npx", "next", "start", "-H", "0.0.0.0", "-p", "3000"]
+
 

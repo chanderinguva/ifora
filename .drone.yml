@@ -5,7 +5,7 @@
 # directory: the deploy needs the stacks' env files and bind-mounted configs, which live outside the repo. The runner's
 # host path is the same as inside the step ($HOME below), so the compose bind mounts resolve on the host.
 # Secrets (Drone UI or CLI): ghcr_user (GitHub login), ghcr_token (PAT with write:packages).
-# Optional notifications: slack_webhook (Slack incoming webhook URL, no PR access).
+# Notifications: slack_bot_token (chat:write), slack_channel_id; no PR access.
 kind: pipeline
 type: docker
 name: build-and-deploy
@@ -41,8 +41,7 @@ steps:
       GHCR_TOKEN:
         from_secret: ghcr_token
     commands:
-      - apk add --no-cache bash git tar
-      - bash scripts/ci-docker.sh preflight
+      - sh scripts/ci-record.sh preflight sh -c 'apk add --no-cache bash git tar && bash scripts/ci-docker.sh preflight'
     volumes:
       - name: dockersock
         path: /var/run/docker.sock
@@ -55,7 +54,7 @@ steps:
     image: docker:27-cli
     depends_on: [preflight]
     commands:
-      - sh scripts/ci-prepare-test-images.sh
+      - sh scripts/ci-record.sh prepare-test-images sh scripts/ci-prepare-test-images.sh
     volumes:
       - name: dockersock
         path: /var/run/docker.sock
@@ -70,22 +69,19 @@ steps:
       REDIS_URL: redis://ci-redis:6379/0
       TEST_DB_NAME: ifora_ci_test
       TEST_REDIS_DB: "15"
+      CI_TEST_WORKERS: "2"
       SESSION_COOKIE_SECURE: "false"
       PUBLIC_APP_URL: http://localhost:3000
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
     commands:
-      - python scripts/ci-test-backend.py
+      - sh scripts/ci-record.sh test-backend sh -c 'python -m unittest discover -s scripts/tests -v && python scripts/ci-test-backend.py'
 
   - name: check-frontend
     image: ifora-ci-frontend:node20
     pull: never
     depends_on: [prepare-test-images]
     commands:
-      - cd frontend
-      - ln -s /opt/ci/frontend/node_modules node_modules
-      - trap 'rm -f node_modules' EXIT
-      - npm run lint
-      - npm run type-check
+      - sh scripts/ci-record.sh check-frontend sh scripts/ci-check-frontend.sh
 
   - name: build-and-push
     depends_on: [test-backend, check-frontend]
@@ -97,8 +93,7 @@ steps:
       GHCR_TOKEN:
         from_secret: ghcr_token
     commands:
-      - apk add --no-cache bash git tar
-      - bash scripts/ci-docker.sh build
+      - sh scripts/ci-record.sh build-and-push sh -c 'apk add --no-cache bash git tar && bash scripts/ci-docker.sh build'
     volumes:
       - name: dockersock
         path: /var/run/docker.sock
@@ -115,8 +110,7 @@ steps:
         from_secret: ghcr_token
     depends_on: [build-and-push]
     commands:
-      - apk add --no-cache bash git tar
-      - bash scripts/ci-docker.sh deploy demo
+      - sh scripts/ci-record.sh deploy-demo sh -c 'apk add --no-cache bash git tar && bash scripts/ci-docker.sh deploy demo'
     volumes:
       - name: dockersock
         path: /var/run/docker.sock
@@ -134,67 +128,95 @@ steps:
         from_secret: ghcr_token
     depends_on: [deploy-demo]
     commands:
-      - apk add --no-cache bash git tar
-      - bash scripts/ci-docker.sh deploy local
+      - sh scripts/ci-record.sh deploy-local sh -c 'apk add --no-cache bash git tar && bash scripts/ci-docker.sh deploy local'
     volumes:
       - name: dockersock
         path: /var/run/docker.sock
       - name: home
         path: /Users/chanderinguva
 
-  # Notifications run alongside deployments, never as deployment prerequisites.
-  # Pin the verified multi-architecture Slack plugin (includes linux/arm64).
-  - name: slack-images-published
-    image: plugins/slack@sha256:9d15ee6c5bcbb5aafd52a9b7680c61c098bdac1c3940f7f0a2ac08aa964b42d6
-    depends_on: [build-and-push]
+  # One parent and a single thread per build. Notification failures never gate deployment.
+  - name: slack-start
+    image: python:3.12-alpine
+    depends_on: []
     failure: ignore
-    settings:
-      webhook:
-        from_secret: slack_webhook
-      template: >-
-        Ifora build #${DRONE_BUILD_NUMBER}: tests passed and images published.
-        Deployments are starting. <${DRONE_BUILD_LINK}|View build>
+    environment:
+      SLACK_BOT_TOKEN:
+        from_secret: slack_bot_token
+      SLACK_CHANNEL_ID:
+        from_secret: slack_channel_id
+    commands:
+      - python scripts/ci-slack.py start
+    when:
+      status: [success, failure]
+
+  - name: slack-tests
+    image: python:3.12-alpine
+    depends_on: [test-backend, check-frontend, slack-start]
+    failure: ignore
+    environment:
+      SLACK_BOT_TOKEN:
+        from_secret: slack_bot_token
+      SLACK_CHANNEL_ID:
+        from_secret: slack_channel_id
+    commands:
+      - python scripts/ci-slack.py tests
+    when:
+      status: [success]
+
+  - name: slack-images-published
+    image: python:3.12-alpine
+    depends_on: [build-and-push, slack-tests]
+    failure: ignore
+    environment:
+      SLACK_BOT_TOKEN:
+        from_secret: slack_bot_token
+      SLACK_CHANNEL_ID:
+        from_secret: slack_channel_id
+    commands:
+      - python scripts/ci-slack.py images
     when:
       status: [success]
 
   - name: slack-demo-deployed
-    image: plugins/slack@sha256:9d15ee6c5bcbb5aafd52a9b7680c61c098bdac1c3940f7f0a2ac08aa964b42d6
-    depends_on: [deploy-demo]
+    image: python:3.12-alpine
+    depends_on: [deploy-demo, slack-images-published]
     failure: ignore
-    settings:
-      webhook:
-        from_secret: slack_webhook
-      template: >-
-        Ifora build #${DRONE_BUILD_NUMBER}: demo deployment passed health checks.
-        Dev/prod deployment is next. <${DRONE_BUILD_LINK}|View build>
+    environment:
+      SLACK_BOT_TOKEN:
+        from_secret: slack_bot_token
+      SLACK_CHANNEL_ID:
+        from_secret: slack_channel_id
+    commands:
+      - python scripts/ci-slack.py demo
     when:
       status: [success]
 
   - name: slack-pipeline-succeeded
-    image: plugins/slack@sha256:9d15ee6c5bcbb5aafd52a9b7680c61c098bdac1c3940f7f0a2ac08aa964b42d6
-    depends_on: [deploy-local, slack-images-published, slack-demo-deployed]
+    image: python:3.12-alpine
+    depends_on: [deploy-local, slack-demo-deployed]
     failure: ignore
-    settings:
-      webhook:
-        from_secret: slack_webhook
-      template: >-
-        Ifora build #${DRONE_BUILD_NUMBER} succeeded: tests and image publishing passed;
-        demo and dev/prod deployments both passed health checks.
-        Commit ${DRONE_COMMIT_SHA}. <${DRONE_BUILD_LINK}|View build>
+    environment:
+      SLACK_BOT_TOKEN:
+        from_secret: slack_bot_token
+      SLACK_CHANNEL_ID:
+        from_secret: slack_channel_id
+    commands:
+      - python scripts/ci-slack.py success
     when:
       status: [success]
 
   - name: slack-pipeline-failed
-    image: plugins/slack@sha256:9d15ee6c5bcbb5aafd52a9b7680c61c098bdac1c3940f7f0a2ac08aa964b42d6
-    depends_on: [preflight, prepare-test-images, test-backend, check-frontend, build-and-push, deploy-demo, deploy-local, slack-images-published, slack-demo-deployed]
+    image: python:3.12-alpine
+    depends_on: [preflight, prepare-test-images, test-backend, check-frontend, build-and-push, deploy-demo, deploy-local, slack-start, slack-tests, slack-images-published, slack-demo-deployed]
     failure: ignore
-    settings:
-      webhook:
-        from_secret: slack_webhook
-      template: >-
-        Ifora build #${DRONE_BUILD_NUMBER} failed. Check the failed step;
-        a deployment may have completed before a later failure. No automatic rollback.
-        Commit ${DRONE_COMMIT_SHA}. <${DRONE_BUILD_LINK}|View failure>
+    environment:
+      SLACK_BOT_TOKEN:
+        from_secret: slack_bot_token
+      SLACK_CHANNEL_ID:
+        from_secret: slack_channel_id
+    commands:
+      - python scripts/ci-slack.py failure
     when:
       status: [failure]
 
@@ -209,4 +231,5 @@ services:
       POSTGRES_DB: postgres
   - name: ci-redis
     image: redis:7-alpine
+
 

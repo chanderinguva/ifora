@@ -1,42 +1,31 @@
-# Slack build and deployment alerts
+# Threaded build alerts
 
-The pipeline uses the official `plugins/slack` incoming-webhook integration.
-Its image is pinned to a verified multi-architecture digest including arm64.
+The notifier uses Slack Web API and Block Kit: one parent message per build,
+updated with recorded phase results/durations and replies for tests, image
+publishing, demo deployment and final outcome. Notification errors are ignored
+by Drone and cannot block application deployment. No history scopes are needed.
 
-## One-time setup
+Configure repository secrets (Allow Pull Requests OFF):
 
-1. At https://api.slack.com/apps create an app in the workspace where you want
-   alerts. Enable **Incoming Webhooks**, then **Add New Webhook to Workspace**.
-2. Select the alerts channel. For a private channel, make sure your account can
-   access it and authorize the app for that channel.
-3. Copy the webhook URL directly into Drone: repository **Settings → Secrets**,
-   name **`slack_webhook`**. Leave **Allow Pull Requests** unchecked.
-   Keep the URL out of Git, terminal logs, screenshots and chat.
-4. Merge the pipeline change; the next main-branch push uses the secret.
+- `slack_bot_token`: the Slack app's Bot User OAuth Token (`xoxb-…`), with `chat:write`.
+- `slack_channel_id`: the channel ID, with the bot invited to that channel.
 
-The webhook determines the destination channel. The pipeline does not override
-the channel, app name or icon; configure these in Slack instead. No Slack bot
-token or separate channel secret is needed.
+After adding scopes, reinstall the Slack app. Existing `slack_webhook` is unused
+by the new pipeline; retain it until the bot integration is verified, then remove
+it if no other integration needs it. Never put credentials in source or logs.
 
-## Messages
+`scripts/ci-record.sh` records phase outcomes and elapsed seconds under
+`.ci/results`; `scripts/ci-slack.py` stores only channel, message timestamp and
+delivered events under `.ci/slack`. No token is persisted. Successive notification
+steps are ordered to avoid competing parent updates. Application steps do not
+depend on notification completion. Network retries are bounded; exactly-once
+delivery cannot be guaranteed after ambiguous network failures.
 
-| Event | Message |
-| --- | --- |
-| Tests and image publishing pass | Build ready; deployments starting |
-| Demo health checks pass | Demo deployed; dev/prod next |
-| Entire pipeline passes | Both environments deployed and healthy |
-| A pipeline step fails | Failure with a build link; deployments may be partial |
+The parent may first appear at a later milestone if the start notification fails.
+Missing phase data is shown as unreported, never guessed successful. An overall
+failure can leave demo deployed while dev failed; the message explicitly warns
+about partial deployment and no automatic rollback.
 
-All messages include a link to the Drone build. Notifications run independently
-of the deployment dependency chain, so delivery order can vary. They use
-`failure: ignore`: missing/invalid webhook configuration or Slack delivery errors
-must not turn a successful application build into a failed deployment. Review
-the Slack step logs when messages do not arrive.
-
-This is best-effort notification from a running pipeline, not an external
-availability monitor. It cannot report a webhook that never reached Drone, a
-runner that cannot start, every early clone failure, cancellation, or a host
-that sleeps or loses connectivity. A failure alert does not imply rollback.
-
-Validation of real message delivery requires adding the secret and running the
-pipeline. No test messages are sent by this repository change.
+This is best-effort pipeline reporting, not an external outage monitor. It cannot
+cover every clone failure, cancellation, runner outage, missed GitHub webhook or
+offline host. Real Slack delivery and rendering must be verified on the next run.

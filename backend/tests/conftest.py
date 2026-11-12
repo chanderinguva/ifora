@@ -9,7 +9,9 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-TEST_DB = os.environ.get("TEST_DB_NAME", "ifora_test")
+from backend.tests.ci_resources import worker_resources
+
+TEST_DB, TEST_REDIS_DB = worker_resources(os.environ)
 _base = os.environ["DATABASE_URL"]  # run inside the api container (or export DATABASE_URL)
 _u = urlparse(_base)
 _test_url = urlunparse(_u._replace(path=f"/{TEST_DB}"))
@@ -33,7 +35,7 @@ from cryptography.fernet import Fernet as _F
 os.environ["OIDC_KEY_ENCRYPTION_KEY"] = _F.generate_key().decode()
 # Isolated Redis database for rate-limit state (never the dev db 0)
 _redis_base = os.environ.get("REDIS_URL", "redis://localhost:6379/0").rsplit("/", 1)[0]
-os.environ["REDIS_URL"] = f"{_redis_base}/{os.environ.get('TEST_REDIS_DB', '15')}"
+os.environ["REDIS_URL"] = f"{_redis_base}/{TEST_REDIS_DB}"
 
 
 def _ensure_database():
@@ -92,16 +94,30 @@ def _clean_redis():
     import redis
 
     r = redis.Redis.from_url(os.environ["REDIS_URL"])
-    r.flushdb()
-    yield
-    r.flushdb()
+    try:
+        r.flushdb()
+        yield
+    finally:
+        r.flushdb()
+        r.close()
+
+
+def reset_test_rows():
+    """Keep the seeded tenant, but no rows created by a previous test."""
+    from backend.app.tenancy import DEFAULT_TENANT_SLUG, reset_tenant_cache
+
+    with engine.begin() as conn:
+        names = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables if t.name != "tenants")
+        conn.exec_driver_sql(f"TRUNCATE {names} RESTART IDENTITY CASCADE")
+        # Tenant-owned rows are gone, so temporary tenant records can now be deleted.
+        # Keeping every tenant made tests depend on file scheduling (e.g. slug "other").
+        conn.exec_driver_sql("DELETE FROM tenants WHERE slug <> %s", (DEFAULT_TENANT_SLUG,))
+    reset_tenant_cache()
 
 
 @pytest.fixture(autouse=True)
 def _clean_db():
-    with engine.begin() as conn:
-        names = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables if t.name != "tenants")
-        conn.exec_driver_sql(f"TRUNCATE {names} RESTART IDENTITY CASCADE")
+    reset_test_rows()
     yield
 
 
@@ -203,3 +219,4 @@ def member(db):
     assert a.login(u.email).status_code == 200
     a.user = u
     return a
+

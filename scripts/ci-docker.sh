@@ -24,6 +24,12 @@ if [ "${1:-}" = preflight ]; then
   test -r "${LOCAL_ENV:-$HOME/Development/ifora/docker/.env}" || {
     echo "Missing local environment file; cannot deploy." >&2; exit 1;
   }
+  CI_LOCAL_ENV="${LOCAL_ENV:-$HOME/Development/ifora/docker/.env}"
+  if grep -Eq '^IFORA_DEV_ACCESS_ENABLED=true[[:space:]]*$' "$CI_LOCAL_ENV"; then
+    grep -Eq '^IFORA_DEV_TUNNEL_TOKEN=.+$' "$CI_LOCAL_ENV" || {
+      echo "Dev access enabled without IFORA_DEV_TUNNEL_TOKEN; configure Access and save the token first." >&2; exit 1;
+    }
+  fi
   # Login alone does not prove package write access. Publish a tiny, non-release
   # tag to each exact package before the test suite. No application image is run.
   CI_IMAGE_OWNER="$(printf %s "${DRONE_REPO_OWNER:-${IMAGE_OWNER:-}}" | tr '[:upper:]' '[:lower:]')"
@@ -44,3 +50,4 @@ if [ "${1:-}" = preflight ]; then
 else
   bash "$(dirname "$0")/ci-deploy.sh" "$@"
 fi
+

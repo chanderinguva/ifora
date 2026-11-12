@@ -43,16 +43,24 @@ images_for() { # sha -> sets IMG_API IMG_WORKER IMG_FE_DEMO IMG_FE_LOCAL
   IMG_FE_LOCAL="$REGISTRY/$OWNER/ifora-frontend:$TAG-local"
 }
 
+dev_access_enabled() {
+  # Do not source an env file as shell code. Opt-in uses this exact documented line.
+  grep -Eq '^IFORA_DEV_ACCESS_ENABLED=true[[:space:]]*$' "$LOCAL_ENV"
+}
+
 cmd_build() {
   images_for "${1:-}"
   : "${GHCR_USER:?GHCR_USER (GitHub login) is required}" "${GHCR_TOKEN:?GHCR_TOKEN (PAT with write:packages) is required}"
   printf %s "$GHCR_TOKEN" | docker login "$REGISTRY" -u "$GHCR_USER" --password-stdin
   cd "$REPO"
+  if dev_access_enabled; then LOCAL_API_URL=https://ifora.app; fi
   say "building $TAG"
   docker build -f docker/backend/Dockerfile -t "$IMG_API" -t "$IMG_WORKER" .
   docker build -f docker/frontend/Dockerfile --target prod \
+    --build-arg NEXT_PUBLIC_APP_ENVIRONMENT=demo \
     --build-arg "NEXT_PUBLIC_API_URL=$DEMO_API_URL" -t "$IMG_FE_DEMO" .
   docker build -f docker/frontend/Dockerfile --target "$LOCAL_FRONTEND_TARGET" \
+    --build-arg NEXT_PUBLIC_APP_ENVIRONMENT=development \
     --build-arg "NEXT_PUBLIC_API_URL=$LOCAL_API_URL" -t "$IMG_FE_LOCAL" .
   for i in "$IMG_API" "$IMG_WORKER" "$IMG_FE_DEMO" "$IMG_FE_LOCAL"; do docker push "$i"; done
   docker logout "$REGISTRY" >/dev/null
@@ -117,13 +125,21 @@ deploy_local() {
   [ -f "$LOCAL_ENV" ] || die "missing $LOCAL_ENV (set LOCAL_ENV)"
   ensure_image "$IMG_API"; ensure_image "$IMG_WORKER"; ensure_image "$IMG_FE_LOCAL"
   local src files cleanup_cmd
-  src="$(mktemp -d)"
-  # Capture a shell-escaped path now: src is local and is out of scope at EXIT.
-  printf -v cleanup_cmd 'rm -rf -- %q' "$src"
-  trap "$cleanup_cmd" EXIT
+  if dev_access_enabled; then
+    # A bind-mounted Caddyfile must survive cleanup and container/daemon restarts.
+    src="$HOME_DIR/ifora-local/src-ci"
+  else
+    src="$(mktemp -d)"
+    printf -v cleanup_cmd 'rm -rf -- %q' "$src"
+    trap "$cleanup_cmd" EXIT
+  fi
   export_tree "$src"
   files=(-f "$src/docker/docker-compose.yml")
   [ -f "$LOCAL_OVERRIDE" ] && files+=(-f "$LOCAL_OVERRIDE")
+  if dev_access_enabled; then
+    files+=(-f "$src/docker/docker-compose.dev-access.yml")
+    LOCAL_SERVICES+=(dev-edge dev-tunnel)
+  fi
   files+=(-f "$src/docker/docker-compose.ci.yml")
   say "local: deploying ${SHA:0:9}"
   IFORA_API_IMAGE="$IMG_API" IFORA_WORKER_IMAGE="$IMG_WORKER" IFORA_FRONTEND_IMAGE="$IMG_FE_LOCAL" \
@@ -132,6 +148,13 @@ deploy_local() {
   wait_healthy ifora-api
   wait_healthy ifora-recipes-worker
   wait_http ifora-frontend http://127.0.0.1:3000/login
+  if dev_access_enabled; then
+    # Extraction replaces the Caddyfile inode; refresh only this edge, not its tunnel.
+    IFORA_API_IMAGE="$IMG_API" IFORA_WORKER_IMAGE="$IMG_WORKER" IFORA_FRONTEND_IMAGE="$IMG_FE_LOCAL" \
+      docker compose --env-file "$LOCAL_ENV" --project-directory "$src/docker" "${files[@]}" -p ifora \
+        up -d --no-build --no-deps --force-recreate dev-edge
+    wait_http ifora-dev-edge http://127.0.0.1:80/login
+  fi
   echo "$SHA" > "$LOCAL_SHA_FILE"
   say "local: ok at ${SHA:0:9}"
 }
@@ -147,3 +170,4 @@ case "${1:-}" in
     esac ;;
   *) sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac
+

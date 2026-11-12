@@ -5,6 +5,7 @@ import localFont from "next/font/local";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { BrandingProvider } from "@/lib/branding";
+import { deploymentTitle } from "@/lib/deployment-title";
 
 const inter = localFont({
   src: "./fonts/inter.woff2",
@@ -28,7 +29,10 @@ const lora = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Ifora",
+  title: {
+    default: deploymentTitle(process.env.NEXT_PUBLIC_APP_ENVIRONMENT),
+    template: `%s | ${deploymentTitle(process.env.NEXT_PUBLIC_APP_ENVIRONMENT)}`,
+  },
   description: "Identity, secure access and automation in one platform.",
 };
 
@@ -59,3 +63,4 @@ export default function RootLayout({
     </html>
   );
 }
+
