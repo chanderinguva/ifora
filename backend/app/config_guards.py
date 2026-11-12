@@ -1,4 +1,4 @@
-"""Startup guards: refuse to boot in production with an insecure configuration (IFORA-49 / SEC-A-5).
+"""Startup guards: refuse to boot in publicly deployed environments with an insecure configuration (IFORA-49 / SEC-A-5).
 
 `validate_settings` is pure: it reads a settings object and an environment mapping and returns a list of problems.
 Messages name the setting and never contain its value, so a refusal cannot leak a secret into logs.
@@ -13,7 +13,8 @@ _MIN_SECRET_LEN = 32
 
 
 def is_production(settings) -> bool:
-    return str(settings.ENVIRONMENT).strip().lower() == "production"
+    # Demo and staging are public-facing services, not relaxed local development.
+    return str(settings.ENVIRONMENT).strip().lower() in ("production", "demo", "staging")
 
 
 def _weak_secret(value: str) -> bool:
@@ -25,7 +26,7 @@ def _weak_secret(value: str) -> bool:
 
 
 def validate_settings(settings, env: Optional[Mapping[str, str]] = None) -> List[str]:
-    """Problems that must stop a production start. Empty list: fine (always empty outside production)."""
+    """Problems that must stop a public deployment. Local development/test is exempt."""
     if not is_production(settings):
         return []
     env = os.environ if env is None else env
