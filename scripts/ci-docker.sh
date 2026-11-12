@@ -24,7 +24,23 @@ if [ "${1:-}" = preflight ]; then
   test -r "${LOCAL_ENV:-$HOME/Development/ifora/docker/.env}" || {
     echo "Missing local environment file; cannot deploy." >&2; exit 1;
   }
-  echo "CI preflight passed: registry login, Docker, Compose, Buildx and deployment env files."
+  # Login alone does not prove package write access. Publish a tiny, non-release
+  # tag to each exact package before the test suite. No application image is run.
+  CI_IMAGE_OWNER="$(printf %s "${DRONE_REPO_OWNER:-${IMAGE_OWNER:-}}" | tr '[:upper:]' '[:lower:]')"
+  : "${CI_IMAGE_OWNER:?set DRONE_REPO_OWNER or IMAGE_OWNER}"
+  CI_PROBE_CONTEXT="$CI_DOCKER_CONFIG/probe"
+  mkdir "$CI_PROBE_CONTEXT"
+  printf 'FROM scratch\nLABEL io.ifora.ci.permission-probe="true"\n' > "$CI_PROBE_CONTEXT/Dockerfile"
+  for package in ifora-api ifora-recipes-worker ifora-frontend; do
+    CI_PROBE_IMAGE="${REGISTRY:-ghcr.io}/$CI_IMAGE_OWNER/$package:ci-permission-check"
+    echo "Checking package push access: $CI_PROBE_IMAGE"
+    docker build --quiet -t "$CI_PROBE_IMAGE" "$CI_PROBE_CONTEXT" >/dev/null
+    if ! docker push "$CI_PROBE_IMAGE"; then
+      echo "Cannot publish $package. Check Drone ghcr_token: classic PAT with write:packages and package write access. Tests have not started." >&2
+      exit 1
+    fi
+  done
+  echo "CI preflight passed: registry push access for all three packages, Docker tooling and deployment env files."
 else
   bash "$(dirname "$0")/ci-deploy.sh" "$@"
 fi
