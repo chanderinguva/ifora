@@ -10,7 +10,7 @@
 #
 # The demo never builds from your working tree: deploy checks out origin/main into $DEMO_HOME/src and builds there.
 # Secrets live in $DEMO_HOME/.env.demo, outside the repository. The project name is fixed to "ifora-demo", so no
-# command here can touch the dev/prod stack ("docker").
+# command here can touch the dev/prod stack ("ifora").
 set -euo pipefail
 
 DEMO_HOME="${DEMO_HOME:-$HOME/ifora-demo}"

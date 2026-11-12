@@ -3,7 +3,7 @@
 #
 #   scripts/ci-deploy.sh build  [sha]          build ghcr.io/<owner>/ifora-* images for <sha> and push them
 #   scripts/ci-deploy.sh deploy demo  [sha]    roll the demo stack (compose project ifora-demo) onto those images
-#   scripts/ci-deploy.sh deploy local [sha]    roll the dev/prod stack (compose project docker) onto those images
+#   scripts/ci-deploy.sh deploy local [sha]    roll the dev/prod stack (compose project ifora) onto those images
 #
 # <sha> defaults to $DRONE_COMMIT_SHA, then to HEAD. Images are tagged with its first 12 characters:
 #   ifora-api:<tag>  ifora-recipes-worker:<tag>   same image (one backend Dockerfile), two names
@@ -123,7 +123,7 @@ deploy_local() {
   files+=(-f "$src/docker/docker-compose.ci.yml")
   say "local: deploying ${SHA:0:9}"
   IFORA_API_IMAGE="$IMG_API" IFORA_WORKER_IMAGE="$IMG_WORKER" IFORA_FRONTEND_IMAGE="$IMG_FE_LOCAL" \
-    docker compose --env-file "$LOCAL_ENV" --project-directory "$src/docker" "${files[@]}" -p docker \
+    docker compose --env-file "$LOCAL_ENV" --project-directory "$src/docker" "${files[@]}" -p ifora \
       up -d --no-build "${LOCAL_SERVICES[@]}"
   wait_healthy ifora-api
   wait_healthy ifora-recipes-worker

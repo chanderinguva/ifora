@@ -1,5 +1,5 @@
 # Drone CI for this Mac: server (UI, webhooks, scheduler) + docker runner (executes pipelines on the local Docker daemon).
-# A separate compose project ("ifora-drone"): it cannot touch the "docker" (dev/prod) or "ifora-demo" stacks.
+# A separate compose project ("ifora-drone"): it cannot touch the "ifora" (dev/prod) or "ifora-demo" stacks.
 #
 # Setup (one time):
 #   1. GitHub > Settings > Developer settings > OAuth Apps > New. Homepage https://drone.ifora.app,

@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-TEST_DB = os.environ.get("TEST_DB_NAME", "identityforge_test")
+TEST_DB = os.environ.get("TEST_DB_NAME", "ifora_test")
 _base = os.environ["DATABASE_URL"]  # run inside the api container (or export DATABASE_URL)
 _u = urlparse(_base)
 _test_url = urlunparse(_u._replace(path=f"/{TEST_DB}"))

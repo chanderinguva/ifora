@@ -63,7 +63,7 @@ deploy_local() {
   files=(-f "$src/docker/docker-compose.yml")
   [ -f "$LOCAL_OVERRIDE" ] && files+=(-f "$LOCAL_OVERRIDE")
   say "local: deploying origin/main @ ${sha:0:9}"
-  docker compose --env-file "$LOCAL_ENV" "${files[@]}" -p docker up -d --build "${LOCAL_SERVICES[@]}"
+  docker compose --env-file "$LOCAL_ENV" "${files[@]}" -p ifora up -d --build "${LOCAL_SERVICES[@]}"
   echo "$sha" > "$LOCAL_SHA_FILE"
   verify_local
 }

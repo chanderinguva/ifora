@@ -231,7 +231,7 @@ docker compose -f docker/docker-compose.yml up -d --build backend-api
 docker exec ifora-api pip install -q -r /app/backend/requirements-dev.txt
 docker exec -w /app/backend ifora-api python -m pytest -q
 ```
-Tests use a separate `identityforge_test` database.
+Tests use a separate `ifora_test` database.
 
 ### Browser tests (Playwright)
 Specs live in `frontend/e2e`. They need the stack running and an existing super admin configured in `.env`; some specs are opt-in and need extra variables. See `docs/project/status.md` for the details.

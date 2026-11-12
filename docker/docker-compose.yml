@@ -1,18 +1,21 @@
+# Project name "ifora" (dev/prod). The demo override sets "ifora-demo".
+name: ifora
+
 services:
   postgres:
     image: postgres:16-alpine
     container_name: ifora-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: identityforge
+      POSTGRES_USER: ifora
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in docker/.env}
-      POSTGRES_DB: identityforge
+      POSTGRES_DB: ifora
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "127.0.0.1:5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U identityforge"]
+      test: ["CMD-SHELL", "pg_isready -U ifora"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -43,8 +46,8 @@ services:
       redis:
         condition: service_healthy
     environment:
-      - DATABASE_URL=postgresql+psycopg2://identityforge:${POSTGRES_PASSWORD}@postgres:5432/identityforge
-      - DATABASE_URL_ASYNC=postgresql+asyncpg://identityforge:${POSTGRES_PASSWORD}@postgres:5432/identityforge
+      - DATABASE_URL=postgresql+psycopg2://ifora:${POSTGRES_PASSWORD}@postgres:5432/ifora
+      - DATABASE_URL_ASYNC=postgresql+asyncpg://ifora:${POSTGRES_PASSWORD}@postgres:5432/ifora
       - REDIS_URL=redis://redis:6379/0
       - SECRET_KEY=${SECRET_KEY:?set SECRET_KEY in docker/.env}
       - ADMIN_SECRET_KEY=${ADMIN_SECRET_KEY:?set ADMIN_SECRET_KEY in docker/.env}
@@ -125,8 +128,8 @@ services:
     entrypoint: ["python", "-m", "backend.cli", "recipes-worker"]
     working_dir: /app
     environment:
-      - DATABASE_URL=postgresql+psycopg2://identityforge:${POSTGRES_PASSWORD}@postgres:5432/identityforge
-      - DATABASE_URL_ASYNC=postgresql+asyncpg://identityforge:${POSTGRES_PASSWORD}@postgres:5432/identityforge
+      - DATABASE_URL=postgresql+psycopg2://ifora:${POSTGRES_PASSWORD}@postgres:5432/ifora
+      - DATABASE_URL_ASYNC=postgresql+asyncpg://ifora:${POSTGRES_PASSWORD}@postgres:5432/ifora
       - REDIS_URL=redis://redis:6379/0
       - SECRET_KEY=${SECRET_KEY:?set SECRET_KEY in docker/.env}
       - ADMIN_SECRET_KEY=${ADMIN_SECRET_KEY:?set ADMIN_SECRET_KEY in docker/.env}
