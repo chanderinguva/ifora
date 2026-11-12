@@ -59,7 +59,8 @@ services:
     image: cloudflare/cloudflared:2024.12.2
     container_name: ifora-drone-tunnel
     restart: unless-stopped
-    command: tunnel --no-autoupdate run
+    # QUIC connections timed out together on this Mac; use TCP-based HTTP/2.
+    command: tunnel --no-autoupdate --protocol http2 run
     environment:
       TUNNEL_TOKEN: ${DRONE_TUNNEL_TOKEN:?set DRONE_TUNNEL_TOKEN}
     depends_on:
