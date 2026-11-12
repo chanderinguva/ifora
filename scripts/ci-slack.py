@@ -127,7 +127,12 @@ def notify(event, env=None, root=Path(".ci"), api=slack_api):
     token, channel = env.get("SLACK_BOT_TOKEN"), env.get("SLACK_CHANNEL_ID")
     if not token or not channel:
         raise RuntimeError("Set Drone slack_bot_token and slack_channel_id secrets")
-    identity = ":".join(env.get(key, "") for key in ("DRONE_REPO", "DRONE_BUILD_NUMBER", "DRONE_STAGE_NUMBER", "DRONE_BUILD_STARTED"))
+    # Build timestamps can differ between the start and later step environments.
+    # Repository + build number identifies the build across every notification step.
+    repository, number = env.get("DRONE_REPO"), env.get("DRONE_BUILD_NUMBER")
+    if not repository or not number:
+        raise RuntimeError("Drone repository and build number are required for thread identity")
+    identity = json.dumps([repository, number], separators=(",", ":"))
     state_file = root / "slack" / (hashlib.sha256(identity.encode()).hexdigest()[:24] + ".json")
     try:
         state = json.loads(state_file.read_text())
