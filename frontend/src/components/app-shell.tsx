@@ -12,6 +12,7 @@ import { ThemeToggle } from "./theme-toggle";
 import { UserMenu } from "./user-menu";
 import { useBranding } from "@/lib/branding";
 import { EnvironmentIdentity } from "./environment-banner";
+import { DashboardShortcut } from "./dashboard-shortcut";
 
 export type { NavGroup, NavItem } from "./sidebar-nav";
 
@@ -26,7 +27,7 @@ const iconButton =
   "inline-flex h-9 w-9 items-center justify-center rounded-md border text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
 
 /** Overlay navigation for small screens: Escape and backdrop close it, focus is trapped and restored. */
-function MobileDrawer({ open, onClose, groups, home, title }: { open: boolean; onClose: () => void; groups: NavGroup[]; home: string; title: string }) {
+function MobileDrawer({ open, onClose, groups, home, title, shortcut }: { open: boolean; onClose: () => void; groups: NavGroup[]; home: string; title: string; shortcut?: React.ReactNode }) {
   const panel = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -60,12 +61,13 @@ function MobileDrawer({ open, onClose, groups, home, title }: { open: boolean; o
           </button>
         </div>
         <SidebarNav groups={groups} onNavigate={onClose} />
+        {shortcut}
       </div>
     </div>
   );
 }
 
-export function AppShell({ title, nav, children }: { title: string; nav: NavGroup[]; children: React.ReactNode }) {
+export function AppShell({ title, nav, children, personal = false }: { title: string; nav: NavGroup[]; children: React.ReactNode; personal?: boolean }) {
   const user = useCurrentUser();
   const { branding } = useBranding();
   const pathname = usePathname();
@@ -156,6 +158,7 @@ export function AppShell({ title, nav, children }: { title: string; nav: NavGrou
           {collapsed ? <LogoLink href={home} /> : <Logo href={home} />}
         </div>
         <SidebarNav groups={nav} collapsed={collapsed} />
+        {user.is_admin && !user.acting_as_user && <DashboardShortcut personal={personal} collapsed={collapsed} />}
         {!collapsed && (
           <div
             role="separator"
@@ -184,7 +187,8 @@ export function AppShell({ title, nav, children }: { title: string; nav: NavGrou
         )}
       </aside>
 
-      <MobileDrawer open={drawer} onClose={closeDrawer} groups={nav} home={home} title={title} />
+      <MobileDrawer open={drawer} onClose={closeDrawer} groups={nav} home={home} title={title}
+        shortcut={user.is_admin && !user.acting_as_user ? <DashboardShortcut personal={personal} /> : undefined} />
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 items-center gap-3 border-b bg-card px-4 md:px-6">
@@ -205,7 +209,7 @@ export function AppShell({ title, nav, children }: { title: string; nav: NavGrou
           <Breadcrumbs groups={nav} className="hidden min-w-0 truncate sm:block" />
           <EnvironmentIdentity environment={branding.environment} label={branding.environment_label} />
           <div className="ml-auto flex items-center gap-2 sm:gap-3">
-            {user.is_admin && !user.acting_as_user && (
+            {user.is_admin && !user.acting_as_user && !personal && (
               <button
                 className={cn(iconButton, "w-9 gap-2 bg-background text-sm sm:w-64 sm:justify-start sm:px-3 lg:w-96 xl:w-[28rem]")}
                 aria-label="Search" data-testid="open-search"
@@ -220,6 +224,11 @@ export function AppShell({ title, nav, children }: { title: string; nav: NavGrou
           </div>
         </header>
 
+        {user.is_admin && !user.acting_as_user && personal && (
+          <div role="status" data-testid="personal-dashboard-banner" className="border-b bg-muted/40 px-6 py-2 text-sm text-muted-foreground">
+            Your personal dashboard · Your administrator session is still active. No role switch was made.
+          </div>
+        )}
         {user.is_admin && user.acting_as_user && (
           <div role="status" data-testid="user-view-banner" className="flex flex-wrap items-center justify-between gap-2 border-b bg-selected px-6 py-2 text-sm text-selected-foreground">
             <span>You are in <strong>user view</strong>. Administrator functions are switched off for this session.</span>
@@ -241,4 +250,5 @@ export function AppShell({ title, nav, children }: { title: string; nav: NavGrou
     </div>
   );
 }
+
 

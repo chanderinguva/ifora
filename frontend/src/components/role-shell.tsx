@@ -7,6 +7,8 @@ import { inAdminView } from "@/lib/roles";
 import { CommandPalette } from "./command-palette";
 import { useEffect, useState } from "react";
 import { http } from "@/lib/http";
+import { usePathname } from "next/navigation";
+import { isPersonalRoute } from "@/lib/personal-navigation";
 
 export const ADMIN_NAV: NavGroup[] = [
   { items: [{ href: "/admin/dashboard", area: "overview", label: "Dashboard", icon: LayoutDashboard }] },
@@ -53,7 +55,8 @@ export const USER_NAV: NavGroup[] = [
 /** Picks the navigation for the signed-in user's role. */
 export function RoleShell({ children }: { children: React.ReactNode }) {
   const user = useCurrentUser();
-  const admin = inAdminView(user);
+  const personal = isPersonalRoute(usePathname());
+  const admin = inAdminView(user) && !personal;
   // What this administrator's roles allow; until it loads (or if it fails) show everything, the server enforces anyway.
   const [access, setAccess] = useState<Record<string, string> | null>(null);
   useEffect(() => {
@@ -63,9 +66,10 @@ export function RoleShell({ children }: { children: React.ReactNode }) {
     ? ADMIN_NAV.map((g) => ({ ...g, items: g.items.filter((i) => !i.area || access[i.area]) })).filter((g) => g.items.length > 0)
     : ADMIN_NAV;
   return (
-    <AppShell title={admin ? "Administration" : "My account"} nav={admin ? nav : USER_NAV}>
+    <AppShell title={admin ? "Administration" : "My account"} nav={admin ? nav : USER_NAV} personal={personal}>
       {children}
       {admin && <CommandPalette nav={nav} />}
     </AppShell>
   );
 }
+
