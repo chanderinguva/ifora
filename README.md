@@ -292,7 +292,7 @@ Images are tagged with the first 12 characters of the commit (`ghcr.io/<owner>/i
 5. Deploy the old images: `IMAGE_OWNER=<owner> scripts/ci-deploy.sh deploy local <old-sha>` (`deploy demo <old-sha>` for the demo). A missing image is pulled from GHCR.
 6. Verify: `docker exec ifora-api alembic -c backend/alembic.ini current` shows the expected revision, the API health check answers and you can sign in.
 
-Verified on a scratch database: backup, restore (empty target, refusal on a non-empty one, `--force`, tampered and corrupt dumps, an interrupted restore) and `alembic downgrade`/`upgrade` between 0056 and 0055. The image rollback in step 5 is written from `scripts/ci-deploy.sh` and is exercised by the restore drill (IFORA-21).
+Verified on a scratch database: backup, restore (empty target, refusal on a non-empty one, `--force`, tampered and corrupt dumps, an interrupted restore) and `alembic downgrade`/`upgrade` between 0056 and 0055. `scripts/restore-drill.sh` rehearses the whole cycle in throwaway compose projects (`ifora-drill-*`, no host ports, never your real volumes): it populates a database through the API, backs it up, restores into an empty stack, signs in on the restored data, checks that a second restore is refused, and then follows steps 2 to 5 with two real release images (downgrade with the newer image, run the older one). `scripts/ci-deploy.sh` itself is not part of the drill because it only targets the real stacks, so step 5 is the one part not rehearsed. Run it with `IFORA_DRILL_API_IMAGE=<image> IFORA_DRILL_OLD_IMAGE=<older image> scripts/restore-drill.sh`.
 
 ## Security
 
