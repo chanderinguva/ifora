@@ -18,10 +18,11 @@ export function AppIcon({ path, name, hasIcon, size = 48 }: { path: string; name
   }, [path, hasIcon]);
 
   const box = { width: size, height: size, borderRadius: Math.round(size / 4) };
-  if (src) return <img src={src} alt="" aria-hidden style={box} className="object-cover" />;
+  if (src) return <img src={src} alt="" aria-hidden style={box} className="shrink-0 object-contain" />;
   return (
-    <span aria-hidden style={{ ...box, fontSize: Math.round(size * 0.4) }} className="flex items-center justify-center border bg-secondary font-medium text-secondary-foreground">
+    <span aria-hidden style={{ ...box, fontSize: Math.round(size * 0.4) }} className="flex shrink-0 items-center justify-center border bg-secondary font-medium text-secondary-foreground">
       {name.trim().charAt(0).toUpperCase()}
     </span>
   );
 }
+
