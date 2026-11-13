@@ -45,7 +45,7 @@ test("write a formula with suggestions, see it as a chip, preview it, run it, an
   await msg.fill("Hi {{= upper(trigger.user.email) }}");
   await page.getByRole("button", { name: "Save draft" }).click();
   await expect(page.getByTestId("builder-msg")).toContainText("Draft saved");
-  await page.getByRole("button", { name: "Run test" }).click();
+  await page.getByRole("button", { name: "Validate draft" }).click();
   await expect(page.getByTestId("job-view")).toContainText(ADMIN_EMAIL.toUpperCase());
 
   // a formula that does not parse is refused with a message that says where

@@ -36,6 +36,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=['up', 'stop', 'destroy', 'status', 'bootstrap'])
     parser.add_argument('--email')
+    parser.add_argument('--purge-keys', action='store_true', help='With destroy: remove the private review environment file too')
     parser.add_argument('--confirm', help='For destroy: type the review project name')
     args = parser.parse_args()
     values = environment_file()
@@ -59,7 +60,7 @@ def main():
             def redirect_request(self, *unused):
                 return None
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
-        with opener.open(request, timeout=30) as response:
+        with opener.open(request, timeout=30):
             print('Review admin created. Sign in and enroll MFA at http://localhost:3300/login')
         return
     if args.command == 'destroy' and args.confirm != PROJECT:
@@ -70,7 +71,11 @@ def main():
     if args.command == 'up':
         print('Review UI: http://localhost:3300/login — bootstrap a fresh review administrator next.')
     if args.command == 'destroy':
-        print('Review volumes removed. Private review keys retained for the next disposable run.')
+        if args.purge_keys:
+            ENV_FILE.unlink()
+            print('Review volumes and private review keys removed.')
+        else:
+            print('Review volumes removed. Private review keys retained; use --purge-keys to delete them.')
 
 
 if __name__ == '__main__':

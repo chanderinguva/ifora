@@ -63,8 +63,8 @@ export function ConnectorActionForm({ cfg, set, connections, meta, pills, payloa
   return (
     <div className="space-y-3" data-testid="connector-step-form">
       <div className="grid gap-3 md:grid-cols-2">
-        <div className="space-y-1"><Label>Connection</Label>
-          <select aria-label="Connection" className={fieldClass} value={cfg.connection_id ?? ""} onChange={(e) => pickConnection(e.target.value)}>
+        <div className="space-y-1"><Label>Connection<span aria-hidden="true"> (required)</span></Label>
+          <select required aria-required="true" aria-label="Connection" className={fieldClass} value={cfg.connection_id ?? ""} onChange={(e) => pickConnection(e.target.value)}>
             <option value="">Choose a connection…</option>
             {usable.map((c) => <option key={c.id} value={c.id}>{c.name} ({meta.connectors?.find((x) => x.id === c.connector_id)?.name ?? c.connector_id})</option>)}
           </select>
@@ -80,8 +80,8 @@ export function ConnectorActionForm({ cfg, set, connections, meta, pills, payloa
             </p>
           )}
         </div>
-        <div className="space-y-1"><Label>Action</Label>
-          <select aria-label="Action" className={fieldClass} value={cfg.action ?? ""} disabled={!connector}
+        <div className="space-y-1"><Label>Action<span aria-hidden="true"> (required)</span></Label>
+          <select required aria-required="true" aria-label="Action" className={fieldClass} value={cfg.action ?? ""} disabled={!connector}
             onChange={(e) => { const a = connector?.actions.find((x) => x.id === e.target.value); if (a) set({ action: a.id, inputs: startingInputs(a, inputs) }); }}>
             {!action && <option value="">{connector ? "Choose an action…" : "Choose a connection first"}</option>}
             {connector?.actions.map((a) => <option key={a.id} value={a.id} disabled={!actionAllowed(a, selected, a.id === cfg.action ? inputs : {})}>{a.label}{!actionAllowed(a, selected, a.id === cfg.action ? inputs : {}) ? " · Missing scope" : ""}</option>)}
@@ -96,18 +96,19 @@ export function ConnectorActionForm({ cfg, set, connections, meta, pills, payloa
           {!actionAllowed(action, selected, inputs) && <p role="alert" className="text-sm text-destructive">This connection is missing a required scope. Update the service permissions, reinstall or reauthorize it, then test the connection again.</p>}
           <div className="grid gap-3 md:grid-cols-2">
             {action.inputs.map((i) => {
-              const label = i.label + (i.required ? " *" : "");
+              const label = i.label + (i.required ? " (required)" : "");
               const v = inputs[i.key] ?? "";
               return (
                 <div key={i.key} className={"space-y-1" + (i.multiline ? " md:col-span-2" : "")}><Label>{label}</Label>
                   {i.type === "select" || i.type === "boolean" ? (
-                    <select aria-label={i.label} className={fieldClass} value={v} onChange={(e) => setInput(i.key, e.target.value)}>
+                    <select required={i.required} aria-required={i.required} aria-label={i.label} className={fieldClass} value={v} onChange={(e) => setInput(i.key, e.target.value)}>
                       {!i.required && i.default == null && <option value="">(not set)</option>}
                       {(i.type === "boolean" ? ["true", "false"] : i.options).map((o) => <option key={o} value={o}>{o}</option>)}
                     </select>
                   ) : (
-                    <PillInput label={i.label} multiline={i.multiline} value={v} onChange={(nv) => setInput(i.key, nv)} pills={pills} payload={payload} />
+                    <PillInput required={i.required} label={i.label} multiline={i.multiline} value={v} onChange={(nv) => setInput(i.key, nv)} pills={pills} payload={payload} />
                   )}
+                  {i.required && !v.trim() && <p className="text-xs text-destructive">{i.label} is required.</p>}
                 </div>
               );
             })}

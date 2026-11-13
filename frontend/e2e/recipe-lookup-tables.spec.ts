@@ -62,7 +62,7 @@ test("create a lookup table, edit rows, import CSV, and read a row from a recipe
   await page.getByRole("button", { name: "Save draft" }).click();
   await expect(page.getByTestId("builder-msg")).toContainText("Draft saved");
   await page.getByLabel("Sample user").selectOption({ label: ADMIN_EMAIL });
-  await page.getByRole("button", { name: "Run test" }).click();
+  await page.getByRole("button", { name: "Validate draft" }).click();
   await expect(page.getByTestId("job-view")).toContainText("found=true value=eng-value");
 
   // a table that a recipe uses cannot be deleted; clean up in order

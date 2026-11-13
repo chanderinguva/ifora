@@ -35,3 +35,13 @@ class ReviewStackTests(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 review.main()
             run.assert_not_called()
+
+
+    def test_purge_only_review_keys_after_success(self):
+        with tempfile.TemporaryDirectory() as temp:
+            key = Path(temp) / 'review.env'; key.write_text('review-only')
+            unrelated = Path(temp) / 'unrelated'; unrelated.write_text('keep')
+            with patch.object(review, 'ENV_FILE', key), patch.object(review, 'environment_file', return_value={}), patch('sys.argv', ['review-stack.py', 'destroy', '--confirm', review.PROJECT, '--purge-keys']), patch.object(review.subprocess, 'run'):
+                review.main()
+            self.assertFalse(key.exists())
+            self.assertTrue(unrelated.exists())

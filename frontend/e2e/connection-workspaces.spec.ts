@@ -30,6 +30,32 @@ test("create a Slack bot connection inside a template without losing inputs", as
   await page.getByRole("button", { name: "Create draft from template" }).click();
   await expect(page.getByRole("heading", { name: recipeName, exact: true })).toBeVisible();
   await expect(page.getByTestId("studio")).toContainText("Post a message");
+  await expect(page.getByRole("button", { name: "Publish", exact: true })).toHaveClass(/bg-primary/);
+  await expect(page.getByRole("button", { name: "Validate draft", exact: true })).toBeVisible();
+  const live = page.getByRole("region", { name: "Live Slack message test" });
+  await page.getByLabel("Sample user", { exact: true }).selectOption({ index: 1 });
+  await live.getByLabel("Test channel or user ID").fill("CTEST123");
+  let sends = 0;
+  await page.route("**/slack-test-preview", async (route) => {
+    expect(route.request().postDataJSON().destination).toBe("CTEST123");
+    await route.fulfill({ json: { preview_id: "a".repeat(64), destination: "CTEST123", text: "*Hello* test user :wave:" } });
+  });
+  await page.route("**/slack-test-send", async (route) => {
+    sends += 1;
+    expect(route.request().postDataJSON().confirmed).toBe(true);
+    await route.fulfill({ json: { sent: true, destination: "CTEST123" } });
+  });
+  await live.getByRole("button", { name: "Preview test message", exact: true }).click();
+  await expect(live).toContainText("*Hello* test user :wave:");
+  const send = live.getByRole("button", { name: "Send test message", exact: true });
+  await expect(send).toBeDisabled();
+  expect(sends).toBe(0);
+  await live.getByRole("checkbox").check();
+  await send.click();
+  await expect(page.getByTestId("builder-msg")).toContainText("Test message sent to CTEST123");
+  expect(sends).toBe(1);
+  await expect(send).not.toBeVisible();
+
 
   page.on("dialog", (d) => d.accept());
   await page.goto("/admin/recipes");

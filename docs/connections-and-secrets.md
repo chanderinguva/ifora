@@ -234,5 +234,51 @@ python3 scripts/review-stack.py stop
 python3 scripts/review-stack.py destroy --confirm ifora-pr138-review
 ```
 
-Review-only keys remain in `~/ifora-local/ifora-pr138-review/review.env` (mode 0600).
+Without `--purge-keys`, review-only keys remain in `~/ifora-local/ifora-pr138-review/review.env` (mode 0600).
 Do not use this stack for real customer credentials or copy its environment file into Dev/Demo.
+
+
+## Live Slack message tests
+
+The builder separates **Validate draft** (no requests sent) from **Send a Slack test message**.
+Choose a top-level prebuilt Slack **Post a message** step, a sample user, and an explicit test
+channel or Slack user ID. Preview the rendered message, check the destination/text, confirm,
+and send. The same bot connection/scopes apply; invite it to the test channel first.
+This sends one message only, bypassing trigger filters and without publishing/enabling or
+running any other steps. Earlier-step datapills are not available; test a self-contained
+message with sample-user/trigger datapills. Incoming-webhook steps are not supported by this live-test UI.
+Slack applies its real formatting after delivery; the preview shows the rendered source text.
+A production thread timestamp is intentionally omitted for test destinations.
+Only recipe managers can send. Previews expire after five minutes, are actor/tenant-bound,
+and are single-use. Changed drafts/connections require a new preview; access/scopes are
+rechecked before sending. A failed or timed-out call is never automatically retried: check
+Slack for delivery before sending a new test. Test attempts/outcomes are in System Log;
+these single-step tests do not create full recipe jobs. Do not include credentials in message text.
+
+### First review administrator MFA
+
+After bootstrap, generate the one-time enrollment code locally, substituting your review email:
+
+```bash
+docker compose -p ifora-pr138-review \
+  --env-file "$HOME/ifora-local/ifora-pr138-review/review.env" \
+  -f docker/docker-compose.review.yml \
+  exec backend-api python -m backend.cli issue-enrollment-code YOUR_EMAIL
+```
+
+Enter it with the review password, scan the QR code and confirm the authenticator code.
+Do not paste any enrollment secret or recovery code into chat.
+
+### Completely dispose of the review stack
+
+After fetching the latest PR code, this removes only the fixed review project's containers,
+network, database volumes and generated private review environment file:
+
+```bash
+python3 scripts/review-stack.py destroy --confirm ifora-pr138-review --purge-keys
+```
+
+Dev/Demo projects, source checkout, build cache and unrelated Docker images are unaffected.
+Any test messages already delivered to Slack remain in Slack.
+
+When testing after merge on Dev/Demo, start with a disposable Slack test channel and a dedicated sample user. Keep OpenBao disabled until its separate setup is verified. Review System Log for the live test attempt/outcome.

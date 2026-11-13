@@ -30,7 +30,7 @@ test("repeat a step for each item of a list and see every item in the test run",
   await page.getByRole("button", { name: "Save draft" }).click();
   await expect(page.getByTestId("builder-msg")).toContainText("Draft saved");
   await page.getByLabel("Sample user").selectOption({ label: ADMIN_EMAIL });
-  await page.getByRole("button", { name: "Run test" }).click();
+  await page.getByRole("button", { name: "Validate draft" }).click();
   await expect(page.getByTestId("job-view")).toContainText("succeeded");
   for (const c of ["item red", "item green", "item blue"]) await expect(page.getByTestId("job-view")).toContainText(c);
 

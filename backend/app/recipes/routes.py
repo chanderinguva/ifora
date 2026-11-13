@@ -774,6 +774,101 @@ def test_run(recipe_id: int, body: RunBody, request: Request, db: Session = Depe
     return _job_detail(db, job)
 
 
+class SlackTestBody(RunBody):
+    step_id: str = Field(..., min_length=1, max_length=100)
+    destination: str = Field(..., pattern=r"^[CGDUW][A-Z0-9]{2,20}$")
+
+
+class SlackSendBody(BaseModel):
+    preview_id: str = Field(..., pattern=r"^[a-f0-9]{64}$")
+    confirmed: bool = False
+
+
+def _draft_fingerprint(recipe):
+    return hashlib.sha256(json.dumps([recipe.draft, recipe.folder_id], sort_keys=True).encode()).hexdigest()
+
+
+def _slack_test_connection(db, actor, recipe, cfg):
+    conn = db.get(RecipeConnection, cfg['connection_id'])
+    if conn is None or conn.connector_id != 'slack' or not access.can_use_in_recipe(actor, conn, recipe.folder_id):
+        raise HTTPException(status_code=403, detail='This Slack connection is unavailable to you')
+    return conn
+
+
+@router.post('/{recipe_id}/slack-test-preview')
+def slack_test_preview(recipe_id: int, body: SlackTestBody, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    from backend.app.recipes import actions
+    recipe = _need(db, recipe_id, actor, 'manage')
+    d = _validated(db, recipe.draft, actor=actor, folder_id=recipe.folder_id)
+    selected = next((s for s in d['steps'] if s['id'] == body.step_id), None)
+    if not selected or selected['type'] != 'connector_action' or selected['config'].get('connector') != 'slack' or selected['config'].get('action') != 'post_message':
+        raise HTTPException(status_code=422, detail='Choose a top-level Slack Post a message step')
+    cfg = dict(selected['config'])
+    conn = _slack_test_connection(db, actor, recipe, cfg)
+    context = {'trigger': _sample_trigger(db, d, body, actor), 'steps': {}, 'recipe': {'id': recipe.id, 'name': recipe.name, 'version': 0}, 'job': {'id': 0}}
+    rc = actions.RunCtx(db, recipe.id, 0, body.step_id, context, True, lambda value: None)
+    try:
+        cfg['inputs'] = {k: rc.render(v) for k, v in cfg['inputs'].items()}
+        cfg['inputs']['channel'] = body.destination
+        cfg['inputs'].pop('thread_ts', None)  # test destination never inherits a production thread
+        rc.render = lambda value, **kwargs: value
+        actions._connector_action(rc, cfg)  # same scope/input validation, no network request
+    except actions.StepError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    preview_id = secrets.token_hex(32)
+    value = {'actor': actor.id, 'tenant': actor.tenant_id, 'recipe': recipe.id, 'fingerprint': _draft_fingerprint(recipe), 'cfg': cfg, 'connection_updated': str(conn.updated_at)}
+    try:
+        ratelimit._redis().set(f'recipe-slack-preview:{preview_id}', json.dumps(value), ex=300)
+    except Exception:
+        raise HTTPException(status_code=503, detail='Test preview storage is unavailable; no message was sent')
+    return {'preview_id': preview_id, 'destination': body.destination, 'text': cfg['inputs']['text'], 'expires_in': 300}
+
+
+@router.post('/{recipe_id}/slack-test-send')
+def slack_test_send(recipe_id: int, body: SlackSendBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    from backend.app.recipes import actions
+    recipe = _need(db, recipe_id, actor, 'manage')
+    if not body.confirmed:
+        raise HTTPException(status_code=422, detail='Confirm the preview destination and message before sending')
+    key = f'recipe-slack-preview:{body.preview_id}'
+    try:
+        client = ratelimit._redis()
+        raw = client.get(key)
+    except Exception:
+        raise HTTPException(status_code=503, detail='Test preview storage is unavailable; no message was sent')
+    value = json.loads(raw) if raw else None
+    if not value or value['actor'] != actor.id or value['tenant'] != actor.tenant_id or value['recipe'] != recipe.id:
+        raise HTTPException(status_code=409, detail='Preview expired or was already sent; preview again')
+    cfg = value['cfg']
+    conn = _slack_test_connection(db, actor, recipe, cfg)
+    if value['fingerprint'] != _draft_fingerprint(recipe) or value['connection_updated'] != str(conn.updated_at):
+        raise HTTPException(status_code=409, detail='Draft or connection changed; preview again')
+    try:
+        if not client.set(f'recipe-slack-test-cooldown:{actor.tenant_id}:{actor.id}:{recipe.id}', '1', nx=True, ex=5):
+            raise HTTPException(status_code=429, detail='Wait five seconds before sending another test')
+        if not client.getdel(key):
+            raise HTTPException(status_code=409, detail='This preview was already used')
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=503, detail='Test preview storage is unavailable; no message was sent')
+    metadata = {'test_message': True, 'step': cfg['action'], 'destination': cfg['inputs']['channel'], 'connection_id': conn.id}
+    _audit(db, AuditAction.RECIPE_TEST_RUN, actor, recipe.id, {**metadata, 'status': 'sending'}, request)
+    db.commit()  # durable intent before the external side effect; never retry automatically
+    rc = actions.RunCtx(db, recipe.id, 0, 'slack-test', {}, False, lambda value: None)
+    # Inputs were rendered during preview. Do not evaluate user-provided template text a second time.
+    rc.render = lambda value, **kwargs: value
+    try:
+        _, output = actions._connector_action(rc, cfg)
+    except actions.StepError:
+        _audit(db, AuditAction.RECIPE_TEST_RUN, actor, recipe.id, {**metadata, 'status': 'failed_or_unknown'}, request)
+        db.commit()
+        raise HTTPException(status_code=502, detail='Slack did not confirm delivery. Check the test destination before previewing and sending again.')
+    _audit(db, AuditAction.RECIPE_TEST_RUN, actor, recipe.id, {**metadata, 'status': 'sent'}, request)
+    db.commit()
+    return {'sent': True, 'destination': cfg['inputs']['channel'], 'ts': output.get('ts')}
+
+
 class PreviewBody(RunBody):
     templates: List[str] = Field(default_factory=list, max_length=20)
 

@@ -48,26 +48,27 @@ export function TemplatePicker({ meta, onCreated, onError, onCancel }: { meta: R
       </div>
       {sel && (
         <div className="grid gap-3 md:grid-cols-2">
-          <div className="space-y-1"><Label htmlFor="tp-name">Recipe name</Label><Input id="tp-name" maxLength={100} value={name} onChange={(e) => setName(e.target.value)} /></div>
+          <div className="space-y-1"><Label htmlFor="tp-name">Recipe name<span aria-hidden="true"> (required)</span></Label><Input id="tp-name" required aria-required="true" maxLength={100} value={name} onChange={(e) => setName(e.target.value)} /></div>
           <div className="space-y-1"><Label htmlFor="tp-folder">Recipe folder</Label><select id="tp-folder" className={fieldClass} value={folderId ?? ""} onChange={(e) => { setFolderId(e.target.value ? Number(e.target.value) : null); setVals((v) => ({ ...v, connection: "" })); }}><option value="">Unfiled</option>{folders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}</select></div>
           {sel.params.map((p) => (
-            <div key={p.key} className="space-y-1"><Label htmlFor={`tp-${p.key}`}>{p.label}</Label>
+            <div key={p.key} className="space-y-1"><Label htmlFor={`tp-${p.key}`}>{p.label}<span aria-hidden="true"> (required)</span></Label>
               {p.type === "group" ? (
-                <select id={`tp-${p.key}`} className={fieldClass} value={vals[p.key] ?? ""} onChange={(e) => setVals({ ...vals, [p.key]: e.target.value })}><option value="">Choose…</option>{groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select>
+                <select id={`tp-${p.key}`} required aria-required="true" className={fieldClass} value={vals[p.key] ?? ""} onChange={(e) => setVals({ ...vals, [p.key]: e.target.value })}><option value="">Choose…</option>{groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select>
               ) : p.type === "slack_connection" ? (
-                <><select id={`tp-${p.key}`} className={fieldClass} value={vals[p.key] ?? ""} onChange={(e) => setVals({ ...vals, [p.key]: e.target.value })}><option value="">Choose…</option>{slack.filter((c) => availableConnection(c, folderId)).map((c) => <option key={c.id} value={c.id}>{c.name}{c.connector_id === "slack" ? " (bot)" : " (webhook)"}</option>)}</select>
+                <><select id={`tp-${p.key}`} required aria-required="true" className={fieldClass} value={vals[p.key] ?? ""} onChange={(e) => setVals({ ...vals, [p.key]: e.target.value })}><option value="">Choose…</option>{slack.filter((c) => availableConnection(c, folderId)).map((c) => <option key={c.id} value={c.id}>{c.name}{c.connector_id === "slack" ? " (bot)" : " (webhook)"}</option>)}</select>
                   <InlineConnection folderId={folderId} connector="slack" onCreated={(c) => { if (c.connector_id === "slack" || c.kind === "slack_webhook") { setSlack((s) => [...s, c]); setVals((v) => ({ ...v, [p.key]: String(c.id) })); } else onError("Connection saved. Choose a Slack connection for this template."); }} />
                   {!slack.some((c) => availableConnection(c, folderId)) && <p className="text-xs text-muted-foreground">No Slack connection is available here. Create one without leaving this template.</p>}</>
               ) : p.type === "attribute" ? (
-                <select id={`tp-${p.key}`} className={fieldClass} value={vals[p.key] ?? ""} onChange={(e) => setVals({ ...vals, [p.key]: e.target.value })}><option value="">Choose…</option>{meta?.managed_attributes.map((a) => <option key={a.key} value={a.key}>{a.display_name}</option>)}</select>
+                <select id={`tp-${p.key}`} required aria-required="true" className={fieldClass} value={vals[p.key] ?? ""} onChange={(e) => setVals({ ...vals, [p.key]: e.target.value })}><option value="">Choose…</option>{meta?.managed_attributes.map((a) => <option key={a.key} value={a.key}>{a.display_name}</option>)}</select>
               ) : (
-                <Input id={`tp-${p.key}`} type={p.type === "number" ? "number" : "text"} value={vals[p.key] ?? ""} onChange={(e) => setVals({ ...vals, [p.key]: e.target.value })} />
+                <Input id={`tp-${p.key}`} required aria-required="true" type={p.type === "number" ? "number" : "text"} value={vals[p.key] ?? ""} onChange={(e) => setVals({ ...vals, [p.key]: e.target.value })} />
               )}
             </div>
           ))}
-          {bot && <div className="space-y-1"><Label htmlFor="tp-channel">Slack channel or user ID</Label><Input id="tp-channel" value={vals.channel ?? ""} placeholder="C0123456789" onChange={(e) => setVals({ ...vals, channel: e.target.value })} /><p className="text-xs text-muted-foreground">The bot needs chat:write and access to the selected conversation.</p></div>}
+          {bot && <div className="space-y-1"><Label htmlFor="tp-channel">Slack channel or user ID<span aria-hidden="true"> (required)</span></Label><Input id="tp-channel" required aria-required="true" value={vals.channel ?? ""} placeholder="C0123456789" onChange={(e) => setVals({ ...vals, channel: e.target.value })} /><p className="text-xs text-muted-foreground">The bot needs chat:write and access to the selected conversation.</p></div>}
         </div>
       )}
+      {sel && !complete && <p className="text-xs text-muted-foreground" role="status">Complete the required fields above to create this draft.</p>}
       <div className="flex gap-2">
         <Button disabled={!complete} onClick={async () => {
           try {
@@ -99,7 +100,7 @@ export function ImportCard({ onCreated, onError, onCancel }: { onCreated: (r: Re
           } catch { setDoc(null); onError("That file is not valid JSON"); }
         }} />
         <p className="text-xs text-muted-foreground">Groups and connections are matched by name; create any that are missing first. The recipe arrives disabled and unpublished.</p></div>
-      {doc && <div className="space-y-1"><Label htmlFor="imp-name">Recipe name</Label><Input id="imp-name" maxLength={100} value={name} onChange={(e) => setName(e.target.value)} /></div>}
+      {doc && <div className="space-y-1"><Label htmlFor="imp-name">Recipe name<span aria-hidden="true"> (required)</span></Label><Input id="imp-name" maxLength={100} value={name} onChange={(e) => setName(e.target.value)} /></div>}
       <div className="flex gap-2">
         <Button disabled={!doc || !name.trim()} onClick={async () => {
           try { onCreated(await http<RecipeSummary>("/admin/recipes/import", { method: "POST", body: { document: doc, name } })); }
