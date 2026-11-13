@@ -261,6 +261,39 @@ Paste the `make check` output into the pull request (see `.github/pull_request_t
 - `make test-backend` needs the compose stack up (it reuses the `ifora-api` image, network and env). It runs `scripts/test_backend.sh`, which starts a throwaway container with this checkout mounted, so the running container's baked code is not what is tested. Pass pytest args with `make test-backend PYTEST_ARGS="tests/test_foo.py -x"`. Fixtures create a database on the shared dev Postgres, so never point it at production.
 - Server-side branch protection is not available on this repository's GitHub plan (the API returns 403 "Upgrade to GitHub Pro"). As a local substitute, `.githooks/pre-push` refuses any push to `main` or `master` (commits, force-pushes and deletions). It only protects machines that ran `make hooks`, and `git push --no-verify` bypasses it, so this is a guard against mistakes, not an enforced control. Changes reach `main` through a reviewed PR merged on GitHub.
 
+## Backup, restore and rollback
+
+### Backup
+```bash
+scripts/backup.sh        # ~/ifora-backups/ifora-<UTC>.dump + .manifest, both mode 600
+```
+The dump is the whole PostgreSQL database in `pg_dump` custom format. The manifest records its sha256, the migration version and row counts (tenants, users, groups, applications, assignments). The script refuses a backup directory inside this checkout: dumps hold password hashes, TOTP secrets and PII, so never commit them, and encrypt them (`age` or `gpg`) before they leave this machine.
+
+Not in the dump, back these up separately and keep them apart from it: everything in `docker/.env` (the Fernet keys `MFA_ENCRYPTION_KEY`, `OIDC_KEY_ENCRYPTION_KEY`, `SWA_ENCRYPTION_KEY` and `RECIPE_ENCRYPTION_KEY` are required to decrypt data in a restored database) and the OpenBao data and unseal material if you use it. Redis holds only sessions and rate-limit counters and is not backed up; users sign in again after a restore.
+
+### Restore
+```bash
+docker stop ifora-api ifora-recipes-worker             # nothing may write during a restore
+scripts/restore.sh ~/ifora-backups/ifora-<stamp>.dump  # target must be empty
+scripts/restore.sh <dump> --force                      # replace the existing tables
+```
+The script verifies the dump against its manifest, refuses a non-empty database without `--force`, restores in one transaction (an interrupted or failing restore leaves the target exactly as it was) and then compares the migration version and row counts (exit 3 if they differ). Start the application afterwards and sign in. To rehearse, point it at a scratch stack: `IFORA_PG_CONTAINER=<scratch-postgres> scripts/restore.sh <dump>`.
+
+### Roll back a release
+Images are tagged with the first 12 characters of the commit (`ghcr.io/<owner>/ifora-api:<tag>`). `scripts/deploy.sh` always builds `origin/main`, so use `scripts/ci-deploy.sh` to go back.
+
+1. Before deploying a release that adds a migration, run `scripts/backup.sh`.
+2. Pick the commit to return to, and find the migration revision it expects (no database needed):
+   `docker run --rm --entrypoint alembic ghcr.io/<owner>/ifora-api:<old-tag> -c backend/alembic.ini heads` (prints for example `0055 (head)`).
+3. Compare with the database: `docker exec ifora-api alembic -c backend/alembic.ini current`. If it is the same revision, go to step 5.
+4. Otherwise downgrade first, using the newer image that is still running (an older image does not contain the newer migration files and its start-up `alembic upgrade head` fails on the unknown revision):
+   `docker stop ifora-recipes-worker && docker exec ifora-api alembic -c backend/alembic.ini downgrade <revision>`.
+   A downgrade discards data that only the newer schema holds. If it fails, or that data matters, restore the pre-release backup with `scripts/restore.sh <dump> --force` instead.
+5. Deploy the old images: `IMAGE_OWNER=<owner> scripts/ci-deploy.sh deploy local <old-sha>` (`deploy demo <old-sha>` for the demo). A missing image is pulled from GHCR.
+6. Verify: `docker exec ifora-api alembic -c backend/alembic.ini current` shows the expected revision, the API health check answers and you can sign in.
+
+Verified on a scratch database: backup, restore (empty target, refusal on a non-empty one, `--force`, tampered and corrupt dumps, an interrupted restore) and `alembic downgrade`/`upgrade` between 0056 and 0055. The image rollback in step 5 is written from `scripts/ci-deploy.sh` and is exercised by the restore drill (IFORA-21).
+
 ## Security
 
 - Passwords hashed with Argon2id
