@@ -1,12 +1,13 @@
 "use client";
 import { useEffect, useState } from "react";
+import { SlackBlocksPreview, type SlackBlock } from "@/components/recipe-editor/slack-blocks-editor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { fieldClass } from "@/components/bits";
 import { http } from "@/lib/http";
 import type { Definition } from "@/lib/recipes";
-type Preview = { preview_id: string; destination: string; text: string };
+type Preview = { preview_id: string; destination: string; text: string; blocks?: SlackBlock[] | null };
 export function SlackMessageTest({ id, definition, sample, allowed, save, onMessage }: {
   id: string; definition: Definition; sample: { user_id: number | null; group_id: number | null; payload: unknown };
   allowed: boolean; save: () => Promise<unknown>; onMessage: (ok: boolean, text: string) => void;
@@ -32,7 +33,7 @@ export function SlackMessageTest({ id, definition, sample, allowed, save, onMess
       catch (e) { onMessage(false, e instanceof Error ? e.message : "Preview failed"); } finally { setBusy(false); }
     }}>{busy ? "Working…" : "Preview test message"}</Button>
     {preview && <div className="space-y-3 rounded-md border p-4">
-      <p className="text-sm font-medium">Destination: {preview.destination}</p><pre className="whitespace-pre-wrap break-words rounded bg-muted p-3 text-sm">{preview.text}</pre>
+      <p className="text-sm font-medium">Destination: {preview.destination}</p>{preview.blocks && <SlackBlocksPreview blocks={preview.blocks} />}<p className="text-xs text-muted-foreground">Message / notification fallback</p><pre className="whitespace-pre-wrap break-words rounded bg-muted p-3 text-sm">{preview.text}</pre>
       <p className="text-xs text-muted-foreground">Rendered text; Slack applies formatting after delivery. Preview expires in five minutes. No production thread is used.</p>
       <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={confirmed} disabled={busy} onChange={(e) => setConfirmed(e.target.checked)} />I confirm this destination and want to send this real test message.</label>
       <Button disabled={!confirmed || busy || !allowed} onClick={async () => {

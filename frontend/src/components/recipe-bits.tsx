@@ -169,7 +169,7 @@ export function JobView({ job }: { job: Job }) {
       <div className="flex flex-wrap items-center gap-2">
         <Badge tone={statusTone(job.status)}>{job.status}</Badge>
         <span className="text-muted-foreground">
-          {job.mode === "dry_run" ? "Test run (nothing was changed)" : `Version ${job.version ?? "?"}`} · {job.trigger_type} · started {fmt(job.created_at)}
+          {job.mode === "dry_run" ? "Draft validation (no changes sent)" : `Published version ${job.version ?? "?"}`} · {job.trigger_type} · started {fmt(job.created_at)}
         </span>
       </div>
       {job.status === "waiting" && job.approval && (

@@ -10,14 +10,13 @@ from email.message import EmailMessage
 from urllib.parse import unquote, urlencode
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Tuple
 
 import structlog
 from sqlalchemy import delete, insert, select
 from sqlalchemy.orm import Session
 
 from backend.app.audit.model import AuditAction, AuditEvent
-from backend.app.auth.sessions_util import revoke_user_sessions
 from backend.app.groups import rules as group_rules
 from backend.app.groups.model import Group, user_group_association
 from backend.app.profiles import catalog as profile_catalog
@@ -498,6 +497,17 @@ def _lookup_write(rc: RunCtx, cfg: dict):
     return inp, {"action": result, "changed": result != "not_found"}
 
 
+def render_connector_inputs(cfg, render):
+    raw = {k: render(v) for k, v in cfg["inputs"].items() if k != "blocks" or cfg["connector"] != "slack" or cfg["action"] != "post_message"}
+    if cfg["connector"] == "slack" and cfg["action"] == "post_message" and cfg["inputs"].get("blocks"):
+        from backend.app.connectors.slack_blocks import render_blocks
+        try:
+            raw["blocks"] = render_blocks(cfg["inputs"]["blocks"], render)
+        except ValueError as e:
+            raise StepError(str(e)) from None
+    return raw
+
+
 def _connector_action(rc: RunCtx, cfg: dict):
     """A pre-built connector action (ADR 026). Inputs are rendered here (tainted datapills are refused) and validated against the definition."""
     from backend.app.connectors import engine as ce
@@ -511,7 +521,7 @@ def _connector_action(rc: RunCtx, cfg: dict):
     if conn is None or conn.kind != "connector" or conn.connector_id != c.id:
         raise StepError(f"choose a {c.name} connection")
     _check_runtime_connection(rc, conn)
-    raw = {k: rc.render(v) for k, v in cfg["inputs"].items()}
+    raw = render_connector_inputs(cfg, rc.render)
     from backend.app.connectors.scopes import action_available
     if not action_available(a, conn.granted_scopes, raw):
         raise StepError("This connection is missing a required action scope")

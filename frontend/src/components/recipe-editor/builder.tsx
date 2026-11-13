@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge, PageHeader, fieldClass } from "@/components/bits";
 import { JobView, RecipeTabs } from "@/components/recipe-bits";
+import { SlackPreviewContext } from "@/components/recipe-editor/slack-blocks-editor";
 import { SlackMessageTest } from "@/components/recipe-editor/slack-message-test";
 import { Studio } from "@/components/recipe-editor/studio";
 import { FunctionsContext } from "@/components/recipe-editor/pill-context";
@@ -83,6 +84,7 @@ export function RecipeBuilder() {
 
   return (
     <FunctionsContext.Provider value={meta.functions ?? []}>
+    <SlackPreviewContext.Provider value={{ users, userId: test.user_id, setUser: (user_id) => setTest({ ...test, user_id }), render: async (templates) => (await http<{ items: { ok: boolean; value?: unknown; error?: string }[] }>(`/admin/recipes/${id}/formula-preview`, { method: "POST", body: { templates, user_id: test.user_id ? Number(test.user_id) : null, group_id: test.group_id ? Number(test.group_id) : null, payload: safeJson(test.payload) } })).items }}>
     <div>
       <PageHeader title={recipe.name}>
         <Badge tone={recipe.enabled ? "good" : "neutral"}>{recipe.enabled ? "enabled" : "disabled"}</Badge>
@@ -150,8 +152,8 @@ export function RecipeBuilder() {
 
       <div className="mt-6 grid gap-4 md:grid-cols-2">
         <Card><CardHeader className="py-3"><CardTitle className="text-base">Recent runs</CardTitle></CardHeader><CardContent className="text-sm">
-          {recent.length === 0 ? <span className="text-muted-foreground">No runs yet.</span> : <ul className="space-y-1">{recent.map((j) => <li key={j.id}>#{j.id} · {j.status}{j.mode === "dry_run" ? " (test)" : ""}</li>)}</ul>}
-          <Link className="mt-2 inline-block underline underline-offset-4" href="/admin/recipes/jobs">Open job history</Link>
+          {recent.length === 0 ? <span className="text-muted-foreground">No runs yet.</span> : <ul className="space-y-1">{recent.map((j) => <li key={j.id}>#{j.id} · {j.status} · {j.mode === "dry_run" ? "Draft validation · no changes sent" : `Published v${j.version ?? "?"}`}</li>)}</ul>}
+          <Link className="mt-2 inline-block underline underline-offset-4" href={`/admin/recipes/jobs?recipe_id=${id}`}>Open job history</Link>
         </CardContent></Card>
         <Card><CardHeader className="py-3"><CardTitle className="text-base">Versions</CardTitle></CardHeader><CardContent className="text-sm">
           {versions.length === 0 ? <span className="text-muted-foreground">Nothing published yet.</span> : <ul className="space-y-1">{versions.map((v) => (
@@ -169,6 +171,7 @@ export function RecipeBuilder() {
         </CardContent></Card>
       </div>
     </div>
+    </SlackPreviewContext.Provider>
     </FunctionsContext.Provider>
   );
 }

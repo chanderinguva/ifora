@@ -24,6 +24,7 @@ export default function JobHistoryPage() {
       .then(setData).catch((e) => setErr(e.message));
   }, [page, status, recipeId]);
   useEffect(load, [load]);
+  useEffect(() => { const id = new URLSearchParams(window.location.search).get("recipe_id"); if (id && /^\d+$/.test(id)) setRecipeId(id); }, []);
   useEffect(() => { http<{ worker_running: boolean; worker_last_seen: string | null }>("/admin/recipes/status").then(setWorker).catch(() => {}); }, []);
   async function act(path: string, ok: string) {
     setErr(null); setNote(null);
@@ -55,13 +56,13 @@ export default function JobHistoryPage() {
       {err && <Alert variant="destructive" className="mb-4"><AlertDescription>{err}</AlertDescription></Alert>}
       <Card><CardContent className="overflow-x-auto p-0">
         <table className="w-full" data-testid="jobs-table">
-          <thead className="border-b"><tr><th className={th}>Job</th><th className={th}>Recipe</th><th className={th}>Trigger</th><th className={th}>Status</th><th className={th}>Started</th><th className={th}></th></tr></thead>
+          <thead className="border-b"><tr><th className={th}>Job</th><th className={th}>Recipe</th><th className={th}>Version / mode</th><th className={th}>Trigger</th><th className={th}>Status</th><th className={th}>Started</th><th className={th}></th></tr></thead>
           <tbody>
             {data?.Resources.map((j) => (
               <tr key={j.id} className="border-b last:border-0">
                 <td className={td}>#{j.id}{j.mode === "dry_run" ? " (test)" : ""}{j.rerun_of ? ` (re-run of #${j.rerun_of})` : ""}</td>
-                <td className={td}>{j.recipe_name ?? j.recipe_id}{j.version ? ` v${j.version}` : ""}</td>
-                <td className={td}>{j.trigger_type}</td>
+                <td className={td}>{j.recipe_name ?? j.recipe_id}</td>
+                <td className={td}>{j.mode === "dry_run" ? "Draft validation" : `Published v${j.version ?? "?"}`}</td><td className={td}>{j.trigger_type}</td>
                 <td className={td}><Badge tone={statusTone(j.status)}>{j.status}</Badge></td>
                 <td className={td}>{fmt(j.created_at)}</td>
                 <td className={td + " space-x-3 text-right"}>
@@ -80,7 +81,7 @@ export default function JobHistoryPage() {
                   <button className="underline underline-offset-4" onClick={() => http<Job>(`/admin/recipes/jobs/${j.id}`).then(setOpen).catch((e) => setErr(e.message))}>Details</button></td>
               </tr>
             ))}
-            {data && data.Resources.length === 0 && <tr><td className={td} colSpan={6}>No jobs yet.</td></tr>}
+            {data && data.Resources.length === 0 && <tr><td className={td} colSpan={7}>No jobs yet.</td></tr>}
           </tbody>
         </table>
       </CardContent></Card>

@@ -6,6 +6,7 @@ import { fieldClass } from "@/components/bits";
 import { PillInput } from "@/components/recipe-bits";
 import type { Connection, ConnectorAction, ConnectorInfo, Pill, RecipeMeta } from "@/lib/recipes";
 import { actionAllowed, actionScopes } from "@/lib/recipes";
+import { SlackBlocksEditor } from "@/components/recipe-editor/slack-blocks-editor";
 import { InlineConnection } from "@/components/connection-editor";
 
 type Cfg = { connector?: string; connection_id?: number | null; action?: string; inputs?: Record<string, string> };
@@ -95,7 +96,7 @@ export function ConnectorActionForm({ cfg, set, connections, meta, pills, payloa
           <p className="text-xs text-muted-foreground">Required scopes: {actionScopes(action, inputs).join(", ") || "See the service's permissions"}. {selected?.granted_scopes == null ? "Permissions have not been verified; test the connection." : "Checked against the saved connection scopes."}</p>
           {!actionAllowed(action, selected, inputs) && <p role="alert" className="text-sm text-destructive">This connection is missing a required scope. Update the service permissions, reinstall or reauthorize it, then test the connection again.</p>}
           <div className="grid gap-3 md:grid-cols-2">
-            {action.inputs.map((i) => {
+            {action.inputs.filter((i) => i.type !== "slack_blocks").map((i) => {
               const label = i.label + (i.required ? " (required)" : "");
               const v = inputs[i.key] ?? "";
               return (
@@ -113,6 +114,7 @@ export function ConnectorActionForm({ cfg, set, connections, meta, pills, payloa
               );
             })}
           </div>
+          {connector?.id === "slack" && action.id === "post_message" && <SlackBlocksEditor value={inputs.blocks ?? ""} onChange={(v) => setInput("blocks", v)} pills={pills} payload={payload} />}
           <p className="text-xs text-muted-foreground">
             {action.read_only || action.idempotent ? "Retried automatically if the service is briefly unavailable." : "Not retried automatically, so a change is never applied twice."}
             {" "}Later steps can use: {["status_code", "ok", ...action.outputs.filter((o) => o !== "status_code" && o !== "ok")].join(", ")}.

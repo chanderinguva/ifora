@@ -54,7 +54,10 @@ export type PreviewItem = { template: string; ok: boolean; value?: unknown; erro
 function formulasIn(v: unknown): string[] {
   if (typeof v === "string") return v.includes("{{=") ? [v] : [];
   if (Array.isArray(v)) return v.flatMap(formulasIn);
-  if (v && typeof v === "object") return Object.values(v).flatMap(formulasIn);
+  if (v && typeof v === "object") return Object.entries(v).flatMap(([key, value]) => {
+    if (key === "blocks" && typeof value === "string") { try { return formulasIn(JSON.parse(value)); } catch { return []; } }
+    return formulasIn(value);
+  });
   return [];
 }
 

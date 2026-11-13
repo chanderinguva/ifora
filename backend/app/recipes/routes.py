@@ -808,7 +808,7 @@ def slack_test_preview(recipe_id: int, body: SlackTestBody, db: Session = Depend
     context = {'trigger': _sample_trigger(db, d, body, actor), 'steps': {}, 'recipe': {'id': recipe.id, 'name': recipe.name, 'version': 0}, 'job': {'id': 0}}
     rc = actions.RunCtx(db, recipe.id, 0, body.step_id, context, True, lambda value: None)
     try:
-        cfg['inputs'] = {k: rc.render(v) for k, v in cfg['inputs'].items()}
+        cfg['inputs'] = actions.render_connector_inputs(cfg, rc.render)
         cfg['inputs']['channel'] = body.destination
         cfg['inputs'].pop('thread_ts', None)  # test destination never inherits a production thread
         rc.render = lambda value, **kwargs: value
@@ -821,7 +821,7 @@ def slack_test_preview(recipe_id: int, body: SlackTestBody, db: Session = Depend
         ratelimit._redis().set(f'recipe-slack-preview:{preview_id}', json.dumps(value), ex=300)
     except Exception:
         raise HTTPException(status_code=503, detail='Test preview storage is unavailable; no message was sent')
-    return {'preview_id': preview_id, 'destination': body.destination, 'text': cfg['inputs']['text'], 'expires_in': 300}
+    return {'preview_id': preview_id, 'destination': body.destination, 'text': cfg['inputs']['text'], 'blocks': cfg['inputs'].get('blocks'), 'expires_in': 300}
 
 
 @router.post('/{recipe_id}/slack-test-send')
@@ -881,7 +881,7 @@ def formula_preview(recipe_id: int, body: PreviewBody, db: Session = Depends(get
     data = {"trigger": _sample_trigger(db, d, body, actor), "steps": {}, "recipe": {"id": r.id, "name": r.name, "version": 0}, "job": {"id": 0}}
     items = []
     for t in body.templates:
-        if len(t) > 2000:
+        if len(t) > 3000:
             items.append({"template": t[:50], "ok": False, "error": "too long"})
             continue
         try:

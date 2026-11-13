@@ -77,7 +77,7 @@ export type RecipeMeta = {
 
 /** A pre-built connector from the server's catalog (ADR 026). */
 export type ConnectorField = { key: string; label: string; secret: boolean; pattern: string | null; max_length: number };
-export type ConnectorInput = { key: string; label: string; type: "string" | "integer" | "boolean" | "select"; required: boolean; default: unknown; options: string[]; max_length: number; multiline?: boolean };
+export type ConnectorInput = { key: string; label: string; type: "string" | "integer" | "boolean" | "select" | "slack_blocks"; required: boolean; default: unknown; options: string[]; max_length: number; multiline?: boolean };
 export type ConnectorAction = { id: string; label: string; description: string; method: string; read_only: boolean; idempotent: boolean; inputs: ConnectorInput[]; outputs: string[]; required_scopes?: string[]; scope_by_input?: Record<string, Record<string, string[]>> };
 export type ConnectorInfo = {
   id: string; version: number; name: string; category: string; description: string; hosts: string[];

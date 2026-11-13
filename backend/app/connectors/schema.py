@@ -51,11 +51,11 @@ class Auth(_Strict):
 class Input(_Strict):
     key: str = Field(..., pattern=_KEY)
     label: str = Field(..., min_length=1, max_length=80)
-    type: Literal["string", "integer", "boolean", "select"] = "string"
+    type: Literal["string", "integer", "boolean", "select", "slack_blocks"] = "string"
     required: bool = False
     default: Optional[Any] = None
     pattern: Optional[str] = Field(None, max_length=200)
-    max_length: int = Field(200, ge=1, le=2000)
+    max_length: int = Field(200, ge=1, le=16000)
     minimum: Optional[int] = None
     maximum: Optional[int] = None
     options: List[str] = Field(default_factory=list, max_length=50)
@@ -262,6 +262,10 @@ def validate_connector(raw: Any) -> Connector:
             if inp is not None and not inp.required:
                 raise DefinitionInvalid(f"{where}: input '{p}' is used in the path, so it must be required")
         for i in a.inputs:
+            if i.type == "slack_blocks" and (c.id != "slack" or a.id != "post_message" or i.key != "blocks" or i.key in placeholders(a.path) or any(i.key in placeholders(q) for q in a.query.values())):
+                raise DefinitionInvalid("slack_blocks is restricted to Slack message bodies")
+            if i.type != "slack_blocks" and i.max_length > 2000:
+                raise DefinitionInvalid("Only Slack blocks may exceed 2000 input characters")
             iw = f"{where} input '{i.key}'"
             if i.multiline and (i.type != "string" or any(i.key in placeholders(t) for t in [a.path, *a.query.values()])):
                 raise DefinitionInvalid(f"{iw}: multiline is only for string inputs used in the body")

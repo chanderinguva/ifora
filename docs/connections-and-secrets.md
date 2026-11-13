@@ -282,3 +282,43 @@ Dev/Demo projects, source checkout, build cache and unrelated Docker images are 
 Any test messages already delivered to Slack remain in Slack.
 
 When testing after merge on Dev/Demo, start with a disposable Slack test channel and a dedicated sample user. Keep OpenBao disabled until its separate setup is verified. Review System Log for the live test attempt/outcome.
+
+
+## Slack Block Kit builder
+
+Open the Slack **Post a message** step in the recipe builder and choose **Block Kit layout**.
+Add/reorder/remove headings, sections, field columns, dividers and context. Every text field
+supports datapills. **Advanced JSON editor** edits the same layout, not a second copy.
+The Message field remains required notification/screen-reader fallback text.
+
+The layout preview updates as you edit. Choose a sample user and **Preview with sample data**
+to resolve supported datapills/formulas without sending anything. Save trigger changes before
+sample preview; it uses the saved draft's trigger context. Earlier-step output pills are only
+available during full recipe execution. Sample previews use the existing formula-preview API.
+**Preview test message** and **Send test message** use the same structured blocks validator
+as published runs. Slack controls final rendering; the browser preview is approximate.
+
+Supported display-only blocks: header (plain text, 150 characters), section text (3000),
+section fields (up to 10, 2000 characters each), divider, context text (up to 10, 2000 each).
+Maximum 50 blocks / 16000 UTF-8 bytes. Interactive elements, remote images and arbitrary block
+properties are refused. Template values are rendered into parsed text nodes so quotes/JSON
+in sample values cannot change block structure. Runtime limits are rechecked after rendering.
+Existing plain-text recipes remain unchanged. Newly created bot-based failed-sign-in templates
+start with an editable Block Kit security card; existing templates/versions are not rewritten.
+
+## Identifying successful versions
+
+Recent runs and Job history show **Published vN** for real recipe jobs and **Draft validation**
+for dry runs. Open job details for step results. The builder's job-history link filters by recipe.
+Publishing vN and successfully validating a draft do not establish that vN has run successfully.
+Single-step live Slack tests are audited in System Log and do not represent full-version runs.
+
+## Drone Slack build context
+
+The existing parent build card now includes **What changed**, using the actual PR title or
+commit subject and a GitHub PR link when its number can be determined. Merge commits use their
+PR-title paragraph. Metadata is read from Drone/the checked-out Git commit and cached with the
+existing thread state; no additional GitHub token is needed. This is a concise source title,
+not an AI-generated summary of the diff. It remains attached to the same parent/thread.
+
+Slack references: https://docs.slack.dev/block-kit/ and https://docs.slack.dev/reference/methods/chat.postMessage/ . The initial composer supports the display-only subset documented above.

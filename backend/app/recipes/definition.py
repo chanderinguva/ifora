@@ -651,6 +651,12 @@ def _check_connector_action(db, cfg) -> None:
     for i in a.inputs:
         if i.required and i.default is None and not (cfg["inputs"].get(i.key) or "").strip():
             raise tpl.TemplateError(f"'{i.label}' is required")
+    if c.id == "slack" and a.id == "post_message" and cfg["inputs"].get("blocks"):
+        from backend.app.connectors.slack_blocks import validate_blocks
+        try:
+            validate_blocks(cfg["inputs"]["blocks"])
+        except ValueError as e:
+            raise tpl.TemplateError(str(e)) from None
     static = {k: v for k, v in cfg["inputs"].items() if v != "" and "{{" not in v}
     try:
         ce.validate_inputs(a, static, partial=True)
@@ -662,7 +668,14 @@ def _check_step(db, stype, cfg, ttype, earlier, managed, taint, where, handler=F
     _check_connection_use(db, cfg, actor, folder_id)
     if stype in ("condition",):
         return
-    for p in tpl.all_pills({k: v for k, v in cfg.items() if k not in ("connection_id", "name", "unit", "when_full")}):
+    template_config = {k: v for k, v in cfg.items() if k not in ("connection_id", "name", "unit", "when_full")}
+    if stype == "connector_action" and cfg.get("connector") == "slack" and cfg.get("action") == "post_message" and cfg.get("inputs", {}).get("blocks"):
+        from backend.app.connectors.slack_blocks import validate_blocks
+        try:
+            template_config["inputs"] = {**cfg["inputs"], "blocks": validate_blocks(cfg["inputs"]["blocks"])}
+        except ValueError as e:
+            raise tpl.TemplateError(str(e)) from None
+    for p in tpl.all_pills(template_config):
         _pill_allowed(p, ttype, earlier, managed, handler, in_loop)
         if stype in STATE_CHANGING or stype in ("set_variable", "lookup_row", "for_each_item", "call_recipe", "return_data", "connector_action"):   # a variable must not carry user-editable text onward; a lookup key picks what is read
             taint(p)
