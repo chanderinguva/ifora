@@ -198,3 +198,41 @@ Manual acceptance:
 - Test Slack scope discovery; missing-scope actions show requirements and cannot run with verified insufficient scopes.
 - Authorize OAuth with a disposable provider account; test refresh, cancellation and repeated callback rejection.
 - In a disposable vault, seal/restart it and verify secret operations fail without fallback, then unseal and recover.
+
+
+## Third Docker stack for PR 138 (recommended)
+
+Use a separate checkout of the PR branch. The standalone review Compose file never
+includes Dev/Demo overrides, tunnels, published image tags, or their environment files.
+Postgres/Redis have no published ports. Only localhost ports 3300 (UI) and 8300 (API)
+are bound. The script creates fresh private keys outside Git; do not copy deployed keys/data.
+MFA enrollment is required for the new review administrator. Outbound email is not configured.
+Use disposable external-service accounts/connections: a published recipe can still call an external API.
+
+```bash
+cd /Users/chanderinguva/Development/ifora
+git fetch origin feat/connection-workspaces-and-secret-providers
+git worktree add ../ifora-pr138-review origin/feat/connection-workspaces-and-secret-providers
+cd ../ifora-pr138-review
+python3 scripts/review-stack.py up
+python3 scripts/review-stack.py bootstrap --email YOUR_EMAIL
+```
+
+Enter a new review-only password when prompted, then open `http://localhost:3300/login`.
+Keep Dev/Demo running. The first build may take several minutes; later builds reuse Docker layers.
+The review stack builds the checked-out source, not the deployed GHCR images.
+If a selected port is occupied, startup fails rather than stopping another stack.
+Run the manual acceptance checklist above with this disposable administrator/data.
+Generic OAuth needs a provider-approved HTTPS callback and is not enabled by this localhost setup.
+OpenBao is disabled; its separate setup remains optional and must be tested before activation.
+
+```bash
+# Inspect / stop without removing review data:
+python3 scripts/review-stack.py status
+python3 scripts/review-stack.py stop
+# Delete ONLY the disposable review containers, network and database volumes:
+python3 scripts/review-stack.py destroy --confirm ifora-pr138-review
+```
+
+Review-only keys remain in `~/ifora-local/ifora-pr138-review/review.env` (mode 0600).
+Do not use this stack for real customer credentials or copy its environment file into Dev/Demo.
