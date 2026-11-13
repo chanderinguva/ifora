@@ -2,7 +2,7 @@
 name: ifora-ci-check
 services:
   ci-postgres:
-    image: postgres:16-alpine
+    image: postgres:16-alpine@sha256:1fb72075a1de85a1d39de23c2da81baef1b71bf5c0b61a14cbbfdb072a6246d9
     environment:
       POSTGRES_USER: ifora_ci
       POSTGRES_PASSWORD: ci_only
@@ -15,7 +15,7 @@ services:
       timeout: 3s
       retries: 30
   ci-redis:
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:c5d34a98396a4775e223c74e929162c35c5a2182901ba26b50ade939941ce14b
     tmpfs:
       - /data
     healthcheck:
