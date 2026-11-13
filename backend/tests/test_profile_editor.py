@@ -44,7 +44,7 @@ def test_admin_sets_typed_values_on_users(db, admin):
 
 
 def test_users_edit_only_user_editable_attributes(db, admin):
-    u = make_user(db, "e@example.com")
+    make_user(db, "e@example.com")
     s = __import__("tests.conftest", fromlist=["Api"]).Api()
     assert s.login("e@example.com").status_code == 200
     assert s.patch("/me/profile", {"profile_attributes": {"title": "Eng"}}).status_code == 200

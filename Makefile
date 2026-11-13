@@ -14,6 +14,7 @@ BASE ?= origin/main
 
 # Where the tools come from. Default: your PATH. Override with e.g. PY_RUN="docker run --rm -v $$PWD:/src -w /src ifora-tools".
 RUFF ?= ruff
+SHELLCHECK ?= shellcheck
 MYPY ?= mypy
 BANDIT ?= bandit
 PIP_AUDIT ?= pip-audit
@@ -21,8 +22,8 @@ GITLEAKS ?= gitleaks
 SEMGREP ?= semgrep
 TRIVY ?= trivy
 
-GATES_ALL := lint-py types-py secrets sast-bandit sast-semgrep deps-py test-backend lint-web types-web deps-web no-workflows image-pins
-GATES_FAST := lint-py types-py secrets lint-web types-web no-workflows image-pins
+GATES_ALL := lint-py lint-sh types-py secrets sast-bandit sast-semgrep deps-py test-backend lint-web types-web deps-web no-workflows image-pins
+GATES_FAST := lint-py lint-sh types-py secrets lint-web types-web no-workflows image-pins
 
 .PHONY: check check-fast hooks tools e2e images-scan lock $(GATES_ALL)
 
@@ -58,11 +59,12 @@ tools:
 # because the existing code base is not ruff-formatted (baseline recorded in the IFORA-20 PR).
 lint-py:
 	@scripts/need.sh $(RUFF) "pip install -r backend/requirements-dev.txt"
-	cd $(BACKEND) && $(RUFF) check .
-	@files=$$( (git diff --name-only --diff-filter=AM $(BASE)...HEAD -- '$(BACKEND)/app/*.py' '$(BACKEND)/app/**/*.py'; \
-	            git diff --name-only --diff-filter=AM -- '$(BACKEND)/app/*.py' '$(BACKEND)/app/**/*.py') | sort -u | sed 's#^$(BACKEND)/##' | grep . || true); \
-	if [ -z "$$files" ]; then echo "no changed backend/app files against $(BASE); strict pass skipped"; \
-	else echo "strict pass (F, minus F811) on changed files:"; echo "$$files"; cd $(BACKEND) && $(RUFF) check --select F --ignore F811 $$files; fi
+	$(RUFF) check --config $(BACKEND)/ruff.toml $(BACKEND) scripts sdk demo
+
+# Shell scripts (IFORA-53): every tracked *.sh and .githooks/*. shellcheck is not Python; install it yourself (scripts/TOOLS.txt).
+lint-sh:
+	@scripts/need.sh $(SHELLCHECK) "brew install shellcheck"
+	git ls-files '*.sh' '.githooks/*' | xargs $(SHELLCHECK) -x
 
 format-report:
 	@scripts/need.sh $(RUFF) "pip install -r backend/requirements-dev.txt"

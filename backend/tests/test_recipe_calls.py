@@ -1,6 +1,5 @@
 """Callable recipes (ADR 021 s.3, WP-016): declared inputs/outputs, child jobs, guards, taint."""
 
-import pytest
 
 from tests.recipe_helpers import definition, jobs, make_recipe, rkey, run_worker, step, steps_of  # noqa: F401
 

@@ -3,7 +3,7 @@ import json
 import httpx
 import pytest
 from backend.app.connectors.slack_blocks import render_blocks, validate_blocks
-from tests.recipe_helpers import Remote, definition, install_remote, make_recipe, rkey, run_worker, step, jobs
+from tests.recipe_helpers import Remote, definition, install_remote, make_recipe, rkey, run_worker, step, jobs  # noqa: F401 (rkey is a pytest fixture)
 
 
 def layout(value='{{trigger.user.email}}'):

@@ -9,7 +9,7 @@ from backend.app.audit.model import AuditEvent
 from backend.app.config import settings
 from backend.app.oidc import keys
 from tests.test_oidc_authorize import CB, authorize, params
-from tests.test_oidc_refresh import OFFLINE, refresh, start
+from tests.test_oidc_refresh import refresh, start
 from tests.test_oidc_token import exchange, get_code, mk as mk_user_client, post_token, user_api  # noqa: F401 (fixture)
 
 API = "https://api.example.com"

@@ -9,7 +9,6 @@ from typing import Any, Dict, Optional
 
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy import Column, DateTime, Integer, String, Boolean, ForeignKey
-from sqlalchemy.orm import relationship
 
 from backend.app.config import settings
 from backend.app.db import Base

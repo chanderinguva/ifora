@@ -235,12 +235,6 @@ def email_enrollment_code(request: Request, db: Session = Depends(get_db), auth=
         {"expires_in_hours": mfa_service.ENROLLMENT_CODE_HOURS, "via": "email"},
     )
     db.commit()
-    body = (
-        f"Your one-time enrolment code is {code}\n\n"
-        f"Enter it under Account settings > Security to set up your passkey or authenticator app. "
-        f"It works once and expires in {mfa_service.ENROLLMENT_CODE_HOURS} hours.\n\n"
-        "If you did not ask for this, you can ignore this message; the code is useless without your password."
-    )
     from backend.app.branding import templates
     subject, rendered_body, html, logo = templates.rich_email(
         db, "mfa_enrollment", first_name=user.first_name, code=code,

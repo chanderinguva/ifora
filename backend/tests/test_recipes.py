@@ -3,15 +3,14 @@
 from datetime import timedelta
 
 import httpx
-import pytest
 from sqlalchemy import select
 
 from backend.app.audit.model import AuditAction, AuditEvent
 from backend.app.audit.service import record
 from backend.app.config import settings
 from backend.app.groups.model import user_group_association
-from backend.app.recipes import engine, events
-from backend.app.recipes.models import Recipe, RecipeJob, RecipeOutbox, RecipeVersion
+from backend.app.recipes import engine
+from backend.app.recipes.models import Recipe, RecipeOutbox, RecipeVersion
 from backend.app.tenancy import Tenant, tenant_session, unscoped
 from backend.app.users.model import User
 from tests.conftest import make_user
@@ -46,7 +45,7 @@ def test_admin_only_and_unauthenticated(member, anon, admin):
 
 
 def test_tenant_isolation(db, admin):
-    rid = make_recipe(admin, definition("manual", [HELLO]))
+    make_recipe(admin, definition("manual", [HELLO]))
     with unscoped(db):
         t2 = Tenant(slug="other", name="Other")
         db.add(t2)
@@ -387,7 +386,7 @@ def test_dispatch_is_idempotent(db, admin):
 
 
 def test_two_workers_do_not_double_run(db, admin):
-    rid = make_recipe(admin, definition("user.created", [HELLO]))
+    make_recipe(admin, definition("user.created", [HELLO]))
     new_user(admin)
     a, b = tenant_session(), tenant_session()
     try:

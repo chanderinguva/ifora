@@ -1,6 +1,5 @@
 """New accounts get a standard username/email; the username never changes; names never drive identifiers."""
 
-import json
 
 import pytest
 from sqlalchemy import text
@@ -9,7 +8,7 @@ from sqlalchemy.exc import DBAPIError
 from backend.app.config import settings
 from backend.app.users import naming
 from backend.app.users.model import User
-from tests.conftest import STRONG, make_user
+from tests.conftest import make_user
 from tests.test_provisioning import assign_user, enable, links, make_app, remote, run  # noqa: F401
 from tests.recipe_helpers import rkey  # noqa: F401
 from tests.test_scim import Scim, mk_token, user_body  # noqa: F401
@@ -145,7 +144,7 @@ def test_scim_email_change_with_a_new_username_keeps_the_account(db):
     r = sc.post("/Users", user_body("pat@old.example.com", "pat@old.example.com"))
     assert r.status_code == 201, r.text
     doc = r.json()
-    uid, ext = doc["id"], doc.get("externalId")
+    uid, _ext = doc["id"], doc.get("externalId")
     # the IdP mirrors the new email into userName
     moved = {**user_body("pat@new.example.com", "pat@new.example.com"), "id": uid}
     r2 = sc.put(f"/Users/{uid}", moved)

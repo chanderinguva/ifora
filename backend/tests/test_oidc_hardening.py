@@ -6,7 +6,7 @@ from backend.app.config import settings
 from backend.app.oidc import authorize as az, purge
 from backend.app.oidc.models import AuthorizationCode, PendingAuthRequest, RefreshToken
 from tests.test_oidc_authorize import authorize, params
-from tests.test_oidc_refresh import OFFLINE, refresh, start
+from tests.test_oidc_refresh import refresh, start
 from tests.test_oidc_token import CB, mk, post_token, user_api  # noqa: F401 (fixture)
 
 ORIGIN = "https://demo.example.com"
@@ -102,7 +102,7 @@ def test_token_cors_is_not_granted_to_confidential_clients(super_admin, user_api
 
 
 def test_token_preflight(super_admin, user_api):
-    c = mk(super_admin)
+    mk(super_admin)
     p = user_api.c.options("/oauth/token", headers={"Origin": ORIGIN, "Access-Control-Request-Method": "POST"})
     assert p.status_code == 204 and p.headers["access-control-allow-origin"] == ORIGIN
     assert p.headers["access-control-allow-methods"] == "POST" and "credentials" not in str(p.headers).lower()

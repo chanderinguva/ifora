@@ -294,7 +294,7 @@ def sync_batch(db: Session, rule: GroupRule) -> int:
 def sync_pending_all() -> int:
     """Worker entry point: advance every pending rule in every tenant by one batch. Returns users processed."""
     from backend.app.db import SessionLocal
-    from backend.app.tenancy import Tenant, tenant_session, unscoped
+    from backend.app.tenancy import tenant_session, unscoped
 
     s = SessionLocal()
     try:

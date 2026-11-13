@@ -1,12 +1,11 @@
 """Passkeys / WebAuthn: registration, usernameless sign-in, policy, abuse cases."""
 
 import pytest
-from webauthn.helpers import bytes_to_base64url
 
 from backend.app.auth.passkey_model import Passkey, WebAuthnChallenge
 from backend.app.config import settings
 from backend.app.users.model import User
-from tests.conftest import ORIGIN, STRONG, Api, make_user
+from tests.conftest import ORIGIN, STRONG, Api
 from tests.fake_authenticator import FakeAuthenticator
 
 

@@ -1,6 +1,5 @@
 """Administrator roles (ADR 014): enforced centrally, assigned only by super administrators, effective immediately."""
 
-import pytest
 
 from backend.app.admin_roles import permissions
 from tests.conftest import make_user

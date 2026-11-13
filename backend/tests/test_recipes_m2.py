@@ -148,7 +148,7 @@ def test_cancel_a_queued_job(db, admin):
 
 
 def test_cancel_a_running_job_stops_before_the_next_step(db, admin):
-    rid = make_recipe(admin, definition("user.created", [step("s1", "log", {"message": "a"}), step("s2", "log", {"message": "b"})]))
+    make_recipe(admin, definition("user.created", [step("s1", "log", {"message": "a"}), step("s2", "log", {"message": "b"})]))
     new_user(admin)
     from backend.app.tenancy import tenant_session
     s = tenant_session()

@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
-from backend.app.recipes.models import Recipe, RecipeJob, RecipeVersion
+from backend.app.recipes.models import Recipe, RecipeVersion
 
 MAX_CALL_DEPTH = 5
 POLL_SECONDS = 30      # fallback; a finishing child wakes its parent at once
