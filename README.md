@@ -211,7 +211,7 @@ SMTP; Cloudflare Email Service works with `SMTP_IMPLICIT_TLS=true` on port 465.
 cd backend
 python -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt   # includes PyYAML, which loads the connector definitions
+pip install --require-hashes -r requirements.txt   # hash-locked; edit requirements.in then `make lock`. Includes PyYAML, which loads the connector definitions
 uvicorn app.main:app --reload
 ```
 
@@ -228,7 +228,7 @@ npm run dev
 The backend source, including tests, is baked into the Docker image, so rebuild `backend-api` before running them:
 ```bash
 docker compose -f docker/docker-compose.yml up -d --build backend-api
-docker exec ifora-api pip install -q -r /app/backend/requirements-dev.txt
+docker exec ifora-api pip install -q --require-hashes -r /app/backend/requirements-dev.txt
 docker exec -w /app/backend ifora-api python -m pytest -q
 ```
 Tests use a separate `ifora_test` database.
