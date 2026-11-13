@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Shared by scripts/backup.sh and scripts/restore.sh (IFORA-21). Sourced, not executed.
 # Talks to PostgreSQL through `docker exec` on the postgres container, so no client tools or passwords are needed on
 # the host (the postgres image trusts local socket connections inside the container).

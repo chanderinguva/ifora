@@ -1,0 +1,57 @@
+# Throwaway stack for scripts/restore-drill.sh (IFORA-21). Never used for real data.
+# Deliberately has no container_name and publishes no ports, so two copies (project ifora-drill-src and
+# ifora-drill-dst) run beside the real stack without touching its containers, ports or volumes.
+# Every secret comes from a temporary env file the drill generates; nothing here is reusable elsewhere.
+name: ifora-drill
+
+services:
+  postgres:
+    image: postgres:16-alpine@sha256:1fb72075a1de85a1d39de23c2da81baef1b71bf5c0b61a14cbbfdb072a6246d9
+    environment:
+      POSTGRES_USER: ifora
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set by scripts/restore-drill.sh}
+      POSTGRES_DB: ifora
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ifora"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine@sha256:c5d34a98396a4775e223c74e929162c35c5a2182901ba26b50ade939941ce14b
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  backend-api:
+    image: ${IFORA_DRILL_API_IMAGE:?set by scripts/restore-drill.sh}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://ifora:${POSTGRES_PASSWORD}@postgres:5432/ifora
+      - DATABASE_URL_ASYNC=postgresql+asyncpg://ifora:${POSTGRES_PASSWORD}@postgres:5432/ifora
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=${SECRET_KEY:?}
+      - ADMIN_SECRET_KEY=${ADMIN_SECRET_KEY:?}
+      - MFA_ENCRYPTION_KEY=${MFA_ENCRYPTION_KEY:?}
+      - OIDC_KEY_ENCRYPTION_KEY=${OIDC_KEY_ENCRYPTION_KEY:?}
+      - RECIPE_ENCRYPTION_KEY=${RECIPE_ENCRYPTION_KEY:?}
+      - ADMIN_MFA_REQUIRED=false # the drill signs in with a password only
+      - SESSION_COOKIE_SECURE=false
+      - PUBLIC_APP_URL=http://localhost:3000
+      - CORS_ORIGINS=["http://localhost:3000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
+volumes:
+  postgres_data:
