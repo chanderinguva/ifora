@@ -51,5 +51,6 @@ def public_view(c: Connector) -> dict:
         "actions": [{
             "id": a.id, "label": a.label, "description": a.description, "method": a.method, "read_only": a.read_only, "idempotent": a.idempotent,
             "inputs": [i.model_dump() for i in a.inputs], "outputs": [o.key for o in a.outputs] + ["status_code", "ok"],
+            "required_scopes": a.required_scopes, "scope_by_input": a.scope_by_input,
         } for a in c.actions],
     }

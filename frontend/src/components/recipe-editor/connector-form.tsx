@@ -5,6 +5,8 @@ import { Label } from "@/components/ui/label";
 import { fieldClass } from "@/components/bits";
 import { PillInput } from "@/components/recipe-bits";
 import type { Connection, ConnectorAction, ConnectorInfo, Pill, RecipeMeta } from "@/lib/recipes";
+import { actionAllowed, actionScopes } from "@/lib/recipes";
+import { InlineConnection } from "@/components/connection-editor";
 
 type Cfg = { connector?: string; connection_id?: number | null; action?: string; inputs?: Record<string, string> };
 
@@ -34,8 +36,9 @@ export function presetConfig(meta: RecipeMeta, p: ConnectorPreset): Cfg {
 }
 
 /** The step form for "Run a connector action": pick a connection, an action, and fill the action's declared inputs. */
-export function ConnectorActionForm({ cfg, set, connections, meta, pills, payload, available }: {
+export function ConnectorActionForm({ cfg, set, connections, meta, pills, payload, available, folderId, onCreated }: {
   cfg: Cfg; set: (patch: Record<string, unknown>) => void; connections: Connection[]; meta: RecipeMeta; pills: Pill[]; payload: boolean; available: boolean;
+  folderId?: number | null; onCreated?: (c: Connection) => void;
 }) {
   const usable = connections.filter((c) => c.kind === "connector" && (c.can_use !== false || c.id === cfg.connection_id));
   const selected = usable.find((c) => c.id === cfg.connection_id);
@@ -60,22 +63,28 @@ export function ConnectorActionForm({ cfg, set, connections, meta, pills, payloa
   return (
     <div className="space-y-3" data-testid="connector-step-form">
       <div className="grid gap-3 md:grid-cols-2">
-        <div className="space-y-1"><Label>Connection</Label>
-          <select aria-label="Connection" className={fieldClass} value={cfg.connection_id ?? ""} onChange={(e) => pickConnection(e.target.value)}>
+        <div className="space-y-1"><Label>Connection<span aria-hidden="true"> (required)</span></Label>
+          <select required aria-required="true" aria-label="Connection" className={fieldClass} value={cfg.connection_id ?? ""} onChange={(e) => pickConnection(e.target.value)}>
             <option value="">Choose a connection…</option>
             {usable.map((c) => <option key={c.id} value={c.id}>{c.name} ({meta.connectors?.find((x) => x.id === c.connector_id)?.name ?? c.connector_id})</option>)}
           </select>
+          <InlineConnection folderId={folderId} connector={connector?.id ?? meta.connectors?.[0]?.id} onCreated={(conn) => {
+            onCreated?.(conn);
+            const con = meta.connectors?.find((c) => c.id === conn.connector_id);
+            const a = con?.actions.find((x) => actionAllowed(x, conn));
+            if (con) set({ connector: con.id, connection_id: conn.id, action: a?.id ?? "", inputs: a ? startingInputs(a) : {} });
+          }} />
           {usable.length === 0 && (
             <p className="text-xs text-muted-foreground">
               {available ? <>No connector connections yet. <Link className="underline" href="/admin/recipes/connections">Connect GitHub, Jira, Slack, PagerDuty or Entra ID</Link> first.</> : "Connections are unavailable until RECIPE_ENCRYPTION_KEY is configured."}
             </p>
           )}
         </div>
-        <div className="space-y-1"><Label>Action</Label>
-          <select aria-label="Action" className={fieldClass} value={cfg.action ?? ""} disabled={!connector}
+        <div className="space-y-1"><Label>Action<span aria-hidden="true"> (required)</span></Label>
+          <select required aria-required="true" aria-label="Action" className={fieldClass} value={cfg.action ?? ""} disabled={!connector}
             onChange={(e) => { const a = connector?.actions.find((x) => x.id === e.target.value); if (a) set({ action: a.id, inputs: startingInputs(a, inputs) }); }}>
             {!action && <option value="">{connector ? "Choose an action…" : "Choose a connection first"}</option>}
-            {connector?.actions.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
+            {connector?.actions.map((a) => <option key={a.id} value={a.id} disabled={!actionAllowed(a, selected, a.id === cfg.action ? inputs : {})}>{a.label}{!actionAllowed(a, selected, a.id === cfg.action ? inputs : {}) ? " · Missing scope" : ""}</option>)}
           </select>
         </div>
       </div>
@@ -83,20 +92,23 @@ export function ConnectorActionForm({ cfg, set, connections, meta, pills, payloa
       {action && (
         <>
           {action.description && <p className="text-xs text-muted-foreground">{action.description}</p>}
+          <p className="text-xs text-muted-foreground">Required scopes: {actionScopes(action, inputs).join(", ") || "See the service's permissions"}. {selected?.granted_scopes == null ? "Permissions have not been verified; test the connection." : "Checked against the saved connection scopes."}</p>
+          {!actionAllowed(action, selected, inputs) && <p role="alert" className="text-sm text-destructive">This connection is missing a required scope. Update the service permissions, reinstall or reauthorize it, then test the connection again.</p>}
           <div className="grid gap-3 md:grid-cols-2">
             {action.inputs.map((i) => {
-              const label = i.label + (i.required ? " *" : "");
+              const label = i.label + (i.required ? " (required)" : "");
               const v = inputs[i.key] ?? "";
               return (
                 <div key={i.key} className={"space-y-1" + (i.multiline ? " md:col-span-2" : "")}><Label>{label}</Label>
                   {i.type === "select" || i.type === "boolean" ? (
-                    <select aria-label={i.label} className={fieldClass} value={v} onChange={(e) => setInput(i.key, e.target.value)}>
+                    <select required={i.required} aria-required={i.required} aria-label={i.label} className={fieldClass} value={v} onChange={(e) => setInput(i.key, e.target.value)}>
                       {!i.required && i.default == null && <option value="">(not set)</option>}
                       {(i.type === "boolean" ? ["true", "false"] : i.options).map((o) => <option key={o} value={o}>{o}</option>)}
                     </select>
                   ) : (
-                    <PillInput label={i.label} multiline={i.multiline} value={v} onChange={(nv) => setInput(i.key, nv)} pills={pills} payload={payload} />
+                    <PillInput required={i.required} label={i.label} multiline={i.multiline} value={v} onChange={(nv) => setInput(i.key, nv)} pills={pills} payload={payload} />
                   )}
+                  {i.required && !v.trim() && <p className="text-xs text-destructive">{i.label} is required.</p>}
                 </div>
               );
             })}

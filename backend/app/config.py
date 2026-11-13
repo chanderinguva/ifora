@@ -56,6 +56,14 @@ class Settings(BaseSettings):
     RECIPES_JOB_RETENTION_DAYS: int = Field(default=30)  # finished jobs and their step history are deleted after this many days (0 = keep)
     RECIPES_ENABLED: bool = Field(default=True)
     RECIPE_ENCRYPTION_KEY: str = Field(default="")
+    RECIPE_SECRET_PROVIDER: str = Field(default="fernet", pattern="^(fernet|openbao)$")
+    RECIPE_ENCRYPTION_KEY_PREVIOUS: str = Field(default="")
+    RECIPE_OPENBAO_URL: str = Field(default="")
+    RECIPE_OPENBAO_KEY: str = Field(default="ifora-connections")
+    RECIPE_OPENBAO_CA_FILE: str = Field(default="")
+    RECIPE_OPENBAO_ROLE_ID_FILE: str = Field(default="")
+    RECIPE_OPENBAO_SECRET_ID_FILE: str = Field(default="")
+    RECIPE_OAUTH_CALLBACK_URL: str = Field(default="")  # exact public callback URL, never inferred from Host
     RECIPES_MAX_STEPS_PER_JOB: int = Field(default=500)  # executed steps, loop iterations included
     RECIPES_MAX_RUNTIME_SECONDS: int = Field(default=900)
     RECIPES_MAX_EVENT_DEPTH: int = Field(default=3)

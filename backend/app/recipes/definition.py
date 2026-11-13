@@ -389,7 +389,7 @@ def _pyd(model, data, where):
         raise DefinitionError(f"{where}: {loc + ': ' if loc else ''}{err['msg']}")
 
 
-def validate_definition(db: Session, definition: Any, *, for_publish: bool = False, actor=None) -> Dict[str, Any]:
+def validate_definition(db: Session, definition: Any, *, for_publish: bool = False, actor=None, folder_id=None) -> Dict[str, Any]:
     """Return the normalised definition or raise DefinitionError."""
     import json
 
@@ -459,7 +459,7 @@ def validate_definition(db: Session, definition: Any, *, for_publish: bool = Fal
             if name is not None and (not isinstance(name, str) or len(name) > 100):
                 raise DefinitionError(f"{where}: name is too long")
             try:
-                _check_step(db, stype, cfg, ttype, dict(seen), managed, taint, where, mode["handler"], mode["loop"], actor)
+                _check_step(db, stype, cfg, ttype, dict(seen), managed, taint, where, mode["handler"], mode["loop"], actor, folder_id)
             except tpl.TemplateError as e:
                 raise DefinitionError(f"{where}: {e}")
             note = st.get("note")
@@ -613,14 +613,14 @@ def _check_lookup(db, stype, cfg) -> None:
         raise tpl.TemplateError("give the key of the row to delete")
 
 
-def _check_connection_use(db, cfg, actor) -> None:
-    from backend.app.recipes.access import can_use_connection
+def _check_connection_use(db, cfg, actor, folder_id=None) -> None:
+    from backend.app.recipes.access import can_use_in_recipe
 
     cid = cfg.get("connection_id")
     if cid is None or actor is None:
         return
     c = db.get(RecipeConnection, cid)
-    if c is not None and not can_use_connection(actor, c):
+    if c is not None and not can_use_in_recipe(actor, c, folder_id):
         raise tpl.TemplateError(f"you are not allowed to use the connection '{c.name}'")
 
 
@@ -641,6 +641,9 @@ def _check_connector_action(db, cfg) -> None:
         raise tpl.TemplateError("unknown connection")
     if conn.kind != "connector" or conn.connector_id != c.id:
         raise tpl.TemplateError(f"choose a {c.name} connection")
+    from backend.app.connectors.scopes import action_available
+    if not action_available(a, conn.granted_scopes, cfg["inputs"]):
+        raise tpl.TemplateError("This connection is missing a required scope; update its permissions and test it again")
     declared = {i.key: i for i in a.inputs}
     for k in cfg["inputs"]:
         if k not in declared:
@@ -655,8 +658,8 @@ def _check_connector_action(db, cfg) -> None:
         raise tpl.TemplateError(e.message)
 
 
-def _check_step(db, stype, cfg, ttype, earlier, managed, taint, where, handler=False, in_loop=False, actor=None) -> None:
-    _check_connection_use(db, cfg, actor)
+def _check_step(db, stype, cfg, ttype, earlier, managed, taint, where, handler=False, in_loop=False, actor=None, folder_id=None) -> None:
+    _check_connection_use(db, cfg, actor, folder_id)
     if stype in ("condition",):
         return
     for p in tpl.all_pills({k: v for k, v in cfg.items() if k not in ("connection_id", "name", "unit", "when_full")}):
@@ -687,6 +690,19 @@ def _check_step(db, stype, cfg, ttype, earlier, managed, taint, where, handler=F
     elif stype == "connector_action":
         _check_connector_action(db, cfg)
     elif stype == "http_request":
+        # Normalize obsolete headers that the connection always supplies. Never retain
+        # a pasted credential in a draft/version/export just because it is overwritten later.
+        if cfg.get("connection_id") is not None:
+            bound = db.get(RecipeConnection, cfg["connection_id"])
+            injected_header = ("authorization" if bound and bound.kind in ("bearer", "oauth2_client_credentials") else
+                               (bound.header_name or "X-Api-Key").lower() if bound and bound.kind == "header" else None)
+            if injected_header:
+                cfg["headers"] = {k: v for k, v in cfg["headers"].items() if k.lower() != injected_header}
+        from backend.app.recipes.http_auth import validate_request_fields, AuthError
+        try:
+            validate_request_fields(cfg)
+        except AuthError as e:
+            raise tpl.TemplateError(str(e)) from None
         if cfg.get("connection_id") is not None:
             c = db.get(RecipeConnection, cfg["connection_id"])
             if c is not None and c.kind == "slack_webhook":

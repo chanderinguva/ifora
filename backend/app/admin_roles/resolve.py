@@ -34,14 +34,19 @@ def direct_roles(db: Session, user_id: int) -> List[str]:
 
 
 def group_has_roles(db: Session, group_id: int) -> bool:
-    return db.query(GroupAdminRole.id).filter(GroupAdminRole.group_id == group_id).first() is not None
+    return bool(role_group_ids(db, [group_id]))
 
 
 def role_group_ids(db: Session, group_ids) -> List[int]:
     ids = list(group_ids)
     if not ids:
         return []
-    return [g for (g,) in db.query(GroupAdminRole.group_id).filter(GroupAdminRole.group_id.in_(ids)).distinct()]
+    protected = {g for (g,) in db.query(GroupAdminRole.group_id).filter(GroupAdminRole.group_id.in_(ids)).distinct()}
+    from backend.app.recipes.models import RecipeConnection, RecipeFolder
+    for model in (RecipeConnection, RecipeFolder):
+        for use, manage in db.query(model.use_group_ids, model.manage_group_ids):
+            protected.update(set(ids) & set((use or []) + (manage or [])))
+    return sorted(protected)
 
 
 def guard_role_groups(db: Session, group_ids, actor) -> None:

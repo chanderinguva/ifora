@@ -80,6 +80,8 @@ class Action(_Strict):
     errors: Dict[int, str] = Field(default_factory=dict, max_length=10)
     body_errors: Dict[str, str] = Field(default_factory=dict, max_length=20)   # messages for the error codes of a reply-level failure (see Connector.reply)
     idempotent: bool = False  # only idempotent actions are retried automatically
+    required_scopes: List[str] = Field(default_factory=list, max_length=20)
+    scope_by_input: Dict[str, Dict[str, List[str]]] = Field(default_factory=dict, max_length=3)
 
     @property
     def read_only(self) -> bool:

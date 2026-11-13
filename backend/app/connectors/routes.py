@@ -16,6 +16,7 @@ from backend.app.config import settings
 from backend.app.connectors import engine, registry
 from backend.app.db import get_db
 from backend.app.recipes import access, actions, crypto
+from backend.app.recipes.sharing import SharingBody, apply_sharing
 from backend.app.recipes.http_client import EgressPolicy
 from backend.app.recipes.models import RecipeConnection
 from backend.app.users.model import User
@@ -30,7 +31,7 @@ router = APIRouter(prefix="/admin/connectors", tags=["connectors"], dependencies
 tests_router = APIRouter(prefix="/admin/recipe-connections", tags=["connectors"], dependencies=[Depends(_enabled)])
 
 
-class ConnectorConnectionBody(BaseModel):
+class ConnectorConnectionBody(SharingBody):
     name: str = Field(..., min_length=1, max_length=100)
     config: Dict[str, str] = Field(default_factory=dict, max_length=8)    # the non-secret fields of the connector's Connect form
     secrets: Dict[str, str] = Field(default_factory=dict, max_length=8)   # the secret fields (write-only: never returned)
@@ -74,6 +75,7 @@ def create_connection(connector_id: str, body: ConnectorConnectionBody, request:
     conn = RecipeConnection(name=body.name.strip(), kind="connector", allowed_host=host, connector_id=c.id, connector_version=c.version,
                             config=config, secret_enc=crypto.encrypt(json.dumps(secrets)), created_by=actor.id,
                             allowed_users=_acl_ids(db, body.allowed_users))
+    apply_sharing(db, actor, conn, body, creating=True)
     db.add(conn)
     try:
         db.flush()
@@ -102,6 +104,8 @@ def update_connection(connector_id: str, cid: int, body: ConnectorConnectionBody
     try:
         config, secrets = engine.validate_config(c, body.config, body.secrets, partial_secrets=True)
         host = engine.resolve_host(c, config)
+        if host != conn.allowed_host and {f.key for f in c.auth.fields if f.secret} - set(secrets):
+            raise engine.ConnectorError("Re-enter every credential when changing the service host")
     except engine.ConnectorError as e:
         raise HTTPException(status_code=422, detail=e.message)
     if secrets:
@@ -116,6 +120,9 @@ def update_connection(connector_id: str, cid: int, body: ConnectorConnectionBody
     conn.name, conn.config, conn.allowed_host, conn.connector_version = body.name.strip(), config, host, c.version
     if body.allowed_users is not None:
         conn.allowed_users = _acl_ids(db, body.allowed_users)
+    apply_sharing(db, actor, conn, body)
+    if secrets:
+        conn.granted_scopes, conn.scopes_checked_at = None, None
     conn.updated_at = datetime.now(timezone.utc)
     try:
         db.flush()
@@ -147,7 +154,11 @@ def test_connection(cid: int, request: Request, db: Session = Depends(get_db), a
         secrets = json.loads(crypto.decrypt(conn.secret_enc))
         ok, status, message = engine.check_connection(
             c, config, secrets, policy=actions.http_overrides.get("policy") or EgressPolicy.from_settings(),
-            resolver=actions.http_overrides.get("resolver"), transport=actions.http_overrides.get("transport"))
+            resolver=actions.http_overrides.get("resolver"), transport=actions.http_overrides.get("transport"),
+            scope_sink=lambda scopes: setattr(conn, "granted_scopes", scopes))
+        conn.scopes_checked_at = datetime.now(timezone.utc) if ok and conn.granted_scopes is not None else None
+        if not ok:
+            conn.granted_scopes = None
     except (engine.ConnectorError, ValueError, TypeError, crypto.RecipeKeyError):
         ok, status, message = False, None, "The saved connection is damaged; edit it and enter the secret again."
     record(db, AuditAction.RECIPE_CONNECTION_TESTED, request, actor, conn.id, "recipe_connection",

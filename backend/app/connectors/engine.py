@@ -360,7 +360,7 @@ def map_outputs(a: Action, status: int, parsed: Any) -> dict:
 # sending -----------------------------------------------------------------------------------------------------------------------
 
 def _send(c: Connector, a_idempotent: bool, a_errors: Dict[int, str], p: Prepared, secret_values: List[str], policy: Optional[EgressPolicy],
-          resolver=None, transport=None, body_errors: Optional[Dict[str, str]] = None) -> Tuple[int, Any]:
+          resolver=None, transport=None, body_errors: Optional[Dict[str, str]] = None, scope_sink=None) -> Tuple[int, Any]:
     try:
         _, host, _, path = validate_url(p.url, policy or EgressPolicy.from_settings())
         if host != p.host or not (path.split("?", 1)[0] == p.scope_prefix or path.startswith(p.scope_prefix + "/")):
@@ -381,6 +381,9 @@ def _send(c: Connector, a_idempotent: bool, a_errors: Dict[int, str], p: Prepare
     if res.status < 300:
         if c.reply is not None:
             _check_reply(c, a_idempotent, parsed, body_errors or {})
+        if scope_sink is not None and c.id == "slack":
+            from backend.app.connectors.scopes import parse_slack_scopes
+            scope_sink(parse_slack_scopes(res.headers))
         return res.status, parsed
     if res.status in a_errors:
         raise ConnectorError(a_errors[res.status], retryable=False)
@@ -430,7 +433,7 @@ def run_action(c: Connector, a: Action, conn_name: str, config: Dict[str, Any], 
     return Result(summary, out, status)
 
 
-def check_connection(c: Connector, config: Dict[str, Any], secrets: Dict[str, Any], *, policy=None, resolver=None, transport=None) -> Tuple[bool, Optional[int], str]:
+def check_connection(c: Connector, config: Dict[str, Any], secrets: Dict[str, Any], *, policy=None, resolver=None, transport=None, scope_sink=None) -> Tuple[bool, Optional[int], str]:
     """The definition's test request. Never raises for remote problems: returns (ok, status, message)."""
     path = _subst(c.test.path, config, _seg)
     try:
@@ -440,7 +443,7 @@ def check_connection(c: Connector, config: Dict[str, Any], secrets: Dict[str, An
                 return True, 200, "Connected."
         p = Prepared("GET", resolve_host(c, config), path, {**_base_headers(c, config), **_auth_headers(c, config, secrets)}, None, _scope(c.test.path))
         status, _ = _send(c, True, {401: "The credentials were refused.", 403: "The credentials were accepted but may not use this resource.",
-                                    404: "Not found: check the organisation or account name."}, p, list(secrets.values()), policy, resolver, transport)
+                                    404: "Not found: check the organisation or account name."}, p, list(secrets.values()), policy, resolver, transport, scope_sink=scope_sink)
         return True, status, "Connected."
     except ConnectorError as e:
         return False, None, e.message

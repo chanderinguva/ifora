@@ -29,6 +29,7 @@ class Recipe(TenantOwned, Base):
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     owner_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)  # may publish/enable/run/delete and grant access
     editors = Column(JSONB, nullable=False, default=list, server_default="[]")  # admin user ids who may edit the draft and dry-run it
+    folder_id = Column(Integer, ForeignKey("recipe_folders.id", ondelete="RESTRICT"), nullable=True, index=True)
     rate_limit_per_hour = Column(Integer, nullable=True)  # live jobs started per rolling hour (None = server default)
     throttled_count = Column(Integer, nullable=False, default=0, server_default="0")
     last_throttled_at = Column(DateTime(timezone=True), nullable=True)
@@ -69,9 +70,37 @@ class RecipeConnection(TenantOwned, Base):
     connector_id = Column(String(32), nullable=True)  # a pre-built connector (ADR 026); kind is then "connector"
     connector_version = Column(Integer, nullable=True)
     config = Column(JSONB, nullable=True)  # the connector's non-secret settings (organisation, account name, ...)
+    sharing_scope = Column(String(16), nullable=False, default="legacy", server_default="legacy")
+    folder_ids = Column(JSONB, nullable=False, default=list, server_default="[]")
+    use_group_ids = Column(JSONB, nullable=False, default=list, server_default="[]")
+    manage_group_ids = Column(JSONB, nullable=False, default=list, server_default="[]")
+    granted_scopes = Column(JSONB, nullable=True)  # None = unknown; [] = verified empty
+    scopes_checked_at = Column(DateTime(timezone=True), nullable=True)
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=_now)
+
+
+class RecipeFolder(TenantOwned, Base):
+    """Flat automation folders; group roles never grant access to secret values."""
+    __tablename__ = "recipe_folders"
+    __table_args__ = (UniqueConstraint("tenant_id", "name", name="uq_recipe_folders_name"),)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False)
+    use_group_ids = Column(JSONB, nullable=False, default=list, server_default="[]")
+    manage_group_ids = Column(JSONB, nullable=False, default=list, server_default="[]")
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
+
+
+class ConnectionOAuthState(TenantOwned, Base):
+    __tablename__ = "connection_oauth_states"
+    id = Column(String(64), primary_key=True)  # SHA256 of browser state
+    connection_id = Column(Integer, ForeignKey("recipe_connections.id", ondelete="CASCADE"), nullable=False)
+    actor_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    verifier_enc = Column(Text, nullable=False)
+    connection_updated_at = Column(DateTime(timezone=True), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
 
 
 class RecipeOutbox(TenantOwned, Base):

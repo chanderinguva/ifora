@@ -12,7 +12,7 @@ import { PillFieldsContext, type PillRegistry } from "@/components/recipe-editor
 import { PillTray } from "@/components/recipe-editor/pill-tray";
 import { allIds, countSteps, duplicateStep, gapKey, insertAt, locate, moveProblem, moveStep, newId, nextGap, parseGap, removeStep, replaceStep, allGaps, type Gap, type LaneRef } from "@/components/recipe-editor/tree";
 import { isLoop, isLoopType, laneInCatch, laneSteps } from "@/components/recipe-editor/tree";
-import { statusTone, type Definition, type Job, type JobStep, type RecipeMeta, type StepNode } from "@/lib/recipes";
+import { actionAllowed, statusTone, type Definition, type Job, type JobStep, type RecipeMeta, type StepNode } from "@/lib/recipes";
 import type { Group } from "@/lib/types";
 
 const PANEL_KEY = "recipe-studio-panel-width";
@@ -308,7 +308,7 @@ export function Studio(props: Props) {
   // each connector connection offers its connector's actions directly; the generic step is only listed while there is nothing to connect to
   const connectorItems: StepMenuItem[] = props.ctx.connections.filter((c) => c.kind === "connector" && c.can_use !== false).flatMap((conn) => {
     const con = meta.connectors?.find((x) => x.id === conn.connector_id);
-    return con ? con.actions.map((a): StepMenuItem => ({ type: "connector_action", label: a.label, kind: "action", group: conn.name, preset: { connector: con.id, connection_id: conn.id, action: a.id } })) : [];
+    return con ? con.actions.filter((a) => actionAllowed(a, conn)).map((a): StepMenuItem => ({ type: "connector_action", label: a.label, kind: "action", group: conn.name, preset: { connector: con.id, connection_id: conn.id, action: a.id } })) : [];
   });
   const optionsFor = (ref: LaneRef, depth: number): StepMenuItem[] => [
     ...meta.steps.filter((s) => !(s.type === "connector_action" && connectorItems.length > 0)).filter((s) => (s.type !== "condition" && s.type !== "approval" && s.type !== "handle_errors") || depth < meta.limits.max_nesting)

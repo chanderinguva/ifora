@@ -37,9 +37,9 @@ export function RecipeTabs() {
  * remember or type paths. `payload` adds a "payload field" entry for triggers that carry free-form JSON.
  */
 export function PillInput({
-  value, onChange, pills, label, multiline = false, payload = false, placeholder,
+  value, onChange, pills, label, required = false, multiline = false, payload = false, placeholder,
 }: {
-  value: string; onChange: (v: string) => void; pills: Pill[]; label: string; multiline?: boolean; payload?: boolean; placeholder?: string;
+  value: string; onChange: (v: string) => void; pills: Pill[]; label: string; required?: boolean; multiline?: boolean; payload?: boolean; placeholder?: string;
 }) {
   const ref = useRef<HTMLInputElement & HTMLTextAreaElement>(null);
   const reg = useContext(PillFieldsContext);
@@ -104,7 +104,7 @@ export function PillInput({
   };
   const change = (v: string, c: number | null) => { onChange(v); setCaret(c ?? v.length); setPick(0); setDismissed(false); };
   const field = {
-    "aria-label": label, placeholder, value, onKeyDown: keys, onKeyUp: track, onClick: track,
+    "aria-label": label, "aria-required": required, required, placeholder, value, onKeyDown: keys, onKeyUp: track, onClick: track,
     onFocus: () => { if (reg) reg.active.current = fid; },
   };
   return (

@@ -48,6 +48,10 @@ dev_access_enabled() {
   grep -Eq '^IFORA_DEV_ACCESS_ENABLED=true[[:space:]]*$' "$LOCAL_ENV"
 }
 
+openbao_enabled() {
+  grep -Eq '^IFORA_OPENBAO_ENABLED=true[[:space:]]*$' "$1"
+}
+
 cmd_build() {
   images_for "${1:-}"
   : "${GHCR_USER:?GHCR_USER (GitHub login) is required}" "${GHCR_TOKEN:?GHCR_TOKEN (PAT with write:packages) is required}"
@@ -101,16 +105,24 @@ deploy_demo() {
   ensure_image "$IMG_API"; ensure_image "$IMG_WORKER"; ensure_image "$IMG_FE_DEMO"
   say "demo: deploying ${SHA:0:9}"
   export_tree "$src"
+  local files=(-f "$src/docker/docker-compose.yml" -f "$src/docker/docker-compose.prod.yml" -f "$src/docker/docker-compose.demo.yml")
+  if openbao_enabled "$env_file"; then files+=(-f "$src/docker/docker-compose.openbao.yml"); fi
+  files+=(-f "$src/docker/docker-compose.ci.yml")
+  if openbao_enabled "$env_file"; then
+    IFORA_API_IMAGE="$IMG_API" IFORA_WORKER_IMAGE="$IMG_WORKER" IFORA_FRONTEND_IMAGE="$IMG_FE_DEMO" \
+      docker compose -p ifora-demo --project-directory "$src/docker" "${files[@]}" --env-file "$env_file" up -d --no-build openbao
+    IFORA_API_IMAGE="$IMG_API" IFORA_WORKER_IMAGE="$IMG_WORKER" IFORA_FRONTEND_IMAGE="$IMG_FE_DEMO" \
+      docker compose -p ifora-demo --project-directory "$src/docker" "${files[@]}" --env-file "$env_file" exec -T openbao bao status >/dev/null \
+      || die "demo OpenBao is sealed or unavailable; unseal it before deploying"
+  fi
   IFORA_API_IMAGE="$IMG_API" IFORA_WORKER_IMAGE="$IMG_WORKER" IFORA_FRONTEND_IMAGE="$IMG_FE_DEMO" \
     docker compose -p ifora-demo --project-directory "$src/docker" \
-      -f "$src/docker/docker-compose.yml" -f "$src/docker/docker-compose.prod.yml" \
-      -f "$src/docker/docker-compose.demo.yml" -f "$src/docker/docker-compose.ci.yml" \
+      "${files[@]}" \
       --env-file "$env_file" up -d --no-build --remove-orphans
   # The Caddyfile is bind-mounted and re-extracted on every deploy (new inode), so recreate the edge to pick it up.
   IFORA_API_IMAGE="$IMG_API" IFORA_WORKER_IMAGE="$IMG_WORKER" IFORA_FRONTEND_IMAGE="$IMG_FE_DEMO" \
     docker compose -p ifora-demo --project-directory "$src/docker" \
-      -f "$src/docker/docker-compose.yml" -f "$src/docker/docker-compose.prod.yml" \
-      -f "$src/docker/docker-compose.demo.yml" -f "$src/docker/docker-compose.ci.yml" \
+      "${files[@]}" \
       --env-file "$env_file" up -d --no-build --no-deps --force-recreate edge
   wait_healthy ifora-demo-api
   wait_healthy ifora-demo-recipes-worker
@@ -140,8 +152,19 @@ deploy_local() {
     files+=(-f "$src/docker/docker-compose.dev-access.yml")
     LOCAL_SERVICES+=(dev-edge dev-tunnel)
   fi
+  if openbao_enabled "$LOCAL_ENV"; then
+    files+=(-f "$src/docker/docker-compose.openbao.yml")
+    LOCAL_SERVICES+=(openbao)
+  fi
   files+=(-f "$src/docker/docker-compose.ci.yml")
   say "local: deploying ${SHA:0:9}"
+  if openbao_enabled "$LOCAL_ENV"; then
+    IFORA_API_IMAGE="$IMG_API" IFORA_WORKER_IMAGE="$IMG_WORKER" IFORA_FRONTEND_IMAGE="$IMG_FE_LOCAL" \
+      docker compose --env-file "$LOCAL_ENV" --project-directory "$src/docker" "${files[@]}" -p ifora up -d --no-build openbao
+    IFORA_API_IMAGE="$IMG_API" IFORA_WORKER_IMAGE="$IMG_WORKER" IFORA_FRONTEND_IMAGE="$IMG_FE_LOCAL" \
+      docker compose --env-file "$LOCAL_ENV" --project-directory "$src/docker" "${files[@]}" -p ifora exec -T openbao bao status >/dev/null \
+      || die "local OpenBao is sealed or unavailable; unseal it before deploying"
+  fi
   IFORA_API_IMAGE="$IMG_API" IFORA_WORKER_IMAGE="$IMG_WORKER" IFORA_FRONTEND_IMAGE="$IMG_FE_LOCAL" \
     docker compose --env-file "$LOCAL_ENV" --project-directory "$src/docker" "${files[@]}" -p ifora \
       up -d --no-build "${LOCAL_SERVICES[@]}"
@@ -170,4 +193,3 @@ case "${1:-}" in
     esac ;;
   *) sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac
-

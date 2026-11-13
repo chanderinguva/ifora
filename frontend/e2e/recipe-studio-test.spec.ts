@@ -42,7 +42,7 @@ test("test results on the cards, step notes, handle-errors section and restoring
   await page.getByRole("button", { name: "Save draft" }).click();
   await expect(page.getByTestId("builder-msg")).toContainText("Draft saved");
   await page.getByLabel("Sample user").selectOption({ label: ADMIN_EMAIL });
-  await page.getByRole("button", { name: "Run test" }).click();
+  await page.getByRole("button", { name: "Validate draft" }).click();
   const dots = cards.locator('[data-testid="step-result"]');   // on the cards, not the side panel
   await expect(dots).toHaveCount(4);
   await expect(cards.locator('[data-testid="step-result"][data-outcome="ok"]')).toHaveCount(3);

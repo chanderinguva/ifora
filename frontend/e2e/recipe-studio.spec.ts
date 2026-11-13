@@ -51,7 +51,7 @@ test("build a recipe in the studio editor: add, nest, duplicate, undo, delete, t
   await page.getByRole("button", { name: "Save draft" }).click();
   await expect(page.getByTestId("builder-msg")).toContainText("Draft saved");
   await page.getByLabel("Sample user").selectOption({ label: ADMIN_EMAIL });
-  await page.getByRole("button", { name: "Run test" }).click();
+  await page.getByRole("button", { name: "Validate draft" }).click();
   await expect(page.getByTestId("job-view")).toContainText("Test run (nothing was changed)");
 
   // clean up

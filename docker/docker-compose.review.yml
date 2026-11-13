@@ -1,0 +1,138 @@
+# Disposable local PR review only. Start through scripts/review-stack.py.
+name: ifora-pr138-review
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: 'no'
+    environment:
+      POSTGRES_USER: ifora
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in docker/.env}
+      POSTGRES_DB: ifora
+    volumes:
+    - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -U ifora
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  redis:
+    image: redis:7-alpine
+    restart: 'no'
+    volumes:
+    - redis_data:/data
+    healthcheck:
+      test:
+      - CMD
+      - redis-cli
+      - ping
+      interval: 10s
+      timeout: 3s
+      retries: 5
+  backend-api:
+    build:
+      context: ..
+      dockerfile: docker/backend/Dockerfile
+    restart: 'no'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg2://ifora:${POSTGRES_PASSWORD}@postgres:5432/ifora
+      DATABASE_URL_ASYNC: postgresql+asyncpg://ifora:${POSTGRES_PASSWORD}@postgres:5432/ifora
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in docker/.env}
+      ADMIN_SECRET_KEY: ${ADMIN_SECRET_KEY:?set ADMIN_SECRET_KEY in docker/.env}
+      MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:?set MFA_ENCRYPTION_KEY in docker/.env}
+      RECIPE_ENCRYPTION_KEY: ${RECIPE_ENCRYPTION_KEY:-}
+      ENVIRONMENT: development
+      PUBLIC_APP_URL: http://localhost:3300
+      SESSION_COOKIE_SECURE: 'false'
+      ADMIN_MFA_REQUIRED: 'true'
+      RECIPE_SECRET_PROVIDER: fernet
+      CORS_ORIGINS: '["http://localhost:3300"]'
+      WEBAUTHN_RP_ID: localhost
+      WEBAUTHN_ORIGINS: '["http://localhost:3300"]'
+      OIDC_ISSUER: http://localhost:8300
+      OIDC_KEY_ENCRYPTION_KEY: ${OIDC_KEY_ENCRYPTION_KEY:?use review-stack.py}
+      SWA_ENCRYPTION_KEY: ${SWA_ENCRYPTION_KEY:?use review-stack.py}
+    ports:
+    - 127.0.0.1:8300:8000
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health')
+      interval: 10s
+      timeout: 5s
+      retries: 10
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/frontend/Dockerfile
+      target: prod
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8300
+        NEXT_PUBLIC_APP_ENVIRONMENT: development
+    restart: 'no'
+    depends_on:
+      backend-api:
+        condition: service_healthy
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8300
+      NEXT_PUBLIC_APP_ENVIRONMENT: development
+      NODE_ENV: production
+    ports:
+    - 127.0.0.1:3300:3000
+  recipes-worker:
+    build:
+      context: ..
+      dockerfile: docker/backend/Dockerfile
+    restart: 'no'
+    depends_on:
+      backend-api:
+        condition: service_healthy
+    entrypoint:
+    - python
+    - -m
+    - backend.cli
+    - recipes-worker
+    working_dir: /app
+    environment:
+      DATABASE_URL: postgresql+psycopg2://ifora:${POSTGRES_PASSWORD}@postgres:5432/ifora
+      DATABASE_URL_ASYNC: postgresql+asyncpg://ifora:${POSTGRES_PASSWORD}@postgres:5432/ifora
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in docker/.env}
+      ADMIN_SECRET_KEY: ${ADMIN_SECRET_KEY:?set ADMIN_SECRET_KEY in docker/.env}
+      MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:?set MFA_ENCRYPTION_KEY in docker/.env}
+      RECIPE_ENCRYPTION_KEY: ${RECIPE_ENCRYPTION_KEY:-}
+      RECIPES_WORKER_HEARTBEAT_FILE: /tmp/recipes-worker.alive
+      ENVIRONMENT: development
+      PUBLIC_APP_URL: http://localhost:3300
+      SESSION_COOKIE_SECURE: 'false'
+      ADMIN_MFA_REQUIRED: 'true'
+      RECIPE_SECRET_PROVIDER: fernet
+      CORS_ORIGINS: '["http://localhost:3300"]'
+      WEBAUTHN_RP_ID: localhost
+      WEBAUTHN_ORIGINS: '["http://localhost:3300"]'
+      OIDC_ISSUER: http://localhost:8300
+      OIDC_KEY_ENCRYPTION_KEY: ${OIDC_KEY_ENCRYPTION_KEY:?use review-stack.py}
+      SWA_ENCRYPTION_KEY: ${SWA_ENCRYPTION_KEY:?use review-stack.py}
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import os,time,sys; sys.exit(0 if time.time()-os.path.getmtime('/tmp/recipes-worker.alive')
+        < 30 else 1)
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+volumes:
+  postgres_data: null
+  redis_data: null
