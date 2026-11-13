@@ -7,6 +7,8 @@ import hashlib
 import html
 import json
 import os
+import re
+import subprocess
 from pathlib import Path
 import sys
 import tempfile
@@ -82,6 +84,33 @@ def duration(seconds):
     return f"{minutes}m {seconds:02d}s"
 
 
+def change_summary(env):
+    """Use checked-out commit metadata; no new GitHub token or external lookup."""
+    message = env.get("DRONE_COMMIT_MESSAGE", "")[:12000]
+    sha = env.get("DRONE_COMMIT_SHA", "")
+    only_merge = message and all(not line.strip() or line.startswith(("Merge pull request ", "Merge branch ")) for line in message.splitlines())
+    if not env.get("IFORA_BUILD_SUMMARY") and (not message or only_merge) and re.fullmatch(r"[a-fA-F0-9]{7,40}", sha):
+        try:
+            result = subprocess.run(["git", "log", "-1", "--format=%B", sha], capture_output=True, text=True, timeout=3, check=False)
+            if result.returncode == 0:
+                message = result.stdout[:12000]
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    lines = [line.strip() for line in message.splitlines() if line.strip()]
+    meaningful = [line for line in lines if not line.startswith("Merge pull request ") and not line.startswith("Merge branch ")]
+    title = env.get("DRONE_PULL_REQUEST_TITLE") or (meaningful[0] if meaningful else (lines[0] if lines else ""))
+    title = " ".join(title.split())[:280]
+    # Optional explicit short release note; otherwise the real PR/commit title is the summary.
+    summary = " ".join(env.get("IFORA_BUILD_SUMMARY", "").split())[:500] or title
+    number = env.get("DRONE_PULL_REQUEST", "")
+    if not re.fullmatch(r"[1-9][0-9]{0,8}", number):
+        found = re.search(r"Merge pull request #([1-9][0-9]{0,8})\b|\(#([1-9][0-9]{0,8})\)", message)
+        number = next((g for g in found.groups() if g), "") if found else ""
+    repo = env.get("DRONE_REPO", "")
+    url = f"https://github.com/{repo}/pull/{number}" if number and re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo) else None
+    return {"text": summary, "number": number, "url": url}
+
+
 def blocks(event, env, results):
     number = env.get("DRONE_BUILD_NUMBER", "?")
     status = "❌ Failed" if event == "failure" else "✅ Succeeded" if event == "success" else "⏳ Running"
@@ -106,6 +135,11 @@ def blocks(event, env, results):
         {"type": "section", "fields": fields},
         {"type": "section", "text": {"type": "mrkdwn", "text": "\n".join(rows)}},
     ]
+    change = change_summary(env)
+    if change["text"]:
+        output.insert(2, {"type": "section", "text": {"type": "plain_text", "text": "📝 What changed\n" + change["text"], "emoji": True}})
+    if change["url"]:
+        output.insert(3, {"type": "context", "elements": [{"type": "mrkdwn", "text": f"<{change['url']}|Review PR #{change['number']} ↗>"}]})
     if event == "failure":
         output.append({"type": "context", "elements": [{"type": "mrkdwn", "text": "⚠️ Deployments may be partial. No automatic rollback."}]})
     link = env.get("DRONE_BUILD_LINK", "")
@@ -143,12 +177,19 @@ def notify(event, env=None, root=Path(".ci"), api=slack_api):
     if event in state.get("events", []):
         print("Slack event already recorded")
         return
+    env = dict(env)
+    change = state.get("change") or change_summary(env)
+    if change.get("text"):
+        env["IFORA_BUILD_SUMMARY"] = change["text"]
+    if change.get("number"):
+        env["DRONE_PULL_REQUEST"] = change["number"]
     results = read_results(root / "results")
-    text = f"Ifora build #{env.get('DRONE_BUILD_NUMBER', '?')}: {EVENTS[event]}"
+    summary = change["text"]
+    text = f"Ifora build #{env.get('DRONE_BUILD_NUMBER', '?')}: {EVENTS[event]}" + (f" · {summary}" if summary else "")
     payload = {"channel": channel, "text": text, "blocks": blocks(event, env, results), "unfurl_links": False, "unfurl_media": False}
     if not state.get("ts"):
         response = api("chat.postMessage", payload, token)
-        state = {"channel": channel, "ts": response["ts"], "events": []}
+        state = {"channel": channel, "ts": response["ts"], "events": [], "change": change}
         # Persist immediately so a subsequent update failure does not lose the thread.
         save_state(state_file, state)
     else:

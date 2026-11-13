@@ -46,7 +46,8 @@ actions:
       - {key: channel, label: Channel or user id, type: string, required: true, pattern: '^[CGDUW][A-Z0-9]{2,20}$', max_length: 21}
       - {key: text, label: Message, type: string, required: true, pattern: '^[\s\S]{1,2000}$', max_length: 2000, multiline: true}
       - {key: thread_ts, label: Reply in thread (timestamp), type: string, pattern: '^[0-9]{10}\.[0-9]{6}$', max_length: 17}
-    body: {channel: "{channel}", text: "{text}", thread_ts: "{thread_ts}"}
+      - {key: blocks, label: Block Kit message, type: slack_blocks, max_length: 16000}
+    body: {channel: "{channel}", text: "{text}", thread_ts: "{thread_ts}", blocks: "{blocks}"}
     outputs:
       - {key: ts, from: "$.ts"}
       - {key: channel_id, from: "$.channel"}

@@ -146,6 +146,7 @@ steps:
       SLACK_CHANNEL_ID:
         from_secret: slack_channel_id
     commands:
+      - apk add --no-cache git
       - python scripts/ci-slack.py start
     when:
       status: [success, failure]
@@ -231,5 +232,3 @@ services:
       POSTGRES_DB: postgres
   - name: ci-redis
     image: redis:7-alpine
-
-

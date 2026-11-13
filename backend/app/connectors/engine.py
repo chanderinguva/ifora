@@ -91,6 +91,12 @@ def validate_inputs(action: Action, raw: Dict[str, Any], *, partial: bool = Fals
 
 
 def _coerce(i: Input, v: Any) -> Any:
+    if i.type == "slack_blocks":
+        from backend.app.connectors.slack_blocks import validate_blocks
+        try:
+            return validate_blocks(v)
+        except ValueError as e:
+            raise ConnectorError(str(e)) from None
     if i.type == "boolean":
         if isinstance(v, bool):
             return v

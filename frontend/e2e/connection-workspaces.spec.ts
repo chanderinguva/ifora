@@ -30,6 +30,19 @@ test("create a Slack bot connection inside a template without losing inputs", as
   await page.getByRole("button", { name: "Create draft from template" }).click();
   await expect(page.getByRole("heading", { name: recipeName, exact: true })).toBeVisible();
   await expect(page.getByTestId("studio")).toContainText("Post a message");
+  await page.getByTestId("studio-card").first().getByRole("button", { name: /Open step/ }).click();
+  const design = page.getByRole("region", { name: "Slack message design" });
+  await expect(design.getByLabel("Message format", { exact: true })).toHaveValue("blocks");
+  await design.getByLabel("Block 1 text", { exact: true }).fill("⚠️ Custom security alert");
+  await expect(design.getByLabel("Block Kit preview", { exact: true })).toContainText("Custom security alert");
+  await design.getByRole("button", { name: "Add context", exact: true }).click();
+  await design.getByRole("checkbox", { name: "Advanced JSON editor" }).check();
+  await expect(design.getByLabel("Blocks JSON")).toHaveValue(/Custom security alert/);
+  await design.getByRole("checkbox", { name: "Advanced JSON editor" }).uncheck();
+  await design.getByLabel("Sample user for message preview").selectOption({ index: 1 });
+  await design.getByRole("button", { name: "Preview with sample data", exact: true }).click();
+  await expect(design.getByRole("status")).toContainText("No message sent");
+
   await expect(page.getByRole("button", { name: "Publish", exact: true })).toHaveClass(/bg-primary/);
   await expect(page.getByRole("button", { name: "Validate draft", exact: true })).toBeVisible();
   const live = page.getByRole("region", { name: "Live Slack message test" });

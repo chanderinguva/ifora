@@ -6,6 +6,7 @@ Imports always land as an unpublished, disabled draft and go through the same va
 """
 
 import copy
+import json
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
@@ -169,7 +170,14 @@ TEMPLATES: List[dict] = [
             "trigger": {"type": "login.failed", "config": {"min_failures": int(p["min_failures"])}, "filter": []},
             "steps": [{"id": "s1", "type": "connector_action", "config": {"connector": "slack", "action": "post_message",
                        "connection_id": p["connection"], "inputs": {"channel": p["channel"],
-                       "text": "{{trigger.user.email}} has {{trigger.login.consecutive_failures}} failed sign-ins in a row"}}}]
+                       "text": "{{trigger.user.email}} has {{trigger.login.consecutive_failures}} failed sign-ins in a row",
+                       "blocks": json.dumps([
+                           {"type": "header", "text": {"type": "plain_text", "text": "⚠️ Repeated failed sign-ins"}},
+                           {"type": "section", "fields": [
+                               {"type": "mrkdwn", "text": "*User*\n{{trigger.user.email}}"},
+                               {"type": "mrkdwn", "text": "*Consecutive failures*\n{{trigger.login.consecutive_failures}}"}]},
+                           {"type": "divider"},
+                           {"type": "context", "elements": [{"type": "mrkdwn", "text": "Ifora · Sign-in security"}]}])}}}]
                        if p.get("slack_bot") else [{"id": "s1", "type": "send_slack", "config": {"connection_id": p["connection"],
                        "message": "{{trigger.user.email}} has {{trigger.login.consecutive_failures}} failed sign-ins in a row"}}],
         },
