@@ -21,16 +21,17 @@ ENVFILE="$(mktemp)"
 trap 'rm -f "$ENVFILE"' EXIT
 chmod 600 "$ENVFILE"
 # Drop dev-stack settings the tests assume are unset (their app defaults apply): the WebAuthn relying party/origins
-# (the dev stack uses ifora.app; tests expect localhost) and the recipe encryption key (tests cover the no-key paths).
+# and OIDC login/logout UI URLs (the dev stack uses ifora.app; tests expect localhost) and the recipe encryption key (tests cover the no-key paths).
 docker inspect "$API" --format '{{range .Config.Env}}{{println .}}{{end}}' \
-  | grep -v '^$' | grep -Ev '^(WEBAUTHN_RP_ID|WEBAUTHN_ORIGINS|RECIPE_ENCRYPTION_KEY)=' > "$ENVFILE"
+  | grep -v '^$' | grep -Ev '^(WEBAUTHN_RP_ID|WEBAUTHN_ORIGINS|RECIPE_ENCRYPTION_KEY|OIDC_LOGIN_UI_URL|OIDC_LOGOUT_UI_URL)=' > "$ENVFILE"
 
 ARGS=("$@")
 if [ ${#ARGS[@]} -eq 0 ]; then ARGS=(); fi
 
 # --entrypoint sh skips the image's migration entrypoint. The two -e overrides are required because the dev stack
-# uses https://ifora.app with Secure cookies, which makes every login-then-request test return 401 over plain HTTP.
+# uses https://ifora.app with Secure cookies, which makes every login-then-request test return 401 over plain HTTP,
+# and CORS_ORIGINS must allow the tests' Origin (http://localhost:3000) or every login returns 403.
 docker run --rm --entrypoint sh --network "$NETWORK" --env-file "$ENVFILE" \
-  -e SESSION_COOKIE_SECURE=false -e PUBLIC_APP_URL=http://localhost:3000 \
+  -e SESSION_COOKIE_SECURE=false -e PUBLIC_APP_URL=http://localhost:3000 -e 'CORS_ORIGINS=["http://localhost:3000"]' \
   -v "$SRC":/app/backend -w /app/backend "$IMAGE" \
-  -c 'pip install -q -r requirements-dev.txt && python -m pytest -q -p no:cacheprovider "$@"' sh "${ARGS[@]+"${ARGS[@]}"}"
+  -c 'pip install -q --require-hashes -r requirements-dev.txt && python -m pytest -q -p no:cacheprovider "$@"' sh "${ARGS[@]+"${ARGS[@]}"}"

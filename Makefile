@@ -24,7 +24,7 @@ TRIVY ?= trivy
 GATES_ALL := lint-py types-py secrets sast-bandit sast-semgrep deps-py test-backend lint-web types-web deps-web no-workflows
 GATES_FAST := lint-py types-py secrets lint-web types-web no-workflows
 
-.PHONY: check check-fast hooks tools e2e images-scan $(GATES_ALL)
+.PHONY: check check-fast hooks tools e2e images-scan lock $(GATES_ALL)
 
 check:
 	@failed=""; \
@@ -102,6 +102,16 @@ secrets:
 secrets-history:
 	@scripts/need.sh $(GITLEAKS) "brew install gitleaks   (v8.x)"
 	$(GITLEAKS) detect --source . --config .gitleaks.toml --redact --no-banner
+
+# ---- Dependency lock (IFORA-21) ---------------------------------------------------------------------------------
+# requirements.in / requirements-dev.in are the human-edited inputs; the .txt files are generated with hashes and
+# installed with --require-hashes. Edit a .in file, run `make lock`, commit both. Needs uv (brew install uv).
+# To upgrade everything: make lock UV_LOCK_ARGS=--upgrade
+UV_LOCK_ARGS ?=
+lock:
+	@scripts/need.sh uv "brew install uv"
+	cd $(BACKEND) && uv pip compile requirements.in --universal --python-version 3.12 --generate-hashes $(UV_LOCK_ARGS) -o requirements.txt
+	cd $(BACKEND) && uv pip compile requirements-dev.in --universal --python-version 3.12 --generate-hashes $(UV_LOCK_ARGS) -o requirements-dev.txt
 
 # ---- Backend tests ----------------------------------------------------------------------------------------------
 # Needs the compose stack and a rebuilt backend-api image (see README "Testing"): tests use the ifora_test database.
