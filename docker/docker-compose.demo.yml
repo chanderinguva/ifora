@@ -41,7 +41,7 @@ services:
   # Routes API/OIDC/SAML/SCIM paths to the backend and everything else to Next.js. Plain HTTP inside the stack:
   # TLS ends at Cloudflare. No published ports, so only the tunnel container can reach it.
   edge:
-    image: caddy:2.8-alpine
+    image: caddy:2.8-alpine@sha256:af32e97399febea808609119bb21544d0265c58a02836576e32a2d082c262c17
     container_name: ifora-demo-edge
     restart: unless-stopped
     depends_on:
@@ -58,7 +58,7 @@ services:
 
   # Outbound-only tunnel to Cloudflare. The token comes from Zero Trust > Networks > Tunnels.
   cloudflared:
-    image: cloudflare/cloudflared:2024.12.2
+    image: cloudflare/cloudflared:2024.12.2@sha256:cb38f3f30910a7d51545118a179b8516eb7066eac61855d62ce6ed733c54ce70
     container_name: ifora-demo-tunnel
     restart: unless-stopped
     command: tunnel --no-autoupdate run

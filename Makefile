@@ -21,8 +21,8 @@ GITLEAKS ?= gitleaks
 SEMGREP ?= semgrep
 TRIVY ?= trivy
 
-GATES_ALL := lint-py types-py secrets sast-bandit sast-semgrep deps-py test-backend lint-web types-web deps-web no-workflows
-GATES_FAST := lint-py types-py secrets lint-web types-web no-workflows
+GATES_ALL := lint-py types-py secrets sast-bandit sast-semgrep deps-py test-backend lint-web types-web deps-web no-workflows image-pins
+GATES_FAST := lint-py types-py secrets lint-web types-web no-workflows image-pins
 
 .PHONY: check check-fast hooks tools e2e images-scan $(GATES_ALL)
 
@@ -127,6 +127,10 @@ no-workflows:
 	@if [ -d .github/workflows ] && [ -n "$$(ls -A .github/workflows 2>/dev/null)" ]; then \
 	  echo "FAIL: .github/workflows must stay empty (no paid GitHub Actions). Found:"; ls .github/workflows; exit 1; \
 	else echo "ok: no workflow files"; fi
+
+# Every FROM / image: must carry an @sha256 digest (IFORA-21). Refresh procedure: README "Image pins".
+image-pins:
+	python3 scripts/check_image_pins.py
 
 # ---- Optional ---------------------------------------------------------------------------------------------------
 e2e:

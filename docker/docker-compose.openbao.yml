@@ -2,7 +2,7 @@
 # Prepare IFORA_OPENBAO_DIR outside the checkout with scripts/openbao-setup.py.
 services:
   openbao:
-    image: openbao/openbao:2.7.2
+    image: openbao/openbao:2.7.2@sha256:5046911075e137e154ce49ab051502f4ec7cf367d484ae4a4dce665d9b90561f
     entrypoint: ["bao"]
     command: ["server", "-config=/openbao/config/server.hcl"]
     user: "0:0"

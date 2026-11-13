@@ -222,6 +222,16 @@ npm install
 npm run dev
 ```
 
+## Image pins
+
+Every `FROM` and compose `image:` is pinned as `name:tag@sha256:<index digest>`; `make image-pins` (part of `make check`) fails on an unpinned reference. The tag stays for readability, the digest is what Docker pulls. Digests change only through a reviewed PR:
+
+```bash
+docker buildx imagetools inspect postgres:16-alpine --format '{{.Manifest.Digest}}'   # multi-arch index digest
+```
+
+Replace the digest everywhere that image appears (`git grep 'postgres:16-alpine@'`), rebuild, run `make test-backend`, and note the old and new digest in the PR. Use the index digest so the same pin works on arm64 and amd64.
+
 ## Testing
 
 ### Backend tests
