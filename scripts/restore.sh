@@ -78,6 +78,10 @@ if [ -f "$MANIFEST" ]; then
     fi
   done
 fi
-[ "$status" = 0 ] && say "restored and verified" || say "restored, but verification differs (see above)"
+if [ "$status" = 0 ]; then
+  say "restored and verified"
+else
+  say "restored, but verification differs (see above)"
+fi
 echo "Next: start the application so it applies any newer migrations, and sign in to confirm. Restore the secrets from docker/.env separately."
 exit "$status"
