@@ -1,5 +1,6 @@
 "use client";
 
+import { UserRoleBadges } from "@/components/user-role-badges";
 import { Avatar } from "@/components/avatar";
 import { PasswordRules } from "@/components/password-rules";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -169,7 +170,7 @@ export default function UsersPage() {
                   </td>
                   <td className={td + " font-mono text-[13px]"}>{u.email}</td>
                   <td className={td}>
-                    {u.is_super_admin ? <Badge tone="info">Super admin</Badge> : u.is_admin ? <Badge tone="info">Admin</Badge> : <Badge>User</Badge>}
+                    <UserRoleBadges user={u} />
                   </td>
                   <td className={td}>
                     <Badge tone={statusTone(u.status)}>{u.status.replace("_", " ")}</Badge>
@@ -367,3 +368,4 @@ function CreateUser({ canMakeAdmin, onDone }: { canMakeAdmin: boolean; onDone: (
     </Card>
   );
 }
+

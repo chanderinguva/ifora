@@ -11,6 +11,9 @@ import { http, qs, type Page } from "@/lib/http";
 import { useDirty } from "@/lib/use-dirty";
 import { SaveButton } from "@/components/save-button";
 import type { User } from "@/lib/types";
+import { SamlSetupGuide } from "@/components/saml-setup-guide";
+import { SamlConfigTranslator } from "@/components/saml-config-translator";
+import { mergeClaims } from "@/lib/saml-config-translator";
 
 type Mapping = { name: string; source: string; filter?: { type: string; value: string }; required?: boolean };
 type Preset = { id: string; label: string; mappings: Mapping[] };
@@ -68,6 +71,9 @@ export function SamlCard({ appId, onChange }: { appId: number; onChange: () => v
       <CardHeader><CardTitle>SAML 2.0</CardTitle></CardHeader>
       <CardContent className="space-y-4 text-sm">
         {msg && <Alert variant={msg.ok ? "default" : "destructive"} role="status"><AlertDescription>{msg.text}</AlertDescription></Alert>}
+        {idp && <SamlSetupGuide key={appId} idp={idp} provider={info?.provider ?? null} dirty={dirty} />}
+        <SamlConfigTranslator current={{ acs_url: f.acs_url, sp_entity_id: f.sp_entity_id, audience: f.audience, name_id_format: f.name_id_format, signing: f.signing, claims: maps }}
+          onApply={(plan) => { setF((old) => ({ ...old, ...plan.fields })); setMaps((old) => mergeClaims(old, plan.claims)); }} />
 
         {idp && (
           <div className="space-y-1 rounded-md border p-3" data-testid="saml-idp-info">
@@ -179,3 +185,4 @@ export function SamlCard({ appId, onChange }: { appId: number; onChange: () => v
     </Card>
   );
 }
+

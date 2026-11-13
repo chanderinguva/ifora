@@ -7,6 +7,8 @@ export type User = {
   status: string;
   is_admin: boolean;
   is_super_admin: boolean;
+  /** User-list display metadata, including direct and group-derived assignments. */
+  admin_roles?: { id: string; label: string; sources: ("direct" | "group")[] }[];
   created_at: string | null;
   last_login_at: string | null;
   profile_attributes: Record<string, string | number | boolean | null>;
@@ -133,3 +135,4 @@ export const USER_STATUSES: { value: UserStatus; label: string; hint: string }[]
   { value: "deprovisioned", label: "Deprovisioned", hint: "Deactivated; removed from all groups" },
 ];
 export const statusTone = (s: string) => (s === "active" ? "good" : s === "deprovisioned" || s === "locked_out" || s === "suspended" ? "bad" : "neutral");
+
