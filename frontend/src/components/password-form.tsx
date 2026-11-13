@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Logo } from "@/components/logo";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -71,6 +71,7 @@ export function ForgotPasswordForm() {
 
 /** Set a password from an emailed link (reset or invitation). The token lives in the URL fragment. */
 export function SetPasswordForm({ invite }: { invite: boolean }) {
+  const tokenCaptured = useRef(false);
   const [token, setToken] = useState<string | null>(null);
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
@@ -78,9 +79,13 @@ export function SetPasswordForm({ invite }: { invite: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
+    // Strict Mode replays effects in development. Capture only once: the first
+    // pass removes the fragment, so reading it again would discard the token.
+    if (tokenCaptured.current) return;
+    tokenCaptured.current = true;
     const t = new URLSearchParams(window.location.hash.slice(1)).get("token");
     setToken(t ?? "");
-    if (t) history.replaceState(null, "", window.location.pathname); // keep the token out of history and screenshots
+    if (t) history.replaceState(history.state, "", window.location.pathname + window.location.search); // keep the token out of history and screenshots
   }, []);
   const title = invite ? "Welcome to Ifora" : "Choose a new password";
   const desc = invite ? "Set a password to activate your account." : "Pick a new password for your account.";
@@ -93,15 +98,33 @@ export function SetPasswordForm({ invite }: { invite: boolean }) {
           <Link href="/login"><Button className="w-full">Go to sign in</Button></Link>
         </>
       ) : !token ? (
-        <Alert variant="destructive"><AlertDescription>This link is incomplete. Open it again from your email, or request a new one.</AlertDescription></Alert>
+        <Alert variant="destructive"><AlertDescription>
+          {invite
+            ? "This invitation link is incomplete. Reopen the original invitation email. If it still does not work, ask your administrator to resend your invitation."
+            : "This reset link is incomplete. Reopen the original email. If it still does not work, request a new password reset link."}
+        </AlertDescription></Alert>
       ) : (
         <form className="space-y-4" onSubmit={async (e) => {
           e.preventDefault();
           if (pw !== pw2) { setError("The passwords do not match"); return; }
           setBusy(true); setError(null);
-          const r = await post("/auth/reset-password", { token, new_password: pw });
-          setBusy(false);
-          if (r.ok) setDone(true); else setError(r.data.detail);
+          try {
+            const r = await post("/auth/reset-password", { token, new_password: pw });
+            if (r.ok) {
+              setToken("");
+              setPw("");
+              setPw2("");
+              setDone(true);
+            } else if (r.data.detail === "This link is invalid or has expired") {
+              setError(invite
+                ? "This invitation is invalid, expired or already used. If you already activated your account, sign in. Otherwise, ask your administrator to resend your invitation."
+                : "This reset link is invalid, expired or already used. Request a new password reset link, or sign in if you already changed your password.");
+            } else setError(r.data.detail);
+          } catch {
+            setError("We could not connect to Ifora. Check your connection and try again.");
+          } finally {
+            setBusy(false);
+          }
         }}>
           {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
           <div className="space-y-2">
@@ -116,7 +139,14 @@ export function SetPasswordForm({ invite }: { invite: boolean }) {
           <Button type="submit" className="w-full" disabled={busy || !pw}>{invite ? "Activate account" : "Set password"}</Button>
         </form>
       )}
-      {!done && <Link href="/forgot-password" className="block text-center text-sm underline-offset-4 hover:underline">Request a new link</Link>}
+      {!done && <>
+        {invite ? (
+          <p className="text-sm text-muted-foreground">Need a new invitation? Contact your organization administrator to resend it.</p>
+        ) : (
+          <Link href="/forgot-password" className="block text-center text-sm underline-offset-4 hover:underline">Request a new password reset link</Link>
+        )}
+        <Link href="/login" className="block text-center text-sm underline-offset-4 hover:underline">Back to sign in</Link>
+      </>}
     </Shell>
   );
 }
@@ -144,3 +174,4 @@ export function ExpiredPasswordForm({ email, current, onDone }: { email: string;
     </form>
   );
 }
+

@@ -84,9 +84,9 @@ export function AppTiles() {
   function tile(a: MyApp) {
     const p = pref(a.id);
     return (
-      <li key={a.id} className="group relative" data-testid={`tile-${a.id}`}>
+      <li key={a.id} className="group relative flex min-w-0 flex-col rounded-2xl border bg-card" data-testid={`tile-${a.id}`}>
         <button type="button" disabled={!a.launchable} onClick={() => launch(a)} aria-label={a.launchable ? `Open ${a.name}` : `${a.name} (no launch link)`}
-          title={a.description ?? a.name} className="flex h-full w-full flex-col items-center gap-3 rounded-2xl border border-transparent p-4 text-center transition-colors hover:border-border hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60">
+          title={a.description ?? a.name} className="flex min-h-[168px] w-full flex-1 flex-col items-center justify-center gap-3 rounded-2xl border border-transparent px-6 py-8 text-center transition-colors hover:border-border hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60">
           <span className="rounded-[20px] bg-card p-1.5 ring-1 ring-border"><AppIcon path={`/me/apps/${a.id}/icon`} name={a.name} hasIcon={a.has_icon} size={56} /></span>
           <span className="line-clamp-2 text-sm font-medium">{a.name}</span>
           {a.launchable && !organise && <ExternalLink aria-hidden className="h-3.5 w-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />}
@@ -102,10 +102,10 @@ export function AppTiles() {
           <Star className={"h-3.5 w-3.5 " + (p.favorite ? "fill-primary text-primary" : "")} />
         </button>
         {organise && (
-          <div className="mt-1 flex items-center justify-center gap-1">
+          <div className="flex flex-wrap items-center justify-center gap-1 border-t bg-muted/30 p-2">
             <Button type="button" variant="ghost" size="sm" aria-label={`Move ${a.name} earlier`} onClick={() => put(a.id, { move: "earlier" })}><ArrowUp className="h-3.5 w-3.5" /></Button>
             <Button type="button" variant="ghost" size="sm" aria-label={`Move ${a.name} later`} onClick={() => put(a.id, { move: "later" })}><ArrowDown className="h-3.5 w-3.5" /></Button>
-            <select aria-label={`Section for ${a.name}`} className={fieldClass + " h-8 w-28 py-0 text-xs"} value={p.section_id ?? ""}
+            <select aria-label={`Section for ${a.name}`} className="h-9 w-full min-w-0 rounded-md border bg-background px-2 text-xs" value={p.section_id ?? ""}
               onChange={(e) => put(a.id, e.target.value ? { section_id: Number(e.target.value) } : { clear_section: true })}>
               <option value="">Other</option>
               {ov.sections.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -117,7 +117,7 @@ export function AppTiles() {
   }
 
   const grid = (list: MyApp[], id: string) => (
-    <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5" data-testid={id}>{list.map((a) => tile(a))}{id === "my-apps" && !searching && (
+    <ul className="grid grid-cols-1 items-stretch gap-4 min-[400px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-4" data-testid={id}>{list.map((a) => tile(a))}{id === "my-apps" && !searching && (
       <li>
         <Link href="/apps/request" data-testid="add-apps-tile" className="flex h-full min-h-[132px] w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed p-4 text-center text-sm text-muted-foreground transition hover:border-primary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
           <Plus aria-hidden className="h-6 w-6" /> Add apps
@@ -134,12 +134,12 @@ export function AppTiles() {
       {err && <Alert variant="destructive" className="mb-4" role="status"><AlertDescription>{err}</AlertDescription></Alert>}
       {hasApps && (
         <div className="mb-4 flex flex-wrap items-center gap-2">
-          <div className="relative max-w-xl flex-1">
+          <div className="relative min-w-[160px] max-w-xl flex-1">
             <Search className="pointer-events-none absolute left-4 top-3 h-5 w-5 text-muted-foreground" />
             <Input aria-label="Search my apps" placeholder="Search your apps" className="h-11 rounded-full pl-11 text-base" value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
           <Button type="button" variant={organise ? "default" : "outline"} size="sm" aria-pressed={organise} onClick={() => setOrganise((v) => !v)} data-testid="organise-toggle">
-            <Settings2 className="mr-1 h-4 w-4" /> {organise ? "Done" : "Organise"}
+            <Settings2 className="mr-1 h-4 w-4" /> {organise ? "Done organizing" : "Organise"}
           </Button>
         </div>
       )}
@@ -149,6 +149,7 @@ export function AppTiles() {
           <Link href="/apps/request" className="mt-3 inline-flex items-center gap-1 text-sm font-medium underline-offset-4 hover:underline"><Plus aria-hidden className="h-4 w-4" /> Request access to an app</Link>
         </div>
       )}
+      {organise && <p className="mb-4 text-sm text-muted-foreground">Organize your apps: move them earlier or later, choose a section, or add a new section below. Changes save automatically.</p>}
       {hasApps && matches.length === 0 && <p className="text-sm text-muted-foreground">No app matches “{q}”.</p>}
 
       {!searching && recent.length > 0 && (
@@ -178,7 +179,7 @@ export function AppTiles() {
         if (searching && list.length === 0) return null;
         return (
           <section key={s.id} className="mb-6" aria-labelledby={`sec-${s.id}`} data-testid={`section-${s.id}`}>
-            <div className="mb-2 flex items-center gap-1">
+            <div className="mb-2 flex flex-wrap items-center gap-1">
               <h3 id={`sec-${s.id}`} className="text-base font-semibold">{s.name}</h3>
               {organise && (
                 <>
@@ -202,11 +203,12 @@ export function AppTiles() {
       )}
 
       {organise && (
-        <form className="mt-2 flex max-w-sm gap-2" onSubmit={(e) => { e.preventDefault(); const n = newSection.trim(); if (!n) return; setNewSection(""); act(() => http("/me/dashboard/sections", { method: "POST", body: { name: n } })); }}>
+        <form className="mt-6 flex max-w-xl flex-col gap-3 rounded-xl border bg-card p-4 sm:flex-row sm:items-center" onSubmit={(e) => { e.preventDefault(); const n = newSection.trim(); if (!n) return; setNewSection(""); act(() => http("/me/dashboard/sections", { method: "POST", body: { name: n } })); }}>
           <Input aria-label="New section name" placeholder="New section…" maxLength={40} value={newSection} onChange={(e) => setNewSection(e.target.value)} />
-          <Button type="submit" variant="outline" size="sm" data-testid="add-section"><Plus className="mr-1 h-4 w-4" /> Add section</Button>
+          <Button type="submit" variant="default" className="shrink-0 whitespace-nowrap" disabled={!newSection.trim()} data-testid="add-section"><Plus className="mr-1 h-4 w-4 shrink-0" /> Add section</Button>
         </form>
       )}
     </div>
   );
 }
+
