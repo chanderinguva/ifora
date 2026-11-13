@@ -1,4 +1,4 @@
-FROM node:20-bookworm-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
+FROM node:24-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54
 ENV NEXT_TELEMETRY_DISABLED=1
 WORKDIR /opt/ci/frontend
 COPY package.json package-lock.json ./
