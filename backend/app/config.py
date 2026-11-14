@@ -166,6 +166,10 @@ class Settings(BaseSettings):
     # Per-client-IP throttle on failed logins / bootstrap attempts (Redis, fixed window)
     RATE_LIMIT_LOGIN_FAILURES: int = Field(default=10)
     RATE_LIMIT_LOGIN_WINDOW_SECONDS: int = Field(default=300)
+    # Tenant resolution (IFORA-18): "single" = the seeded default tenant (today's behaviour); "host" = the tenant whose
+    # slug is the first label of the request Host under TENANT_BASE_DOMAIN. Unresolvable -> request refused (fail closed).
+    TENANT_RESOLUTION: str = Field(default="single", pattern="^(single|host)$")
+    TENANT_BASE_DOMAIN: str = Field(default="")
     RATE_LIMIT_FAIL_CLOSED: bool = Field(default=True)  # Redis down: credential endpoints answer 503 (false = fail open, rollback)
     RATE_LIMIT_LOCKED_GUESSES: int = Field(default=20)  # wrong passwords per locked account from known addresses per window
     RATE_LIMIT_LOCKED_WINDOW_SECONDS: int = Field(default=900)

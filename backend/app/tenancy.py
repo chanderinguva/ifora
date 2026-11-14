@@ -17,6 +17,9 @@ from datetime import datetime, timezone
 
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Table, event
 from sqlalchemy.sql import visitors
+from sqlalchemy import Delete, Select, Update
+from sqlalchemy.sql.dml import Insert
+from sqlalchemy.sql.selectable import Alias, Join
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm import declared_attr, with_loader_criteria
 
@@ -27,6 +30,10 @@ DEFAULT_TENANT_SLUG = "default"
 
 class TenantContextMissing(RuntimeError):
     """A tenant-owned table was touched without a tenant context."""
+
+
+class UnscopedStatement(RuntimeError):
+    """A Core statement touched a tenant table without a tenant condition (IFORA-18)."""
 
 
 class CrossTenantWrite(RuntimeError):
@@ -106,7 +113,57 @@ def tenant_session(tenant_id: int | None = None) -> OrmSession:
 
 
 def _tenant_tables() -> set:
-    return {m.local_table.name for m in Base.registry.mappers if issubclass(m.class_, TenantOwned)}
+    return {m.local_table.name for m in Base.registry.mappers if issubclass(m.class_, TenantOwned)} | _core_tenant_tables()
+
+
+def _core_tenant_tables() -> set:
+    """Plain Tables that carry tenant_id but have no mapped class (e.g. user_group_membership). The ORM loader
+    criteria cannot scope these, so Core statements on them must name the tenant themselves."""
+    mapped = {m.local_table.name for m in Base.registry.mappers}
+    return {t.name for t in Base.metadata.tables.values() if "tenant_id" in t.c and t.name not in mapped}
+
+
+def _direct_tables(frm):
+    """Core tenant tables (or aliases of them) read directly by a FROM item, looking through joins only."""
+    core = _core_tenant_tables()
+    if isinstance(frm, Join):
+        return _direct_tables(frm.left) + _direct_tables(frm.right)
+    base = frm.element if isinstance(frm, Alias) else frm
+    return [frm] if isinstance(base, Table) and base.name in core else []
+
+
+def _scope_core(stmt, tid: int):
+    """Add `tenant_id = :tid` to every Core SELECT/UPDATE/DELETE over an unmapped tenant table.
+
+    ORM loader criteria cannot scope plain Tables such as user_group_membership, so without this a Core statement
+    would read or change every tenant's rows. Each SELECT in the statement (subqueries included) gets the
+    condition for the tables it reads directly; UPDATE/DELETE get it for their target. INSERTs are filled and
+    checked by the database trigger (migration 0030). Fails closed on a shape it cannot rewrite.
+    """
+    if isinstance(stmt, Insert) or not _core_tenant_tables():
+        return stmt
+    core = _core_tenant_tables()
+    if not any(isinstance(e, Table) and e.name in core for e in visitors.iterate(stmt)):
+        return stmt
+
+    def on_select(sel):
+        extra = tuple(t.c.tenant_id == tid for f in sel.get_final_froms() for t in _direct_tables(f))
+        if extra:
+            sel._where_criteria = sel._where_criteria + extra
+
+    # Loader-criteria options (already on lazy-load and propagated statements) cannot be cloned: set them aside.
+    opts = getattr(stmt, "_with_options", ())
+    if opts:
+        stmt = stmt._clone()
+        stmt._with_options = ()
+    out = visitors.cloned_traverse(stmt, {}, {"select": on_select})
+    if opts:
+        out._with_options = opts
+    if isinstance(out, (Update, Delete)) and out.table.name in core:
+        out = out.where(out.table.c.tenant_id == tid)
+    elif not isinstance(out, (Select, Update, Delete)):
+        raise UnscopedStatement(f"cannot scope a {type(stmt).__name__} on a tenant table")
+    return out
 
 
 def _touches_tenant_tables(stmt) -> bool:
@@ -129,7 +186,7 @@ def _scope_queries(state):
         if _touches_tenant_tables(state.statement):
             raise TenantContextMissing("tenant-owned table accessed without a tenant context")
         return
-    state.statement = state.statement.options(
+    state.statement = _scope_core(state.statement, tid).options(
         with_loader_criteria(
             TenantOwned,
             lambda cls: cls.tenant_id == tid,
@@ -156,3 +213,36 @@ def _stamp_and_check(session, flush_context, instances):
     for obj in session.dirty:
         if isinstance(obj, TenantOwned) and tid is not None and obj.tenant_id != tid:
             raise CrossTenantWrite(f"{type(obj).__name__} belongs to tenant {obj.tenant_id}, session is {tid}")
+
+
+class TenantNotResolved(RuntimeError):
+    """Multi-tenant mode and the request does not name a known, active tenant."""
+
+
+def resolve_tenant_id(host: str | None) -> int:
+    """Tenant for a request. Only the Host header is used (set by the edge); no client-supplied tenant header is read.
+
+    single: the default tenant. host: `<slug>.<TENANT_BASE_DOMAIN>`; anything else raises TenantNotResolved.
+    """
+    from backend.app.config import settings
+
+    if settings.TENANT_RESOLUTION == "single":
+        return default_tenant_id()
+    base = settings.TENANT_BASE_DOMAIN.strip().lower().strip(".")
+    name = (host or "").split(":")[0].strip().lower().rstrip(".")
+    if not base or not name.endswith("." + base):
+        raise TenantNotResolved("host does not name a tenant")
+    slug = name[: -len(base) - 1]
+    if not slug or "." in slug:
+        raise TenantNotResolved("host does not name a tenant")
+    from backend.app.db import SessionLocal
+
+    s = SessionLocal()
+    try:
+        with unscoped(s):
+            row = s.query(Tenant.id).filter(Tenant.slug == slug, Tenant.status == "active").first()
+    finally:
+        s.close()
+    if row is None:
+        raise TenantNotResolved("unknown tenant")
+    return row[0]
