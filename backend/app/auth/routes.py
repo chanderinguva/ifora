@@ -196,7 +196,12 @@ async def login_endpoint(
 
     # Anyone can type wrong passwords for someone else's email and lock them out. So a locked account still lets the
     # owner in from an address they have signed in from recently; everywhere else the lockout holds.
-    if user.is_locked_out() and not is_known_ip(user.id, ip):
+    # The known-address exception is itself bounded: after RATE_LIMIT_LOCKED_GUESSES wrong passwords in a window the
+    # account is treated as locked from everywhere (same 401 body), so a shared office address cannot be used to guess.
+    if user.is_locked_out() and (
+        not is_known_ip(user.id, ip)
+        or ratelimit.is_limited("login_locked", str(user.id), settings.RATE_LIMIT_LOCKED_GUESSES)
+    ):
         passwords.burn(login_data.password)  # equalise timing
         logger.warning("login.attempt_failed", reason="account_locked", user_id=user.id)
         raise fail()
@@ -204,6 +209,7 @@ async def login_endpoint(
     if not user.verify_password(login_data.password):
         if user.is_locked_out():  # known address during a lockout: refuse, but do not extend the lockout
             logger.warning("login.attempt_failed", reason="invalid_password_while_locked", user_id=user.id)
+            ratelimit.hit("login_locked", str(user.id), settings.RATE_LIMIT_LOCKED_WINDOW_SECONDS)
             raise fail()
         user.failed_login_attempts += 1
         from backend.app.recipes import events as recipe_events

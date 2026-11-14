@@ -95,7 +95,7 @@ Admin collections (users, groups, applications, roles, administrators, access re
 cp docker/.env.example docker/.env
 ```
 
-2. Fill in the required secrets (`POSTGRES_PASSWORD`, `SECRET_KEY`, `ADMIN_SECRET_KEY`, `MFA_ENCRYPTION_KEY`). The generation commands are in `docker/.env.example`; compose refuses to start without the required ones. Further keys: `OIDC_KEY_ENCRYPTION_KEY` (OIDC signing keys), `SWA_ENCRYPTION_KEY` (SWA apps) and `RECIPE_ENCRYPTION_KEY` (recipe connections, connector credentials and webhooks; empty disables them).
+2. Fill in the required secrets (`POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `SECRET_KEY`, `ADMIN_SECRET_KEY`, `MFA_ENCRYPTION_KEY`). The generation commands are in `docker/.env.example`; compose refuses to start without the required ones. Further keys: `OIDC_KEY_ENCRYPTION_KEY` (OIDC signing keys), `SWA_ENCRYPTION_KEY` (SWA apps) and `RECIPE_ENCRYPTION_KEY` (recipe connections, connector credentials and webhooks; empty disables them).
 
 ### Start the Platform
 
@@ -309,7 +309,11 @@ Verified on a scratch database: backup, restore (empty target, refusal on a non-
 - Passwords hashed with Argon2id
 - Session tokens are 256-bit cryptographically secure
 - Secure cookie flags (HttpOnly, SameSite) and CSRF protection
-- Per-IP login throttling and idle session timeout
+- Per-IP login throttling and idle session timeout. Redis requires `REDIS_PASSWORD`. If Redis is down, login, MFA login,
+  password reset, bootstrap, OAuth token, SCIM and API-token endpoints answer 503 instead of skipping the throttle; sessions
+  that are already signed in are not affected. Set `RATE_LIMIT_FAIL_CLOSED=false` to fail open again (rollback). The
+  `identityforge_ratelimit_redis_errors_total` metric counts the errors. Existing installs must add `REDIS_PASSWORD` to
+  `docker/.env` before the next `docker compose up`, which refuses to start without it
 - Audit logging for all sensitive operations
 - No independent security review yet (see `docs/project/status.md`)
 

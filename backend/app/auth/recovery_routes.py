@@ -73,13 +73,18 @@ def send_link(user: User, purpose: str, raw: str, db: Session) -> bool:
         return False
 
 
-def _send_reset(user_id: int, raw: str, tenant_id: int) -> None:
+def _issue_and_send_reset(user_id: int, tenant_id: int, request: Request) -> None:
+    """Runs after the response. Issuing the token (a DB write) happens here, not in the request, so a known and an
+    unknown address take the same path and time before answering."""
     from backend.app.tenancy import tenant_session
 
     db = tenant_session(tenant_id)
     try:
         user = db.get(User, user_id)
-        if user is not None:
+        if user is not None and user.status in RESETTABLE:
+            raw = password_tokens.issue(db, user, "reset")
+            record(db, AuditAction.PASSWORD_RESET_REQUESTED, request, None, user.id, "user", {})
+            db.commit()
             send_link(user, "reset", raw, db)
     finally:
         db.close()
@@ -90,17 +95,18 @@ def forgot_password(body: ForgotBody, request: Request, tasks: BackgroundTasks, 
     check_origin(request)
     ip = ratelimit.client_ip(request)
     email = body.email.lower()
+    who = f"{db.info['tenant_id']}:{email}"  # the same address in another organization has its own buckets
+    # Three buckets so a third party cannot use up the owner's quota: a per-address limit, a per-(email, address)
+    # limit (the attacker's own requests land here, not in the owner's), and a high ceiling per email against mail bombing.
     ratelimit.check("pwreset_ip", ip, 10)
-    ratelimit.check("pwreset_email", email, 3)
+    ratelimit.check("pwreset_email_ip", f"{who}|{ip}", 3)
+    ratelimit.check("pwreset_email", who, settings.RATE_LIMIT_RESET_EMAIL_CEILING)
     ratelimit.hit("pwreset_ip", ip, 3600)
-    ratelimit.hit("pwreset_email", email, 3600)
+    ratelimit.hit("pwreset_email_ip", f"{who}|{ip}", 3600)
+    ratelimit.hit("pwreset_email", who, 3600)
     user = db.query(User).filter(User.email == email).first()
     if user is not None and user.status in RESETTABLE and mailer.configured():
-        raw = password_tokens.issue(db, user, "reset")
-        record(db, AuditAction.PASSWORD_RESET_REQUESTED, request, None, user.id, "user", {})
-        db.commit()
-        # After the response: SMTP takes a visible amount of time, which would tell a caller the address exists.
-        tasks.add_task(_send_reset, user.id, raw, db.info["tenant_id"])
+        tasks.add_task(_issue_and_send_reset, user.id, db.info["tenant_id"], request)
     return _GENERIC
 
 
