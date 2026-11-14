@@ -1,0 +1,2 @@
+import {getChatGPTUser} from '../../chatgpt-auth';import {listSprintReviews} from '../../../lib/review-store';
+export async function GET(){const u=await getChatGPTUser();const headers={'Cache-Control':'private, no-store'};if(!u)return Response.json({error:'Sign in required'},{status:401,headers});try{return Response.json({reviews:await listSprintReviews(u.userId)},{headers})}catch{return Response.json({error:'Sprint history could not be loaded; try Refresh.'},{status:503,headers})}}

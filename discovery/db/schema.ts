@@ -1,0 +1,2 @@
+import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+export const ideas=sqliteTable('ideas',{id:text('id').primaryKey(),owner:text('owner').notNull(),data:text('data').notNull(),revision:integer('revision').notNull().default(1),updatedAt:text('updated_at').notNull()});export const sprintReviews=sqliteTable('sprint_reviews',{id:text('id').primaryKey(),owner:text('owner').notNull(),data:text('data').notNull(),updatedAt:text('updated_at').notNull()});

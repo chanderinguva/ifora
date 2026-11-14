@@ -1,0 +1,3 @@
+import {eq} from 'drizzle-orm';import {getDb} from '../db';import {sprintReviews} from '../db/schema';import {sprintReviewSchema} from './sprint-reviews';
+export async function listSprintReviews(owner:string){return (await getDb().select().from(sprintReviews).where(eq(sprintReviews.owner,owner))).map(r=>JSON.parse(r.data)).sort((a,b)=>b.sprintId-a.sprintId)}
+export async function saveSprintReview(owner:string,input:unknown){const review=sprintReviewSchema.parse(input);await getDb().insert(sprintReviews).values({id:owner+':'+review.sprintId,owner,data:JSON.stringify(review),updatedAt:review.verifiedAt}).onConflictDoUpdate({target:sprintReviews.id,set:{data:JSON.stringify(review),updatedAt:review.verifiedAt}});return review}
