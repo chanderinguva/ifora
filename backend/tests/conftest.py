@@ -220,3 +220,7 @@ def member(db):
     a.user = u
     return a
 
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "adversarial: attack-driven regression tests for OIDC, SAML and SCIM (IFORA-17)")
