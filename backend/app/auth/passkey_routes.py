@@ -13,7 +13,7 @@ from backend.app.audit.service import record
 from backend.app.auth import mfa_service
 from backend.app.auth import passkey_service as svc
 from backend.app.auth.deps import check_origin, get_session_and_user
-from backend.app.auth.mfa_routes import EnrolStart, require_enrollment_code
+from backend.app.auth.mfa_routes import EnrolStart, _reauth, require_enrollment_code
 from backend.app.auth.passkey_model import Passkey
 from backend.app.auth.routes import complete_login
 from backend.app.auth.sessions_util import revoke_user_sessions
@@ -53,11 +53,6 @@ class RemoveBody(BaseModel):
 class PolicyBody(BaseModel):
     password: str = Field(..., max_length=128)
     require: bool
-
-
-def _reauth(user: User, password: str) -> None:
-    if not user.verify_password(password):
-        raise HTTPException(status_code=403, detail="Password is incorrect")
 
 
 def _own(db: Session, user: User, passkey_id: int) -> Passkey:
@@ -125,7 +120,7 @@ def list_passkeys(ctx=Depends(get_session_and_user)):
 @router.post("/me/passkeys/register/options")
 def register_options(body: EnrolStart, request: Request, ctx=Depends(get_session_and_user), db: Session = Depends(get_db)):
     user = ctx[1]
-    _reauth(user, body.password)
+    _reauth(user, body.password, request)
     require_enrollment_code(user, body.enrollment_code, request)
     if len(user.passkeys) >= 10:
         raise HTTPException(status_code=400, detail="Passkey limit reached")
@@ -172,8 +167,8 @@ def rename_passkey(
 def remove_passkey(
     passkey_id: int, body: RemoveBody, request: Request, ctx=Depends(get_session_and_user), db: Session = Depends(get_db)
 ):
-    user = ctx[1]
-    _reauth(user, body.password)
+    session, user, _ = ctx
+    _reauth(user, body.password, request)
     p = _own(db, user, passkey_id)
     if user.passkey_required and len(user.passkeys) <= MIN_PASSKEYS_FOR_POLICY:
         raise HTTPException(
@@ -181,7 +176,8 @@ def remove_passkey(
             detail=f"Turn off 'require a passkey' first: at least {MIN_PASSKEYS_FOR_POLICY} passkeys are needed while it is on",
         )
     db.delete(p)
-    record(db, AuditAction.PASSKEY_REMOVED, request, user, user.id, "user", {"passkey_id": passkey_id})
+    revoked = revoke_user_sessions(db, user.id, except_id=session.id)  # a factor was taken away: other sessions re-prove
+    record(db, AuditAction.PASSKEY_REMOVED, request, user, user.id, "user", {"passkey_id": passkey_id, "other_sessions_revoked": revoked})
     db.commit()
     return {"success": True}
 
@@ -190,7 +186,7 @@ def remove_passkey(
 def set_policy(body: PolicyBody, request: Request, ctx=Depends(get_session_and_user), db: Session = Depends(get_db)):
     """'Require a passkey to sign in': password sign-in is refused for this account."""
     session, user, _ = ctx
-    _reauth(user, body.password)
+    _reauth(user, body.password, request)
     if body.require and len(user.passkeys) < MIN_PASSKEYS_FOR_POLICY:
         raise HTTPException(
             status_code=409,

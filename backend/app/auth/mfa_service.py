@@ -156,6 +156,26 @@ def enrollment_code_ok(user: User, supplied: Optional[str]) -> bool:
     return secrets.compare_digest(user.enrollment_code_hash, _h(_norm_code(supplied)))
 
 
+def consume_enrollment_code(user: User, supplied: Optional[str]) -> bool:
+    """Check the code and spend it in one conditional UPDATE: of two concurrent requests with the same code, one wins.
+    Does not commit; the caller's transaction decides (a refused request rolls the spend back)."""
+    from sqlalchemy.orm import object_session
+
+    if not enrollment_code_ok(user, supplied):
+        return False
+    db = object_session(user)
+    n = (
+        db.query(User)
+        .filter(User.id == user.id, User.enrollment_code_hash == user.enrollment_code_hash)
+        .update({User.enrollment_code_hash: None, User.enrollment_code_expires_at: None}, synchronize_session=False)
+    )
+    if n != 1:
+        return False
+    user.enrollment_code_hash = None
+    user.enrollment_code_expires_at = None
+    return True
+
+
 def clear_enrollment_code(user: User) -> None:
     user.enrollment_code_hash = None
     user.enrollment_code_expires_at = None
