@@ -11,9 +11,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlsplit
 
-from passlib.hash import argon2
 from sqlalchemy.orm import Session
 
+from backend.app import passwords
 from backend.app.oidc.models import OIDCClient, OIDCClientSecret
 
 SUPPORTED_SCOPES = ("openid", "profile", "email", "groups", "offline_access")
@@ -29,7 +29,6 @@ _PUBLIC_MEMBERS = {"kty", "kid", "use", "alg", "n", "e", "crv", "x", "y"}
 MAX_ACTIVE_SECRETS = 2
 SECRET_PREFIX = "idf_cs_"
 _LOOPBACK = {"localhost", "127.0.0.1", "::1"}
-_DUMMY_HASH = argon2.hash("dummy-client-secret-for-timing-equalisation")
 
 
 class ClientError(ValueError):
@@ -227,7 +226,7 @@ def add_secret(db: Session, client: OIDCClient, expires_in_days: Optional[int] =
     raw = new_secret()
     db.add(OIDCClientSecret(
         client_pk=client.id,
-        secret_hash=argon2.hash(raw),
+        secret_hash=passwords.hash_password(raw),
         hint=raw[-4:],
         expires_at=datetime.now(timezone.utc) + timedelta(days=expires_in_days) if expires_in_days else None,
     ))
@@ -243,16 +242,10 @@ def authenticate_client(db: Session, client_id: str, presented_secret: Optional[
     ok = False
     if client is not None and client.status == "active" and client.client_type in ("confidential", "service") and client.token_endpoint_auth_method == "client_secret_basic" and presented_secret:
         for s in active_secrets(db, client):
-            try:
-                if argon2.verify(presented_secret, s.secret_hash):
-                    s.last_used_at = datetime.now(timezone.utc)
-                    ok = True
-                    break
-            except Exception:
-                continue
+            if passwords.verify_password(presented_secret, s.secret_hash):
+                s.last_used_at = datetime.now(timezone.utc)
+                ok = True
+                break
     else:
-        try:
-            argon2.verify(presented_secret or "", _DUMMY_HASH)
-        except Exception:
-            pass
+        passwords.burn(presented_secret or "")
     return client if ok else None

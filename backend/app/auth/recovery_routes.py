@@ -11,17 +11,15 @@ from datetime import datetime, timedelta, timezone
 
 import structlog
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
-from passlib.hash import argon2
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy.orm import Session
 
 
-from backend.app import mailer, ratelimit
+from backend.app import mailer, passwords, ratelimit
 from backend.app.audit.model import AuditAction
 from backend.app.audit.service import record
 from backend.app.auth import password_tokens
 from backend.app.auth.deps import check_origin
-from backend.app.auth.routes import _DUMMY_HASH
 from backend.app.auth.sessions_util import revoke_user_sessions
 from backend.app.config import settings
 from backend.app.db import get_db
@@ -152,10 +150,7 @@ def change_expired_password(body: ExpiredBody, request: Request, db: Session = D
     invalid = HTTPException(status_code=401, detail="Invalid credentials")
     user = db.query(User).filter(User.email == body.email.lower()).first()
     if user is None or user.is_locked_out() or user.status != "password_expired":
-        try:
-            argon2.verify(body.current_password, _DUMMY_HASH)
-        except Exception:
-            pass
+        passwords.burn(body.current_password)
         ratelimit.hit("login", ip, settings.RATE_LIMIT_LOGIN_WINDOW_SECONDS)
         raise invalid
     from backend.app.security_policy import service as policy

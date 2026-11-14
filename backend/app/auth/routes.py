@@ -10,11 +10,10 @@ from typing import Optional
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from passlib.hash import argon2
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 
-from backend.app import ratelimit
+from backend.app import passwords, ratelimit
 from backend.app.auth import mfa_service
 from backend.app.auth.authn import acr_for, amr_for
 from backend.app.config import settings
@@ -88,11 +87,6 @@ async def log_audit(
 
         emit_from_audit(db, action, None, int(actor_id), "user", metadata)  # same commit as the audit row
     db.commit()
-
-
-# Verified against when the account does not exist, so response time does not
-# reveal whether an email is registered (account enumeration resistance).
-_DUMMY_HASH = argon2.hash("dummy-password-for-timing-equalisation")
 
 
 def _session_info(session: AuthSession) -> dict:
@@ -196,20 +190,14 @@ async def login_endpoint(
     user = db.query(User).filter(User.email == login_data.email.lower()).first()
 
     if not user:
-        try:
-            argon2.verify(login_data.password, _DUMMY_HASH)
-        except Exception:
-            pass
+        passwords.burn(login_data.password)  # same cost as a real check: no account enumeration by timing
         logger.warning("login.attempt_failed", reason="user_not_found")
         raise fail()
 
     # Anyone can type wrong passwords for someone else's email and lock them out. So a locked account still lets the
     # owner in from an address they have signed in from recently; everywhere else the lockout holds.
     if user.is_locked_out() and not is_known_ip(user.id, ip):
-        try:
-            argon2.verify(login_data.password, _DUMMY_HASH)  # equalise timing
-        except Exception:
-            pass
+        passwords.burn(login_data.password)  # equalise timing
         logger.warning("login.attempt_failed", reason="account_locked", user_id=user.id)
         raise fail()
 
@@ -233,6 +221,10 @@ async def login_endpoint(
         )
         logger.warning("login.attempt_failed", reason="invalid_password", user_id=user.id)
         raise fail()
+
+    if user.password_needs_rehash():  # hashed with older Argon2 parameters: upgrade now that the password is known
+        user.password_hash = passwords.hash_password(login_data.password)  # not a password change: password_changed_at stays
+        db.commit()
 
     if user.status == "active":
         from backend.app.security_policy import service as sec_policy
