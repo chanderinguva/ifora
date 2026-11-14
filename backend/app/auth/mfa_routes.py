@@ -48,19 +48,34 @@ class PasswordAndCode(BaseModel):
     code: str = Field(..., max_length=64)
 
 
-def _reauth(user: User, password: str) -> None:
+def mfa_guard(request: Request, user: User) -> None:
+    """Refuse (429, or 503 if Redis is down) once this account or address has used up its failed attempts at the
+    password re-check, the enrolment code or a second-factor code on the account-security endpoints. While refused,
+    even correct input is turned away, so guessing cannot be paced just under the limit."""
+    ratelimit.check("mfa_fail_user", str(user.id), settings.RATE_LIMIT_MFA_FAILURES)
+    ratelimit.check("mfa_fail_ip", ratelimit.client_ip(request), settings.RATE_LIMIT_MFA_FAILURES * 2)
+
+
+def mfa_failed(request: Request, user: User) -> None:
+    ratelimit.hit("mfa_fail_user", str(user.id), settings.RATE_LIMIT_MFA_WINDOW_SECONDS)
+    ratelimit.hit("mfa_fail_ip", ratelimit.client_ip(request), settings.RATE_LIMIT_MFA_WINDOW_SECONDS)
+
+
+def _reauth(user: User, password: str, request: Request) -> None:
+    mfa_guard(request, user)
     if not user.verify_password(password):
+        mfa_failed(request, user)
         raise HTTPException(status_code=403, detail="Password is incorrect")
 
 
 def require_enrollment_code(user: User, supplied: Optional[str], request: Request) -> None:
-    """Admins who must enrol a first factor need the out-of-band code, not just their password."""
+    """Admins who must enrol a first factor need the out-of-band code, not just their password.
+    The code is spent by its first correct use (a second attempt needs a newly issued one)."""
     if not user.needs_mfa_setup:
         return
-    ip = ratelimit.client_ip(request)
-    ratelimit.check("login", ip, settings.RATE_LIMIT_LOGIN_FAILURES)
-    if not mfa_service.enrollment_code_ok(user, supplied):
-        ratelimit.hit("login", ip, settings.RATE_LIMIT_LOGIN_WINDOW_SECONDS)
+    mfa_guard(request, user)
+    if not mfa_service.consume_enrollment_code(user, supplied):
+        mfa_failed(request, user)
         raise HTTPException(status_code=403, detail="A valid enrolment code is required. Ask a super admin or operator for one.")
 
 
@@ -131,7 +146,7 @@ def mfa_setup(
     """Start enrolment (requires the current password, plus an enrolment code for admins with no factor yet).
     Replaces any unconfirmed attempt."""
     user = ctx[1]
-    _reauth(user, body.password)
+    _reauth(user, body.password, request)
     require_enrollment_code(user, body.enrollment_code, request)
     if user.mfa is not None and user.mfa.enabled:
         raise HTTPException(status_code=409, detail="MFA is already enabled")
@@ -148,10 +163,12 @@ def mfa_setup(
 def mfa_enable(body: CodeOnly, request: Request, ctx=Depends(get_session_and_user), db: Session = Depends(get_db)):
     """Confirm enrolment with a code from the authenticator app; returns recovery codes once."""
     session, user, _ = ctx
+    mfa_guard(request, user)
     if user.mfa is None or user.mfa.enabled:
         raise HTTPException(status_code=409, detail="No pending MFA setup")
     step = mfa.match_totp(mfa.decrypt_secret(user.mfa.secret_encrypted), body.code, None)
     if step is None:
+        mfa_failed(request, user)
         raise HTTPException(status_code=400, detail="Invalid code")
     user.mfa.enabled = True
     user.mfa.enabled_at = datetime.now(timezone.utc)
@@ -169,11 +186,12 @@ def mfa_disable(
     body: PasswordAndCode, request: Request, ctx=Depends(get_session_and_user), db: Session = Depends(get_db)
 ):
     session, user, _ = ctx
-    _reauth(user, body.password)
+    _reauth(user, body.password, request)
     if user.mfa is None or not user.mfa.enabled:
         raise HTTPException(status_code=409, detail="MFA is not enabled")
     if mfa_service.verify_second_factor(db, user, body.code) is None:
         db.rollback()
+        mfa_failed(request, user)
         raise HTTPException(status_code=400, detail="Invalid code")
     mfa_service.remove_mfa(db, user)
     revoked = revoke_user_sessions(db, user.id, except_id=session.id)
@@ -186,15 +204,17 @@ def mfa_disable(
 def mfa_regenerate(
     body: PasswordAndCode, request: Request, ctx=Depends(get_session_and_user), db: Session = Depends(get_db)
 ):
-    user = ctx[1]
-    _reauth(user, body.password)
+    session, user, _ = ctx
+    _reauth(user, body.password, request)
     if user.mfa is None or not user.mfa.enabled:
         raise HTTPException(status_code=409, detail="MFA is not enabled")
     if mfa_service.verify_second_factor(db, user, body.code) is None:
         db.rollback()
+        mfa_failed(request, user)
         raise HTTPException(status_code=400, detail="Invalid code")
     codes = mfa_service.replace_recovery_codes(db, user)
-    record(db, AuditAction.MFA_RECOVERY_REGENERATED, request, user, user.id, "user")
+    revoked = revoke_user_sessions(db, user.id, except_id=session.id)  # a stolen cookie must not outlive the rotation
+    record(db, AuditAction.MFA_RECOVERY_REGENERATED, request, user, user.id, "user", {"other_sessions_revoked": revoked})
     db.commit()
     return {"recovery_codes": codes}
 

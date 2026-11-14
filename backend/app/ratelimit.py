@@ -27,6 +27,8 @@ FAIL_CLOSED_SCOPES = frozenset(
     {
         "login",
         "login_locked",
+        "mfa_fail_user",
+        "mfa_fail_ip",
         "bootstrap",
         "pwreset_ip",
         "pwreset_email",

@@ -314,6 +314,10 @@ Verified on a scratch database: backup, restore (empty target, refusal on a non-
   that are already signed in are not affected. Set `RATE_LIMIT_FAIL_CLOSED=false` to fail open again (rollback). The
   `identityforge_ratelimit_redis_errors_total` metric counts the errors. Existing installs must add `REDIS_PASSWORD` to
   `docker/.env` before the next `docker compose up`, which refuses to start without it
+- Account-security endpoints (MFA setup, enable, disable, recovery codes, passkey changes) allow 10 wrong passwords or
+  codes per account per 15 minutes (`RATE_LIMIT_MFA_FAILURES`, `RATE_LIMIT_MFA_WINDOW_SECONDS`); an administrator's
+  enrolment code is spent by its first correct use. Disabling MFA, regenerating recovery codes and removing a passkey end
+  the account's other sessions
 - Audit logging for all sensitive operations
 - No independent security review yet (see `docs/project/status.md`)
 
