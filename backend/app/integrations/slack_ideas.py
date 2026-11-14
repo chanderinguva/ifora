@@ -56,10 +56,11 @@ def _valid_slack_response_url(value: str) -> bool:
         return False
     try:
         parsed = urlsplit(value)
+        port = parsed.port
     except ValueError:
         return False
     return (parsed.scheme == "https" and parsed.hostname in _SLACK_RESPONSE_HOSTS
-            and not parsed.username and not parsed.password)
+            and port in (None, 443) and not parsed.username and not parsed.password)
 
 
 def _discovery_item_url(idea_id: str) -> str:
