@@ -7,6 +7,7 @@ import time
 from urllib.parse import urlencode
 
 from backend.app.config import settings
+from backend.app.integrations import slack_ideas
 from backend.app.integrations.models import SlackIdeaCapture
 
 
@@ -17,12 +18,15 @@ def signed(body: bytes, secret: str, timestamp: int | None = None):
             "Content-Type": "application/x-www-form-urlencoded"}
 
 
-def payload(user="UOWNER", team="TIFORA", text="Add passkey recovery analytics"):
-    return {"type": "message_action", "callback_id": "send_to_ifora",
+def payload(user="UOWNER", team="TIFORA", text="Add passkey recovery analytics", response_url=""):
+    data = {"type": "message_action", "callback_id": "send_to_ifora",
             "team": {"id": team, "domain": "inguva"}, "user": {"id": user},
             "channel": {"id": "CIDEAS"},
             "message": {"ts": "1794700800.123456", "text": text,
                         "files": [{"id": "F1", "name": "mockup.png", "mimetype": "image/png", "size": 42}]}}
+    if response_url:
+        data["response_url"] = response_url
+    return data
 
 
 def post(client, data, secret="test-signing-secret", timestamp=None):
@@ -48,6 +52,42 @@ def test_valid_shortcut_queues_once(anon, db, monkeypatch):
     assert len(rows) == 1
     assert rows[0].payload["sourceUrl"].endswith("/archives/CIDEAS/p1794700800123456")
     assert "mockup.png" in rows[0].payload["raw"]
+
+
+def test_shortcut_replies_in_thread_with_discovery_link(anon, monkeypatch):
+    configure(monkeypatch)
+    monkeypatch.setattr(
+        settings, "IFORA_DISCOVERY_INGEST_URL",
+        "https://ifora-discovery-hub.example/api/integrations/slack")
+    sent = {}
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def post(self, url, json):
+            sent.update(url=url, json=json)
+
+    monkeypatch.setattr(slack_ideas.httpx, "Client", FakeClient)
+    response = post(
+        anon.c, payload(response_url="https://hooks.slack.com/actions/T1/B1/secret"))
+    assert response.status_code == 200 and response.content == b""
+    assert sent["url"].startswith("https://hooks.slack.com/")
+    assert sent["json"]["thread_ts"] == "1794700800.123456"
+    assert sent["json"]["replace_original"] is False
+    assert sent["json"]["response_type"] == "in_channel"
+    assert "https://ifora-discovery-hub.example/?idea=" in sent["json"]["text"]
+
+    sent.clear()
+    slack_ideas._post_thread_confirmation(
+        "https://example.com/not-slack", "1794700800.123456", "idea-id")
+    assert sent == {}
 
 
 def test_rejects_bad_signature_replay_workspace_and_user(anon, monkeypatch):
