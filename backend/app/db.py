@@ -1,12 +1,16 @@
 """Database configuration and SQLAlchemy setup."""
 
+import logging
 import os
 from typing import AsyncGenerator
 
+from fastapi import HTTPException, Request
 from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+
+logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.environ["DATABASE_URL"]  # required; no credential defaults
 
@@ -36,14 +40,21 @@ def init_db():
     Base.metadata.create_all(bind=engine)
 
 
-def get_db():
+def get_db(request: Request):
     """Get database session (FastAPI dependency).
 
     Returns a SQLAlchemy session that is automatically closed after the request.
     """
-    from backend.app.tenancy import use_tenant, default_tenant_id
+    from backend.app.tenancy import TenantNotResolved, resolve_tenant_id, use_tenant
 
-    db = use_tenant(SessionLocal(), default_tenant_id())  # single-tenant: resolved per request later (host/path)
+    try:
+        tenant_id = resolve_tenant_id(request.headers.get("host"))
+    except TenantNotResolved:
+        raise HTTPException(status_code=404, detail="Not found")  # same answer for unknown and missing: no tenant oracle
+    except Exception:
+        logger.exception("tenant resolution failed")  # a resolver fault must not fall back to another tenant
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
+    db = use_tenant(SessionLocal(), tenant_id)
     try:
         yield db
     finally:

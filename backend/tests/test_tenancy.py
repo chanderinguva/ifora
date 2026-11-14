@@ -29,9 +29,12 @@ def tenant_b():
     # tenants survive the per-test TRUNCATE (the default tenant must); remove ours after its rows are gone
     from backend.app.db import engine
 
+    from backend.app.db import Base
+
     with engine.begin() as conn:
-        for t in ("users", "groups", "sessions", "audit_events"):
-            conn.exec_driver_sql(f"DELETE FROM {t} WHERE tenant_id = %s", (tid,))
+        for t in reversed(Base.metadata.sorted_tables):  # children before parents
+            if "tenant_id" in t.c and t.name != "tenants":
+                conn.exec_driver_sql(f"DELETE FROM {t.name} WHERE tenant_id = %s", (tid,))
         conn.exec_driver_sql("DELETE FROM tenants WHERE id = %s", (tid,))
 
 
@@ -179,3 +182,41 @@ def test_membership_rows_carry_their_tenant_and_cannot_cross_tenants(db, tenant_
     with engine.connect() as conn:
         with pytest.raises(DBAPIError, match="same tenant"):
             conn.execute(insert(m).values(user_id=u.id, group_id=gb_id))
+
+
+def test_core_statements_on_membership_are_scoped_to_the_session_tenant(db, tenant_b):
+    """IFORA-18: the plain membership table is not an ORM entity, so Core statements get the tenant added for them."""
+    from sqlalchemy import delete, func, insert, select
+
+    from backend.app.groups.model import user_group_association as m
+
+    u = make_user(db, "core-a@example.com")
+    g = Group(name="core-ga")
+    db.add(g)
+    db.commit()
+    db.execute(insert(m).values(user_id=u.id, group_id=g.id))
+    db.commit()
+    sb = b_session(tenant_b)
+    ub = make_user(sb, "core-b@example.com")
+    gb = Group(name="core-gb")
+    sb.add(gb)
+    sb.commit()
+    sb.execute(insert(m).values(user_id=ub.id, group_id=gb.id))
+    sb.commit()
+    assert db.execute(select(func.count()).select_from(m)).scalar() == 1
+    assert db.execute(select(m.c.user_id)).scalars().all() == [u.id]
+    assert db.execute(delete(m).where(m.c.user_id == ub.id)).rowcount == 0  # B's row is out of reach
+    assert db.execute(select(m.c.user_id).where(m.c.group_id.in_(select(m.c.group_id)))).scalars().all() == [u.id]
+    assert sb.execute(select(func.count()).select_from(m)).scalar() == 1
+    sb.close()
+
+
+def test_membership_statements_without_a_tenant_context_fail_closed():
+    from sqlalchemy import func, select
+
+    from backend.app.groups.model import user_group_association as m
+
+    s = SessionLocal()
+    with pytest.raises(TenantContextMissing):
+        s.execute(select(func.count()).select_from(m))
+    s.close()
