@@ -238,8 +238,10 @@ def create_app() -> FastAPI:
     app.mount("/scim/v2", create_scim_app())  # SCIM 2.0 server (ADR 007): own error format, bearer-token auth
 
     from backend.app.search_routes import router as search_router
+    from backend.app.integrations.slack_ideas import router as slack_idea_router
 
     app.include_router(search_router, prefix="/api/v1")
+    app.include_router(slack_idea_router, prefix="/api/v1")
     for r in (users_csv_router, users_router, groups_router, profiles_router, avatar_router, audit_router, dashboard_router, mfa_router, passkey_router, role_router):
         app.include_router(r, prefix="/api/v1")
 
