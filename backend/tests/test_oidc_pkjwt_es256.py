@@ -242,7 +242,10 @@ def test_replay_store_failure_fails_closed(super_admin, user_api, ec, monkeypatc
     def boom():
         raise redis.RedisError("down")
     monkeypatch.setattr(ratelimit, "_redis", boom)
-    assert fails(post_token(user_api, {"grant_type": "client_credentials", **form(assertion(c, ec))}))
+    r = post_token(user_api, {"grant_type": "client_credentials", **form(assertion(c, ec))})
+    # Redis down: the token endpoint's throttle (credential scope) refuses with 503 before the replay store is reached.
+    # Either way no token is issued.
+    assert r.status_code == 503 and "access_token" not in r.text
 
 
 def test_wrong_method_for_the_client(super_admin, user_api, ec):

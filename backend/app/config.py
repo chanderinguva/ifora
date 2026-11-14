@@ -166,6 +166,10 @@ class Settings(BaseSettings):
     # Per-client-IP throttle on failed logins / bootstrap attempts (Redis, fixed window)
     RATE_LIMIT_LOGIN_FAILURES: int = Field(default=10)
     RATE_LIMIT_LOGIN_WINDOW_SECONDS: int = Field(default=300)
+    RATE_LIMIT_FAIL_CLOSED: bool = Field(default=True)  # Redis down: credential endpoints answer 503 (false = fail open, rollback)
+    RATE_LIMIT_LOCKED_GUESSES: int = Field(default=20)  # wrong passwords per locked account from known addresses per window
+    RATE_LIMIT_LOCKED_WINDOW_SECONDS: int = Field(default=900)
+    RATE_LIMIT_RESET_EMAIL_CEILING: int = Field(default=30)  # reset requests per email per hour, all addresses together
     RATE_LIMIT_BOOTSTRAP_ATTEMPTS: int = Field(default=5)
     RATE_LIMIT_BOOTSTRAP_WINDOW_SECONDS: int = Field(default=900)
 

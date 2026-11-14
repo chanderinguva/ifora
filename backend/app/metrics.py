@@ -44,6 +44,7 @@ META = {
     "identityforge_provisioning_oldest_queued_seconds": ("gauge", "Age of the oldest queued provisioning task."),
     "identityforge_users": ("gauge", "Users by status."),
     "identityforge_active_sessions": ("gauge", "Unexpired, unrevoked sessions."),
+    "identityforge_ratelimit_redis_errors_total": ("counter", "Redis errors seen by the rate limiter in this API process."),
 }
 
 
@@ -80,6 +81,10 @@ def collect() -> List[Sample]:
                 UserSession.status == "active", UserSession.expires_at > now).scalar() or 0))
     finally:
         db.close()
+    from backend.app import ratelimit
+
+    rl = ratelimit.stats()
+    s.append(("identityforge_ratelimit_redis_errors_total", {}, rl["redis_errors"]))
     return s
 
 
