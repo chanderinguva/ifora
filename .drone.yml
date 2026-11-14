@@ -77,7 +77,7 @@ steps:
       - sh scripts/ci-record.sh test-backend sh -c 'python -m unittest discover -s scripts/tests -v && python scripts/ci-test-backend.py'
 
   - name: check-frontend
-    image: ifora-ci-frontend:node20
+    image: ifora-ci-frontend:node24
     pull: never
     depends_on: [prepare-test-images]
     commands:

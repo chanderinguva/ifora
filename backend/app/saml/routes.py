@@ -27,7 +27,7 @@ from backend.app.applications.entitlement import application_denied
 from backend.app.applications.models import Application
 from backend.app.audit.model import AuditAction
 from backend.app.audit.service import record
-from backend.app.auth.deps import get_current_user, get_session_and_user, require_admin
+from backend.app.auth.deps import get_session_and_user, require_admin
 from backend.app.config import settings
 from backend.app.db import get_db
 from backend.app.oidc import clients as oidc_clients

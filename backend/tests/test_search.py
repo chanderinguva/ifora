@@ -1,6 +1,6 @@
 """Admin global search."""
 
-from tests.conftest import STRONG, make_user
+from tests.conftest import make_user
 
 
 def test_search_finds_each_kind(db, admin):

@@ -2,7 +2,7 @@
 
 from backend.app.auth.session import Session as AuthSession
 from backend.app.users.model import User
-from tests.conftest import ORIGIN, STRONG, Api, make_user
+from tests.conftest import STRONG, Api, make_user
 
 
 def test_login_sets_httponly_cookie_and_hashes_token(db):

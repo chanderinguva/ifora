@@ -10,7 +10,7 @@ import pytest
 from backend.app.provisioning import adapters, worker
 from backend.app.provisioning.models import ProvisioningLink, ProvisioningTask
 from backend.app.recipes.http_client import EgressPolicy
-from tests.conftest import Api, STRONG, make_user
+from tests.conftest import Api, make_user
 from tests.recipe_helpers import new_group, new_user, public_resolver, rkey  # noqa: F401
 
 BASE = "https://app.example.com/scim/v2"

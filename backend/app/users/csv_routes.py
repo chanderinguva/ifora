@@ -106,7 +106,6 @@ def _msgs(e: ValidationError) -> List[str]:
 
 def _plan(db: Session, row: Dict[str, str], keys: List[str], seen_email: set, seen_user: set, groups_by_name: Dict[str, Group]) -> Dict[str, Any]:
     errors: List[str] = []
-    payload: Dict[str, Any] = {}
     attrs = {k: row[k] for k in keys if row.get(k, "") != ""}
     group_ids: List[int] = []
     for name in [g.strip() for g in row.get(csvio.GROUPS, "").split(";") if g.strip()]:
@@ -120,7 +119,6 @@ def _plan(db: Session, row: Dict[str, str], keys: List[str], seen_email: set, se
     try:
         body = UserCreate(email=row.get("email") or None, username=row.get("username") or None, first_name=row.get("first_name", ""),
                           last_name=row.get("last_name", ""), generate_password=True, profile_attributes=attrs, group_ids=group_ids)
-        payload = body.model_dump()
     except ValidationError as e:
         errors += _msgs(e)
         body = None

@@ -26,11 +26,15 @@ token() { python3 -c 'import secrets;print(secrets.token_urlsafe(48))'; }
 compose() {
   [ -f "$ENV_FILE" ] || die "missing $ENV_FILE (run: scripts/demo.sh init)"
   [ -d "$SRC/docker" ] || die "missing $SRC (run: scripts/demo.sh deploy)"
-  local extra=()
-  if grep -Eq '^IFORA_OPENBAO_ENABLED=true[[:space:]]*$' "$ENV_FILE"; then extra+=(-f "$SRC/docker/docker-compose.openbao.yml"); fi
-  docker compose -p "$PROJECT" --project-directory "$SRC/docker" \
-    -f "$SRC/docker/docker-compose.yml" -f "$SRC/docker/docker-compose.prod.yml" -f "$SRC/docker/docker-compose.demo.yml" \
-    "${extra[@]}" --env-file "$ENV_FILE" "$@"
+  if grep -Eq '^IFORA_OPENBAO_ENABLED=true[[:space:]]*$' "$ENV_FILE"; then
+    docker compose -p "$PROJECT" --project-directory "$SRC/docker" \
+      -f "$SRC/docker/docker-compose.yml" -f "$SRC/docker/docker-compose.prod.yml" -f "$SRC/docker/docker-compose.demo.yml" \
+      -f "$SRC/docker/docker-compose.openbao.yml" --env-file "$ENV_FILE" "$@"
+  else
+    docker compose -p "$PROJECT" --project-directory "$SRC/docker" \
+      -f "$SRC/docker/docker-compose.yml" -f "$SRC/docker/docker-compose.prod.yml" -f "$SRC/docker/docker-compose.demo.yml" \
+      --env-file "$ENV_FILE" "$@"
+  fi
 }
 
 cmd_init() {

@@ -1,11 +1,16 @@
-# Ruff (IFORA-20).
-# The repo-wide gate covers real bugs only: syntax errors (E9), invalid comparisons/prints (F63), undefined names (F82),
-# and syntax-error-class pyflakes (F7). Unused imports/variables (F401/F841) and pytest-fixture "redefinitions" (F811)
-# are a recorded baseline, not gated repo-wide; `make lint-py` applies the stricter set (F, minus F811) to backend/app
-# files CHANGED against origin/main so new code stays clean. `ruff format` is not gated (code base is not ruff-formatted).
+# Ruff (IFORA-20, widened in IFORA-53).
+# Gate: syntax errors (E9) and all pyflakes rules (F: unused imports/variables, undefined names, invalid comparisons)
+# across backend/, scripts/, sdk/ and demo/ (see `make lint-py`). The baseline of F401/F841 findings was cleared in IFORA-53.
+# F811 (redefinition) is ignored in tests only: pytest fixtures imported into a test module and taken as an argument are
+# reported as redefinitions. `ruff format` is not gated (code base is not ruff-formatted).
 line-length = 140
 target-version = "py312"
-extend-exclude = ["migrations/versions"]
+# Alembic revisions are frozen history; sdk/python/ifora/_generated.py is produced by sdk/python/generate.py (--check).
+extend-exclude = ["**/migrations/versions", "**/_generated.py"]
 
 [lint]
-select = ["E9", "F63", "F7", "F82"]
+select = ["E9", "F"]
+
+[lint.per-file-ignores]
+"**/tests/**" = ["F811"]
+"**/conftest.py" = ["F811"]

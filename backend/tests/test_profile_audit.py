@@ -19,7 +19,7 @@ def test_user_cannot_edit_admin_managed_attributes(member, admin):
 
 
 def test_profile_cannot_change_privileges(member):
-    r = member.patch("/me/profile", {"is_admin": True, "status": "inactive", "email": "x@y.com"})
+    member.patch("/me/profile", {"is_admin": True, "status": "inactive", "email": "x@y.com"})
     p = member.get("/me/profile").json()
     assert p["is_admin"] is False and p["status"] == "active" and p["email"] == "member@example.com"
 

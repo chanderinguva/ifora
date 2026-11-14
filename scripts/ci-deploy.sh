@@ -143,6 +143,7 @@ deploy_local() {
   else
     src="$(mktemp -d)"
     printf -v cleanup_cmd 'rm -rf -- %q' "$src"
+    # shellcheck disable=SC2064 # expanded on purpose: cleanup_cmd was built with printf %q for this exact path
     trap "$cleanup_cmd" EXIT
   fi
   export_tree "$src"

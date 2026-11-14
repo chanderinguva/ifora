@@ -11,4 +11,4 @@ cp frontend/package.json frontend/package-lock.json "$ci_context/frontend/"
 # Re-run docker build each time: changed manifests invalidate the install layer.
 # Fixed local tags are safe with this dedicated single-capacity Mac runner.
 docker build -t ifora-ci-backend:py312 "$ci_context/backend"
-docker build -t ifora-ci-frontend:node20 "$ci_context/frontend"
+docker build -t ifora-ci-frontend:node24 "$ci_context/frontend"

@@ -197,7 +197,38 @@ def list_users(
     if status:
         query = query.filter(User.status == status)
     return paginate(query, p, sort=USER_SORT, default_order=[User.id], tiebreak=User.id, filter_attrs=USER_LIST_ATTRS,
-                    render=lambda rows: [u.to_dict() for u in rows])
+                    render=lambda rows: _list_details(db, rows))
+
+
+def _list_details(db: Session, users: list) -> list:
+    """Role labels from actual direct/group assignments, batched for the page.
+
+    Display metadata only: no permission grants, fallback roles or session changes.
+    ORM tenant filtering applies to both role entities, as in role_sources.
+    """
+    from backend.app.admin_roles.models import AdminRoleAssignment, GroupAdminRole
+    from backend.app.admin_roles.permissions import ROLES
+
+    if not users:
+        return []
+    ids = [u.id for u in users]
+    roles = {uid: {} for uid in ids}
+    for uid, rid in db.query(AdminRoleAssignment.user_id, AdminRoleAssignment.role).filter(AdminRoleAssignment.user_id.in_(ids)):
+        roles[uid].setdefault(rid, set()).add("direct")
+    group_roles = (
+        db.query(user_group_association.c.user_id, GroupAdminRole.role)
+        .join(GroupAdminRole, GroupAdminRole.group_id == user_group_association.c.group_id)
+        .filter(user_group_association.c.user_id.in_(ids))
+    )
+    for uid, rid in group_roles:
+        roles[uid].setdefault(rid, set()).add("group")
+    return [
+        {**u.to_dict(), "admin_roles": [
+            {"id": rid, "label": ROLES.get(rid, {}).get("label", rid), "sources": sorted(sources)}
+            for rid, sources in sorted(roles[u.id].items())
+        ]}
+        for u in users
+    ]
 
 
 @router.post("", status_code=201)
@@ -400,7 +431,6 @@ def update_user(
         if body.is_admin:
             _least_privilege(db, user, actor)
 
-    status_result = None
     if body.status is not None and lifecycle.normalize(body.status) != user.status:
         if user.id == actor.id and body.status != "active":
             raise HTTPException(status_code=400, detail="You cannot change your own account status")
@@ -413,7 +443,7 @@ def update_user(
     if changed:
         db.flush()
         if "status" in changed:
-            status_result = lifecycle.set_status(db, user, changed["status"], request, actor)  # sessions, groups, audit
+            lifecycle.set_status(db, user, changed["status"], request, actor)  # sessions, groups, audit
         else:
             group_rules.evaluate_user(db, user, request, actor)  # attribute changes can move rule-based memberships
 
@@ -554,3 +584,4 @@ def user_events(user_id: int, page_size: int = Query(25, ge=1, le=100), db: Sess
             .filter(or_((AuditEvent.target_type == "user") & (AuditEvent.target_id == str(user_id)), AuditEvent.actor_id == str(user_id)))
             .order_by(AuditEvent.timestamp.desc(), AuditEvent.id.desc()).limit(page_size).all())
     return {"items": [e.to_dict() for e in rows]}
+

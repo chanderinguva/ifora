@@ -10,6 +10,7 @@ export type ProvOptions = {
 export type ProvApp = {
   id: number;
   public_id: string;
+  application_id: number;
   name: string;
   description: string | null;
   kind: "scim" | "rest";
@@ -32,6 +33,18 @@ export type ProvApp = {
   queued: number;
   failed_tasks: number;
 };
+
+/** A provisioning facet of an existing Application, initially disabled. */
+export function scimSetupBody(applicationId: number, name: string, connection: {
+  url: string; auth: string; secret: string; header: string; tokenUrl: string; clientId: string; scope: string; updates: string;
+}) {
+  return {
+    application_id: applicationId, name, kind: "scim", base_url: connection.url, auth_type: connection.auth, secret: connection.secret,
+    header_name: connection.auth === "header" ? connection.header : null,
+    ...(connection.auth === "oauth2" ? { token_url: connection.tokenUrl, client_id: connection.clientId, scope: connection.scope || null } : {}),
+    options: { ...DEFAULT_OPTIONS, update_style: connection.updates, push_groups: false }, mapping: [], enabled: false,
+  };
+}
 
 export type ProvPreset = {
   key: string;
@@ -59,3 +72,4 @@ export function toBody(a: ProvApp, over: Record<string, unknown> = {}) {
     header_name: a.header_name, token_url: a.token_url, client_id: a.client_id, scope: a.scope, options: a.options, mapping: a.mapping, rest_config: a.rest_config, ...over,
   };
 }
+

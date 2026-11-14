@@ -1,12 +1,10 @@
 """Applications core (ADR 010): one object for sign-on, assignments and provisioning."""
 
-import pytest
 
-from backend.app.applications.models import Application, ApplicationAssignment
 from backend.app.audit.model import AuditEvent
-from tests.conftest import Api, make_user
+from tests.conftest import Api
 from tests.recipe_helpers import new_group, new_user, rkey  # noqa: F401
-from tests.test_oidc_authorize import CB, authorize, loc, mk, params
+from tests.test_oidc_authorize import authorize, loc, mk, params
 
 from tests.test_provisioning import make_app
 

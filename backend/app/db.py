@@ -1,7 +1,6 @@
 """Database configuration and SQLAlchemy setup."""
 
 import os
-from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 from sqlalchemy import create_engine
@@ -32,10 +31,6 @@ def init_db():
     before creating the tables.
     """
     # Import all models to register them with Base
-    from backend.app.users.model import User
-    from backend.app.groups.model import Group
-    from backend.app.audit.model import AuditEvent
-    from backend.app.auth.session import Session
 
     # Now create all tables
     Base.metadata.create_all(bind=engine)

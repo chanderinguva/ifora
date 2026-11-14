@@ -6,11 +6,12 @@ Python (pinned in backend/requirements-dev.txt):
     make check RUFF="docker run --rm -v $PWD:/src -w /src ifora-tools ruff"   (any image that has the tool)
 
 Not Python, install locally:
+  shellcheck 0.11.x  brew install shellcheck          lint-sh gate: every tracked *.sh and .githooks/* (docker run --rm -v "$PWD":/mnt -w /mnt koalaman/shellcheck:stable also works)
   gitleaks   8.28.x  brew install gitleaks            secret scan (no code leaves the machine); .gitleaks.toml needs >= 8.28
                      or: docker run --rm -v "$PWD":/repo -w /repo zricethezav/gitleaks:v8.28.0 ...  (wrap as a `gitleaks` script on PATH)
   semgrep    1.97.0  pip install semgrep==1.97.0      community rules `p/python`; runs with --metrics=off
   trivy      0.5x    brew install trivy               only for `make images-scan` (optional)
-  node/npm   20.x    brew install node                frontend lint, tsc, npm audit
+  node/npm   24.x    brew install node                frontend lint, tsc, npm audit
   docker             Docker Desktop                   `make test-backend` runs pytest inside the ifora-api container
 
 Notes

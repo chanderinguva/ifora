@@ -2,12 +2,11 @@
 
 from datetime import timedelta
 
-import pytest
 
 from backend.app.audit.model import AuditEvent
 from backend.app.config import settings
 from backend.app.oidc import authorize as az, keys
-from backend.app.oidc.models import OIDCClient, OIDCConsent, RefreshToken
+from backend.app.oidc.models import OIDCClient, RefreshToken
 from tests.conftest import Api, make_user
 from tests.test_oidc_token import CB, VERIFIER, basic, exchange, get_code, post_token, user_api  # noqa: F401 (fixture)
 from tests.test_oidc_token import mk as _mk

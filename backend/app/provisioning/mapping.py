@@ -8,7 +8,7 @@ tenant ids are not mappable, so a mapping cannot leak them.
 import hashlib
 import json
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from backend.app.scim import mapping as scim_map
 

@@ -5,7 +5,7 @@ from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 
 from backend.app.db import Base, engine
-from tests.conftest import alembic_config, reset_schema
+from tests.conftest import alembic_config
 
 
 def test_models_and_migrations_have_not_drifted():

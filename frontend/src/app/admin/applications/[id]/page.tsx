@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Badge, PageHeader, fieldClass } from "@/components/bits";
 import { AppMetadataFields } from "@/components/app-metadata";
 import { AppIcon } from "@/components/app-icon";
+import { ApplicationProvisioning } from "@/components/application-provisioning";
 import { SamlCard } from "@/components/saml-card";
 import { SwaCard } from "@/components/swa-card";
 import { AuthPolicyCard } from "@/components/auth-policy-card";
@@ -182,14 +183,7 @@ export default function ApplicationDetail() {
       </>)}
 
       {tab === "provisioning" && (<>
-      <Card className="mb-6" data-testid="provisioning-facet">
-        <CardHeader><CardTitle>Provisioning</CardTitle></CardHeader>
-        <CardContent className="text-sm">
-          {app.provisioning
-            ? <span>Outbound {app.provisioning.kind.toUpperCase()} provisioning is configured <Badge tone={app.provisioning.enabled ? "good" : "neutral"}>{app.provisioning.enabled ? "on" : "off"}</Badge> · <Link href={`/admin/app-provisioning/${app.provisioning.id}`} className="underline underline-offset-4">Open</Link></span>
-            : <span className="text-muted-foreground">Not configured. Provisioning apps are created under <Link href="/admin/app-provisioning" className="underline underline-offset-4">Provisioning apps</Link>; they share this application&apos;s assignments.</span>}
-        </CardContent>
-      </Card>
+      <ApplicationProvisioning key={app.id} app={app} onChange={refresh} onAssignments={() => pickTab("assignments")} />
 
       </>)}
 
@@ -226,3 +220,4 @@ export default function ApplicationDetail() {
     </div>
   );
 }
+

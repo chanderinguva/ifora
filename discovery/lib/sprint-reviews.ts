@@ -1,0 +1,6 @@
+import {z} from 'zod';
+const date=z.string().datetime().nullable();
+export const sprintReviewSchema=z.object({sprintId:z.number().int().positive(),name:z.string().min(1).max(180),goal:z.string().max(3000),state:z.enum(['future','active','closed']),startDate:date,endDate:date,completedAt:date,summary:z.string().max(12000),verifiedAt:z.string().datetime(),items:z.array(z.object({key:z.string().regex(/^IFORA-\d+$/),title:z.string().max(180),outcome:z.enum(['completed','carried_over','planned']),releaseStatus:z.enum(['verified_released','not_verified']),evidenceUrls:z.array(z.string().url().refine(v=>v.startsWith('https://'))).max(10)})).max(200)});
+export type SprintReview=z.infer<typeof sprintReviewSchema>;
+export function plannedPeriod(end?:string|null){if(!end)return 'Not scheduled';const d=new Date(end);if(!Number.isFinite(d.getTime()))return 'Not scheduled';const parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/Chicago',year:'numeric',month:'numeric'}).formatToParts(d);const get=(t:string)=>Number(parts.find(p=>p.type===t)?.value);return 'Q'+Math.ceil(get('month')/3)+' '+get('year')}
+export function plannedDate(end?:string|null){return end?new Date(end).toLocaleDateString('en-US',{timeZone:'America/Chicago',year:'numeric',month:'short',day:'numeric'}):'Unknown'}

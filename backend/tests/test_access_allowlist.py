@@ -10,7 +10,6 @@ from backend.app import config_guards
 from backend.app.auth import access_allowlist
 from backend.app.config import settings
 from backend.app.users.model import User
-from tests.conftest import make_user
 from tests.test_config_guards import make_production_valid
 
 POLICY = {"id": "p1", "name": "Invited friends", "decision": "allow", "precedence": 1, "session_duration": "24h",

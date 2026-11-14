@@ -2,7 +2,6 @@
 
 from datetime import datetime, timedelta, timezone
 
-import pytest
 
 from backend.app import ratelimit
 from backend.app.api_tokens.models import ApiToken

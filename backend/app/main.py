@@ -1,6 +1,5 @@
 """Main entry point for the Ifora backend application."""
 
-import logging
 
 import structlog
 from fastapi import FastAPI

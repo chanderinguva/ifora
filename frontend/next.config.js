@@ -1,7 +1,6 @@
 /** Next.js Configuration */
 const nextConfig = {
   reactStrictMode: true,
-  swcMinify: true,
   // Login and consent pages must never be framed (clickjacking).
   async headers() {
     const h = [

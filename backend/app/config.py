@@ -1,6 +1,5 @@
 """Application configuration using Pydantic Settings."""
 
-import os
 from typing import List
 
 from pydantic import Field, field_validator
@@ -83,6 +82,15 @@ class Settings(BaseSettings):
     RECIPES_HTTP_ALLOWED_HOSTS: str = Field(default="")  # comma separated; empty = any public host
     RECIPES_WEBHOOK_MAX_BODY_BYTES: int = Field(default=65536)
     RECIPES_WEBHOOK_REPLAY_SECONDS: int = Field(default=300)
+    # Slack message shortcut -> Ifora Discovery. Disabled until every required secret and allow-list is configured.
+    SLACK_IDEA_CAPTURE_ENABLED: bool = Field(default=False)
+    SLACK_IDEA_SIGNING_SECRET: str = Field(default="")
+    SLACK_IDEA_ALLOWED_TEAM_ID: str = Field(default="")
+    SLACK_IDEA_ALLOWED_USER_IDS: str = Field(default="")
+    SLACK_IDEA_DELIVERY_TIMEOUT_SECONDS: float = Field(default=5.0, gt=0, le=30)
+    IFORA_DISCOVERY_INGEST_URL: str = Field(default="")
+    IFORA_DISCOVERY_INGEST_TOKEN: str = Field(default="")
+    IFORA_DISCOVERY_SITES_AUTH_TOKEN: str = Field(default="")
     RECIPES_MAX_RECIPES: int = Field(default=100)
     SCIM_ACCEPT_LEGACY_GROUP_IDS: bool = Field(default=True)  # accept integer group ids on lookup (new ids are opaque UUIDs)
     RECIPES_DEFAULT_RATE_PER_HOUR: int = Field(default=0)  # live jobs per recipe per rolling hour when the recipe sets none (0 = unlimited)

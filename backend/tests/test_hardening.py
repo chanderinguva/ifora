@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from backend.app.auth.session import Session as AuthSession
 from backend.app.config import settings
-from tests.conftest import ORIGIN, STRONG, Api, make_user
+from tests.conftest import STRONG, Api, make_user
 
 
 def test_login_is_throttled_per_ip_across_unknown_accounts():

@@ -4,7 +4,7 @@ independent of the signxml code that produced them."""
 import base64
 import datetime as dt
 import zlib
-from urllib.parse import parse_qs, quote, quote_plus, urlsplit
+from urllib.parse import parse_qs, quote_plus, urlsplit
 
 import pytest
 from lxml import etree

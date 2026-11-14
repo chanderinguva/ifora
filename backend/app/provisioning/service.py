@@ -6,7 +6,7 @@ policy. Every task is an idempotent "make the app match Ifora" for one user or g
 duplicated tasks are harmless.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Dict, Iterable, List, Optional, Set
 
 import structlog

@@ -1,7 +1,7 @@
 """Per-session 'user view' for administrators."""
 
 from backend.app.audit.model import AuditAction, AuditEvent
-from tests.conftest import STRONG, Api, make_user
+from tests.conftest import STRONG, Api
 
 
 def test_admin_can_work_as_a_normal_user_and_loses_admin_powers_server_side(super_admin):
