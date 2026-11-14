@@ -12,7 +12,7 @@ from urllib.parse import parse_qs
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -109,8 +109,8 @@ async def idea_shortcut(request: Request, db: Session = Depends(get_db)):
         db.commit()
     except IntegrityError:
         db.rollback()
-        return JSONResponse({"response_type": "ephemeral", "text": "This message is already in the Ifora capture queue."})
-    return JSONResponse({"response_type": "ephemeral", "text": "Queued for Ifora Discovery."})
+        return Response(status_code=200)
+    return Response(status_code=200)
 
 
 def _deliver(capture: SlackIdeaCapture) -> None:
