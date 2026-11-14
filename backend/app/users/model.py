@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, Optional
 
-from passlib.hash import argon2
+from backend.app import passwords
 import uuid
 from sqlalchemy import Column, DateTime, Integer, String, Boolean, Text, UniqueConstraint
 from sqlalchemy.orm import relationship, validates
@@ -108,7 +108,7 @@ class User(TenantOwned, Base):
 
     def set_password(self, password: str) -> None:
         """Hash and set password using Argon2id."""
-        self.password_hash = argon2.hash(password)
+        self.password_hash = passwords.hash_password(password)
         from datetime import datetime, timezone
 
         self.password_changed_at = datetime.now(timezone.utc)
@@ -121,10 +121,11 @@ class User(TenantOwned, Base):
         - Resistance to GPU/ASIC attacks
         - Timing-attack resistance
         """
-        try:
-            return argon2.verify(password, self.password_hash)
-        except Exception:
-            return False
+        return passwords.verify_password(password, self.password_hash)
+
+    def password_needs_rehash(self) -> bool:
+        """True when the stored hash uses older Argon2 parameters than the current ones (see backend/app/passwords.py)."""
+        return passwords.needs_rehash(self.password_hash)
 
     @property
     def is_active(self) -> bool:

@@ -6,10 +6,10 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
-from passlib.hash import argon2
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from backend.app import passwords
 from backend.app.config import settings
 from backend.app.security_policy.models import OrgSecurityPolicy, PasswordHistory
 
@@ -98,13 +98,8 @@ def validate_new(db: Session, password: str, user=None, email: Optional[str] = N
         hashes += [h for (h,) in db.query(PasswordHistory.password_hash).filter(PasswordHistory.user_id == user.id)
                    .order_by(PasswordHistory.id.desc()).limit(max(p.history_count - 1, 0)).all()]
         for h in hashes:
-            try:
-                if argon2.verify(password, h):
-                    raise HTTPException(status_code=422, detail=f"You cannot reuse any of your last {p.history_count} password{'s' if p.history_count > 1 else ''}")
-            except HTTPException:
-                raise
-            except Exception:
-                continue
+            if passwords.verify_password(password, h):
+                raise HTTPException(status_code=422, detail=f"You cannot reuse any of your last {p.history_count} password{'s' if p.history_count > 1 else ''}")
 
 
 def apply_new(db: Session, user, password: str) -> None:
