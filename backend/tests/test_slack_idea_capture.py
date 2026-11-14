@@ -43,6 +43,7 @@ def test_valid_shortcut_queues_once(anon, db, monkeypatch):
     first = post(anon.c, payload())
     second = post(anon.c, payload())
     assert first.status_code == 200 and second.status_code == 200
+    assert first.content == b"" and second.content == b""
     rows = db.query(SlackIdeaCapture).all()
     assert len(rows) == 1
     assert rows[0].payload["sourceUrl"].endswith("/archives/CIDEAS/p1794700800123456")
