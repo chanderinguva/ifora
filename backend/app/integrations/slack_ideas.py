@@ -8,10 +8,10 @@ import json
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -26,6 +26,7 @@ CALLBACK_ID = "send_to_ifora"
 MAX_BODY = 256_000
 MAX_AGE_SECONDS = 300
 _IDEA_NAMESPACE = uuid.UUID("ea921e5f-e668-4c7d-b01a-75be32e313ac")
+_SLACK_RESPONSE_HOSTS = {"hooks.slack.com", "hooks.slack-gov.com"}
 
 
 def verify_slack_signature(body: bytes, timestamp: str, signature: str, now: int | None = None) -> bool:
@@ -48,6 +49,44 @@ def _message_link(team_domain: str, channel_id: str, message_ts: str) -> str:
     if not team_domain or not channel_id or not message_ts:
         return ""
     return f"https://{team_domain}.slack.com/archives/{channel_id}/p{message_ts.replace('.', '')}"
+
+
+def _valid_slack_response_url(value: str) -> bool:
+    if not value or len(value) > 2048:
+        return False
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return False
+    return (parsed.scheme == "https" and parsed.hostname in _SLACK_RESPONSE_HOSTS
+            and not parsed.username and not parsed.password)
+
+
+def _discovery_item_url(idea_id: str) -> str:
+    try:
+        parsed = urlsplit(settings.IFORA_DISCOVERY_INGEST_URL)
+    except ValueError:
+        return ""
+    if parsed.scheme != "https" or not parsed.netloc:
+        return ""
+    return urlunsplit((parsed.scheme, parsed.netloc, "/", urlencode({"idea": idea_id}), ""))
+
+
+def _post_thread_confirmation(response_url: str, thread_ts: str, idea_id: str) -> None:
+    item_url = _discovery_item_url(idea_id)
+    if not _valid_slack_response_url(response_url) or not thread_ts or not item_url:
+        return
+    message = {
+        "response_type": "in_channel",
+        "replace_original": False,
+        "thread_ts": thread_ts,
+        "text": f"✅ Queued for Ifora Discovery — <{item_url}|Open idea>",
+    }
+    try:
+        with httpx.Client(timeout=settings.SLACK_IDEA_DELIVERY_TIMEOUT_SECONDS, follow_redirects=False) as client:
+            client.post(response_url, json=message)
+    except httpx.HTTPError:
+        pass
 
 
 def _capture_payload(payload: dict) -> tuple[str, dict]:
@@ -87,7 +126,8 @@ def _capture_payload(payload: dict) -> tuple[str, dict]:
 
 
 @router.post("/idea-shortcut", include_in_schema=False)
-async def idea_shortcut(request: Request, db: Session = Depends(get_db)):
+async def idea_shortcut(request: Request, background_tasks: BackgroundTasks,
+                        db: Session = Depends(get_db)):
     if not settings.SLACK_IDEA_CAPTURE_ENABLED:
         raise HTTPException(status_code=404, detail="Not found")
     body = await request.body()
@@ -103,13 +143,20 @@ async def idea_shortcut(request: Request, db: Session = Depends(get_db)):
     except (KeyError, IndexError, UnicodeDecodeError, ValueError, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=400, detail="Invalid Slack payload") from exc
     event_key, capture = _capture_payload(payload)
+    response_url = str(payload.get("response_url", ""))
+    message = payload.get("message") or {}
+    thread_ts = str(message.get("thread_ts") or message.get("ts") or "")
     row = SlackIdeaCapture(dedupe_key=event_key, payload=capture)
     db.add(row)
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
+        background_tasks.add_task(
+            _post_thread_confirmation, response_url, thread_ts, capture["ideaId"])
         return Response(status_code=200)
+    background_tasks.add_task(
+        _post_thread_confirmation, response_url, thread_ts, capture["ideaId"])
     return Response(status_code=200)
 
 
