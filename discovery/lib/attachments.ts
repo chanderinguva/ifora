@@ -1,0 +1,8 @@
+import {z} from 'zod';
+export const MAX_ATTACHMENTS=6,MAX_IMAGE_BYTES=5*1024*1024;
+export const attachmentSchema=z.object({id:z.string().uuid(),name:z.string().min(1).max(180),caption:z.string().max(500).default(''),size:z.number().int().positive().max(MAX_IMAGE_BYTES),width:z.number().int().positive().max(4096),height:z.number().int().positive().max(4096)});
+export type Attachment=z.infer<typeof attachmentSchema>;
+export function attachmentUrl(id:string){return '/api/attachments/'+encodeURIComponent(id)}
+export async function attachmentKey(owner:string,id:string){z.string().uuid().parse(id);const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(owner));return 'idea-attachments/'+Array.from(new Uint8Array(hash),v=>v.toString(16).padStart(2,'0')).join('')+'/'+id}
+export function isWebp(bytes:Uint8Array){const tag=(n:number)=>String.fromCharCode(...bytes.slice(n,n+4));return bytes.length>=20&&tag(0)==='RIFF'&&tag(8)==='WEBP'&&['VP8 ','VP8L','VP8X'].includes(tag(12))}
+export async function readImageBody(req:Request){if(Number(req.headers.get('content-length')||0)>MAX_IMAGE_BYTES)throw new Error('Image must be under 5 MB');const reader=req.body?.getReader();if(!reader)throw new Error('Missing image');const chunks:Uint8Array[]=[];let size=0;while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>MAX_IMAGE_BYTES){await reader.cancel();throw new Error('Image must be under 5 MB')}chunks.push(value)}const bytes=new Uint8Array(size);let pos=0;for(const c of chunks){bytes.set(c,pos);pos+=c.length}if(!isWebp(bytes))throw new Error('Invalid image format');return bytes}
