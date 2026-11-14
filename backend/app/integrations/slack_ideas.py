@@ -110,7 +110,7 @@ async def idea_shortcut(request: Request, db: Session = Depends(get_db)):
     except IntegrityError:
         db.rollback()
         return JSONResponse({"response_type": "ephemeral", "text": "This message is already in the Ifora capture queue."})
-    return JSONResponse({"response_type": "ephemeral", "text": "Queued for Ifora Discovery."}, status_code=202)
+    return JSONResponse({"response_type": "ephemeral", "text": "Queued for Ifora Discovery."})
 
 
 def _deliver(capture: SlackIdeaCapture) -> None:
