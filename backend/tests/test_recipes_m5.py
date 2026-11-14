@@ -9,7 +9,7 @@ from sqlalchemy.exc import DBAPIError
 from backend.app.audit.model import AuditEvent
 from backend.app.config import settings
 from backend.app.recipes import engine
-from backend.app.recipes.models import Recipe, RecipeJob, RecipeVersion
+from backend.app.recipes.models import Recipe, RecipeVersion
 from tests.conftest import Api, make_user
 from tests.recipe_helpers import (  # noqa: F401
     T0, definition, jobs, make_recipe, new_group, rkey, run_worker, step,

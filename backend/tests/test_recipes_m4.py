@@ -10,7 +10,6 @@ from backend.app.audit.model import AuditEvent
 from backend.app.config import settings
 from backend.app import mailer
 from backend.app.recipes import actions
-from backend.app.recipes.models import RecipeConnection
 from tests.recipe_helpers import (  # noqa: F401
     Remote, definition, install_remote, jobs, make_recipe, new_user, rkey, run_worker, step, steps_of,
 )

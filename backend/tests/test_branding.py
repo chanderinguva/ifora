@@ -7,7 +7,6 @@ import pytest
 
 from backend.app import mailer, ratelimit
 from backend.app.branding import templates as T
-from tests.conftest import Api, make_user
 
 PNG = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"\x00" * 64).decode()
 SVG = base64.b64encode(b"<svg xmlns='http://www.w3.org/2000/svg'><script>alert(1)</script></svg>").decode()

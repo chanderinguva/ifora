@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 from passlib.hash import argon2
 import uuid
 from sqlalchemy import Column, DateTime, Integer, String, Boolean, Text, UniqueConstraint
-from sqlalchemy.orm import relationship, validates
+from sqlalchemy.orm import validates
 
 from backend.app.db import Base
 from backend.app.tenancy import TenantOwned

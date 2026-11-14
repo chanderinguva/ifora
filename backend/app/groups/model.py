@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from sqlalchemy import Column, Date, DateTime, Integer, String, Boolean, ForeignKey, Table
 from sqlalchemy.dialects.postgresql import JSONB

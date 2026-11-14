@@ -1,12 +1,11 @@
 """Transactional identity email rendering, environment identity, and safe previews."""
-from email.message import EmailMessage
 
 import pytest
 
 from backend.app import mailer
-from backend.app.branding import templates as T, email_html
+from backend.app.branding import templates as T
 from backend.app.config import settings
-from backend.app.environment import label, name, subject
+from backend.app.environment import name, subject
 
 
 @pytest.fixture

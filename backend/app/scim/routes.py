@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse
-from sqlalchemy import String, cast, delete, exists, func, insert, literal, select, true, update
+from sqlalchemy import delete, exists, func, insert, literal, select, true, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -17,7 +17,6 @@ from backend.app.users import lifecycle
 from backend.app.groups import rules as group_rules
 from backend.app.groups.model import Group, user_group_association as assoc
 from backend.app.oidc.models import RefreshToken
-from backend.app.profiles import catalog as profile_catalog
 from backend.app.config import settings
 from backend.app.scim import discovery, filter as flt, mapping, projection, retention
 from backend.app.scim.auth import Ctx, audit, get_ctx

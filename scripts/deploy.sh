@@ -70,8 +70,8 @@ deploy_local() {
 
 # Poll until ready instead of failing on the short window where the frontend restarts.
 verify_local() {
-  local i web api
-  for i in $(seq 1 24); do
+  local web api
+  for _ in $(seq 1 24); do
     web="$(curl -sk -o /dev/null -w '%{http_code}' https://ifora.app 2>/dev/null || true)"
     api="$(curl -sk -o /dev/null -w '%{http_code}' https://api.ifora.app/health 2>/dev/null || true)"
     if [ "$web" = 200 ] && [ "$api" = 200 ]; then say "local: ok (ifora.app 200, api health 200)"; return; fi
@@ -92,7 +92,7 @@ case "${1:-}" in
   all)    deploy_demo; deploy_local; echo; cmd_status ;;
   "")
     t="$(target)"
-    if want "$t" "$(demo_sha)";  then deploy_demo;  did=1; else say "demo already at ${t:0:9}"; fi
+    if want "$t" "$(demo_sha)";  then deploy_demo;  else say "demo already at ${t:0:9}"; fi
     if want "$t" "$(local_sha)"; then deploy_local; else say "local already at ${t:0:9}"; fi
     echo; cmd_status
     ;;

@@ -19,7 +19,7 @@ from typing import Optional
 from urllib.parse import urlencode
 
 import httpx
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from joserfc import jwt
 from joserfc.errors import JoseError

@@ -12,7 +12,7 @@ from backend.app.audit.service import record
 from backend.app.auth.deps import require_admin
 from backend.app.db import get_db
 from backend.app.oidc import keys
-from backend.app.oidc.models import KeyStatus, SigningKey
+from backend.app.oidc.models import SigningKey
 from backend.app.config import settings
 
 public_router = APIRouter(tags=["oidc"])

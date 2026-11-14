@@ -9,7 +9,6 @@ from backend.app.tenancy import (
     CrossTenantWrite,
     Tenant,
     TenantContextMissing,
-    tenant_session,
     unscoped,
     use_tenant,
 )

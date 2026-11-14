@@ -1,7 +1,5 @@
 """prompt=login / max_age / acr_values (forced re-authentication) and RP-initiated logout."""
 
-import base64
-import hashlib
 from datetime import timedelta
 from urllib.parse import parse_qs, urlsplit
 

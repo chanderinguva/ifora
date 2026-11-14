@@ -431,7 +431,6 @@ def update_user(
         if body.is_admin:
             _least_privilege(db, user, actor)
 
-    status_result = None
     if body.status is not None and lifecycle.normalize(body.status) != user.status:
         if user.id == actor.id and body.status != "active":
             raise HTTPException(status_code=400, detail="You cannot change your own account status")
@@ -444,7 +443,7 @@ def update_user(
     if changed:
         db.flush()
         if "status" in changed:
-            status_result = lifecycle.set_status(db, user, changed["status"], request, actor)  # sessions, groups, audit
+            lifecycle.set_status(db, user, changed["status"], request, actor)  # sessions, groups, audit
         else:
             group_rules.evaluate_user(db, user, request, actor)  # attribute changes can move rule-based memberships
 

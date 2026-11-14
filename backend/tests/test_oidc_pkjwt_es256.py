@@ -15,7 +15,7 @@ from backend.app.config import settings
 from backend.app.oidc import client_auth, keys
 from backend.app.oidc.models import SigningKey
 from tests.test_oidc_token import CB, VERIFIER, exchange, get_code, mk as mk_user_client, post_token, user_api  # noqa: F401 (fixture)
-from tests.test_oidc_service_clients import API, cc, mk_service
+from tests.test_oidc_service_clients import mk_service
 
 TOKEN_URL = f"{settings.OIDC_ISSUER.rstrip('/')}/oauth/token"
 
@@ -67,7 +67,6 @@ def code_exchange(api, client, a, **extra):
 
 def test_es256_keys_sign_and_verify_and_coexist_with_rs256(db, super_admin, user_api):
     c = mk_user_client(super_admin, client_type="confidential")
-    from tests.test_oidc_token import basic
     old = exchange(user_api, c, get_code(user_api, c)).json()["access_token"]          # signed by the RS256 key
     assert jwt.decode(old, keys.KeySet.import_key_set(keys.public_jwks(db)), algorithms=["RS256"]).header["alg"] == "RS256"
 

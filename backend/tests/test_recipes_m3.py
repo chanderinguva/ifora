@@ -2,14 +2,12 @@
 
 from datetime import timedelta
 
-import pytest
 from sqlalchemy import select
 
 from backend.app.audit.model import AuditEvent
 from backend.app.groups.model import user_group_association
 from backend.app.recipes import engine
 from backend.app.recipes.models import RecipeJob
-from backend.app.tenancy import tenant_session
 from backend.app.users.model import User
 from tests.conftest import Api, STRONG, make_user
 from tests.recipe_helpers import (  # noqa: F401

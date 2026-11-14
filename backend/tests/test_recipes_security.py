@@ -12,7 +12,7 @@ from cryptography.fernet import Fernet
 
 from backend.app.audit.model import AuditEvent
 from backend.app.config import settings
-from backend.app.recipes import actions, crypto, templates as tpl
+from backend.app.recipes import crypto, templates as tpl
 from backend.app.recipes.http_client import (
     EgressBlocked, EgressPolicy, HttpFailure, ResponseTooLarge, ip_allowed, safe_request,
 )
@@ -70,7 +70,6 @@ def test_hostname_resolving_to_private_is_blocked(resolved):
 
 
 def test_localhost_names_blocked():
-    import socket
 
     for host in ("localhost", "localhost.localdomain"):
         with pytest.raises((EgressBlocked, HttpFailure)):
@@ -120,7 +119,7 @@ def test_timeout_is_a_retryable_failure_and_request_body_capped():
     with pytest.raises(HttpFailure):
         safe_request("GET", "https://example.com/", policy=EgressPolicy(), resolver=PUB, transport=httpx.MockTransport(boom))
     with pytest.raises(EgressBlocked):
-        req_body = safe_request("POST", "https://example.com/", body=b"x" * 70000, policy=EgressPolicy(), resolver=PUB, transport=Remote().transport)
+        safe_request("POST", "https://example.com/", body=b"x" * 70000, policy=EgressPolicy(), resolver=PUB, transport=Remote().transport)
 
 
 def test_dangerous_headers_and_methods_refused():

@@ -13,7 +13,7 @@ from backend.app.recipes.models import RecipeConnection, ConnectionOAuthState
 from backend.app.connectors import registry
 from backend.app.connectors.scopes import action_available
 from tests.conftest import Api, make_user
-from tests.recipe_helpers import Remote, definition, dump, install_remote, jobs, make_recipe, new_group, rkey, run_worker, step, steps_of
+from tests.recipe_helpers import Remote, definition, dump, install_remote, jobs, make_recipe, new_group, rkey, run_worker, step, steps_of  # noqa: F401 (rkey is a pytest fixture)
 
 
 def http_connection(admin, auth=None, secrets=None, **extra):

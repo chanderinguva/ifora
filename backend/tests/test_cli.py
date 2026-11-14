@@ -1,6 +1,5 @@
 """Operator recovery CLI."""
 
-import pytest
 
 from backend.app.audit.model import AuditAction, AuditEvent
 from backend.app.users.model import User

@@ -6,7 +6,6 @@ import json
 import pytest
 
 from backend.app.audit.model import AuditEvent
-from backend.app.recipes.models import Recipe
 from tests.recipe_helpers import definition, make_recipe, new_group, rkey, step  # noqa: F401
 
 HOOK = "https://hooks.slack.com/services/T000/B000/XXXXSECRETXXXX"

@@ -9,7 +9,7 @@ import hashlib
 import json
 import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 from urllib.parse import quote, urlencode
 
 from backend.app.recipes import http_client as hc

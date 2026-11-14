@@ -55,7 +55,7 @@ _ensure_database()
 from fastapi.testclient import TestClient  # noqa: E402
 
 from backend.app.api import app  # noqa: E402
-from backend.app.db import Base, SessionLocal, engine  # noqa: E402
+from backend.app.db import Base, engine  # noqa: E402
 
 ORIGIN = "http://localhost:3000"
 STRONG = "Str0ngPassw0rd!x"

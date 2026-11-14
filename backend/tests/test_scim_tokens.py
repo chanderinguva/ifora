@@ -2,7 +2,6 @@
 
 from datetime import datetime, timedelta, timezone
 
-import pytest
 
 from backend.app import ratelimit
 from backend.app.audit.model import AuditEvent

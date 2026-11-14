@@ -4,7 +4,6 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from backend.app.recipes.models import RecipeJob
 from tests.recipe_helpers import definition, jobs, make_recipe, rkey, run_worker, step, steps_of  # noqa: F401
 
 LOG = lambda sid, msg: step(sid, "log", {"message": msg})  # noqa: E731

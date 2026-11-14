@@ -2,7 +2,6 @@
 authenticated user, and only for posting to the login URL an administrator registered."""
 
 import base64
-import os
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -205,7 +204,7 @@ def test_requires_login_csrf_and_entitlement(db, super_admin):
     store(m, app_id)
     assert Api().post(f"/swa/apps/{app_id}/launch").status_code == 401
     assert m.c.post(f"/api/v1/swa/apps/{app_id}/launch", headers={"Origin": "http://localhost:3000"}).status_code == 403  # no CSRF token
-    other = make_user(db, "x@example.com")
+    make_user(db, "x@example.com")
     o = Api(); o.login("x@example.com")
     for r in (o.get(f"/swa/apps/{app_id}"), o.post(f"/swa/apps/{app_id}/launch"), store(o, app_id)):
         assert r.status_code == 404  # unassigned: the same answer as a missing application
