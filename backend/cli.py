@@ -112,6 +112,12 @@ def recipes_worker(interval: float = 2.0, once: bool = False, out=print) -> int:
         engine.heartbeat(beat)
         stats = engine.process_once()
         try:
+            from backend.app.integrations import slack_ideas
+
+            slack_ideas.process_pending_once()
+        except Exception:  # noqa: BLE001 - never stop the worker for integration delivery
+            pass
+        try:
             from backend.app.groups import rules as group_rules
 
             group_rules.sync_pending_all()  # finishes large group-rule activations in batches
