@@ -43,10 +43,10 @@ class SamlProvider(TenantOwned, Base):
 
 class SamlSigningKey(TenantOwned, Base):
     __tablename__ = "saml_signing_keys"
-    __table_args__ = (CheckConstraint("status IN ('active','retired')", name="ck_saml_key_status"),)
+    __table_args__ = (CheckConstraint("status IN ('active','next','retired')", name="ck_saml_key_status"),)
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    private_key_enc = Column(Text, nullable=False)  # Fernet(OIDC_KEY_ENCRYPTION_KEY)
+    private_key_enc = Column(Text, nullable=False)  # v2:saml:<Fernet token> (keywrap); legacy rows are the bare OIDC_KEY_ENCRYPTION_KEY token
     cert_pem = Column(Text, nullable=False)
     not_after = Column(DateTime(timezone=True), nullable=False)
     status = Column(String(8), nullable=False, default="active")

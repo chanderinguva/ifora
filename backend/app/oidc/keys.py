@@ -12,13 +12,14 @@ Private keys are Fernet-encrypted with OIDC_KEY_ENCRYPTION_KEY (separate from th
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import Fernet
 from joserfc import jwt
 from joserfc.errors import JoseError
 from joserfc.jwk import ECKey, KeySet, RSAKey
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from backend.app import keywrap
 from backend.app.config import settings
 from backend.app.oidc.models import KeyStatus, SigningKey
 
@@ -77,7 +78,7 @@ _KEY_CLASS = {"RS256": RSAKey, "ES256": ECKey}
 def _new_key_row(alg: str, status: str, activate_at: datetime) -> SigningKey:
     if alg not in _GENERATORS:
         raise KeyConfigError(f"unsupported signing algorithm {alg!r}")
-    fernet = _fernet()
+    _fernet()  # fail early on a missing or invalid key-encryption key
     key = _GENERATORS[alg]()
     kid = key.thumbprint()
     pem = key.as_pem(private=True)
@@ -87,7 +88,7 @@ def _new_key_row(alg: str, status: str, activate_at: datetime) -> SigningKey:
         kid=kid,
         alg=alg,
         status=status,
-        private_pem_encrypted=fernet.encrypt(pem).decode(),
+        private_pem_encrypted=keywrap.wrap("oidc", pem),
         public_jwk=public,
         activate_at=activate_at,
     )
@@ -213,8 +214,8 @@ def _decrypt(row: SigningKey) -> bytes:
     if not row.private_pem_encrypted:
         raise KeyConfigError("signing key material is not available")
     try:
-        return _fernet().decrypt(row.private_pem_encrypted.encode())
-    except InvalidToken as e:
+        return keywrap.unwrap("oidc", row.private_pem_encrypted)
+    except keywrap.KeyWrapError as e:
         raise KeyConfigError("cannot decrypt signing key (wrong OIDC_KEY_ENCRYPTION_KEY?)") from e
 
 
