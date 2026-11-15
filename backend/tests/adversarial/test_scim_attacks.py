@@ -325,11 +325,6 @@ def test_guessing_group_ids_does_not_cross_tenants_or_enumerate(db, people):
 PROBE = [("GET", "/Groups/%00"), ("GET", "/Users/%00"), ("PUT", "/Groups/%00"), ("PATCH", "/Users/%00"), ("DELETE", "/Groups/%00"), ("DELETE", "/Users/%00")]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="FINDING ADV-1 (low, found by IFORA-17): a NUL byte in a SCIM resource id reaches the database driver and answers 500 "
-           "on every id route; needs input validation -> 4xx. Remove this marker when the follow-up story lands.",
-)
 @pytest.mark.parametrize("method,path", PROBE)
 def test_nul_byte_in_a_resource_id_is_a_clean_4xx(db, method, path):
     """CWE-20 / CWE-248: a NUL byte in an id must be refused as input, not reach the database driver as an unhandled error."""
@@ -337,4 +332,14 @@ def test_nul_byte_in_a_resource_id_is_a_clean_4xx(db, method, path):
     c = TestClient(app, base_url="http://localhost:8000", raise_server_exceptions=False)
     r = c.request(method, "/scim/v2" + path, headers=t.h, content=b"{}" if method in ("PUT", "PATCH") else None)
     assert 400 <= r.status_code < 500, (method, path, r.status_code)
+    _clean(r)
+
+
+def test_nul_byte_in_a_group_member_id_is_a_clean_4xx(db):
+    """ADV-1 (IFORA-66), same class through the body: a NUL in members[].value must not reach the driver."""
+    t = Scim(mk_token(db))
+    c = TestClient(app, base_url="http://localhost:8000", raise_server_exceptions=False)
+    body = {"schemas": ["urn:ietf:params:scim:schemas:core:2.0:Group"], "displayName": "nul-members", "members": [{"value": "a\u0000b"}]}
+    r = c.post("/scim/v2/Groups", headers=t.h, content=json.dumps(body))
+    assert 400 <= r.status_code < 500, r.status_code
     _clean(r)

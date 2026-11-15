@@ -285,7 +285,7 @@ def render_user_resource(db: Session, user: User, external_id: Optional[str]) ->
 
 
 def _get_user(db: Session, uid: str) -> User:
-    user = db.query(User).filter(User.public_id == uid[:36]).first() if len(uid) <= 36 else None
+    user = db.query(User).filter(User.public_id == uid).first() if len(uid) <= 36 and "\x00" not in uid else None
     if user is None:
         raise not_found("User not found")
     return user
@@ -486,7 +486,9 @@ GROUP_FILTER_ATTRS = {
 
 def _get_group(db: Session, gid: str) -> Group:
     g = None
-    if len(gid) <= 36 and not gid.isdigit():
+    if "\x00" in gid:  # PostgreSQL cannot store NUL; the driver would raise and the client would see a 500
+        pass
+    elif len(gid) <= 36 and not gid.isdigit():
         g = db.query(Group).filter(Group.public_id == gid).first()
     elif gid.isdigit() and len(gid) < 10 and settings.SCIM_ACCEPT_LEGACY_GROUP_IDS:
         # integer ids were what earlier versions handed out; IdPs that stored them keep working until switched off
@@ -547,6 +549,8 @@ def _name_taken(db: Session, name: str, exclude_id: Optional[int]) -> bool:
 def _sync_members(ctx: Ctx, g: Group, public_ids: List[str]) -> Dict[str, int]:
     """Make the membership equal to `public_ids`. Rule-created memberships cannot be removed (409, nothing applied)."""
     db = ctx.db
+    if any("\x00" in i for i in public_ids):
+        raise invalid_value("A member refers to an unknown user")
     users = db.query(User).filter(User.public_id.in_(public_ids)).all() if public_ids else []
     if len(users) != len(public_ids):
         raise invalid_value("A member refers to an unknown user")
