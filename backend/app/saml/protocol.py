@@ -20,6 +20,7 @@ from signxml import XMLSigner, XMLVerifier, methods
 from signxml.exceptions import InvalidSignature
 
 from backend.app.config import settings
+from backend.app.tenancy import issuer as tenant_issuer
 
 NS = {
     "samlp": "urn:oasis:names:tc:SAML:2.0:protocol",
@@ -51,11 +52,13 @@ def iso(d: datetime) -> str:
 
 
 def idp_entity_id() -> str:
+    if settings.TENANT_RESOLUTION == "host":  # one global entity id would be shared by every tenant
+        return tenant_issuer().rstrip("/") + "/saml/idp"
     return settings.SAML_ENTITY_ID or settings.OIDC_ISSUER.rstrip("/") + "/saml/idp"
 
 
 def sso_url() -> str:
-    return settings.OIDC_ISSUER.rstrip("/") + "/saml/sso"
+    return tenant_issuer().rstrip("/") + "/saml/sso"
 
 
 # ---- parsing ----------------------------------------------------------------------------------------------------

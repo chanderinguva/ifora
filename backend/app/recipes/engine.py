@@ -297,7 +297,7 @@ def _step_row(job: RecipeJob, seq: int, instr: dict, status: str, attempt: int, 
 def _run_child_dry(job: RecipeJob, recipe_id: int, definition: dict, trigger: dict, chain: list, key: str, now: datetime):
     """Run a callee's published version for a test run, without side effects. A step runs inside a savepoint, which
     cannot contain the child's own commits, so the child gets its own session (the parent job is already committed)."""
-    s = tenant_session(job.tenant_id)
+    s = tenant_session(job.tenant_id, strict=True)
     try:
         r = s.get(Recipe, recipe_id)
         child = create_job(s, r, definition, r.published_version, trigger, key, depth=job.depth + 1, mode="dry_run", now=now)
@@ -798,7 +798,7 @@ def process_once(now: Optional[datetime] = None) -> Dict[str, int]:
     finally:
         s.close()
     for tid in tenant_ids:
-        db = tenant_session(tid)
+        db = tenant_session(tid, strict=True)
         try:
             for k, v in process_tenant(db, now).items():
                 total[k] = total.get(k, 0) + v

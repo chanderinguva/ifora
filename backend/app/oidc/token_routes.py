@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse, Response
 from sqlalchemy.orm import Session
 
 from backend.app import ratelimit
+from backend.app.tenancy import issuer as tenant_issuer
 from backend.app.audit.model import AuditAction
 from backend.app.audit.service import record
 from backend.app.config import settings
@@ -117,12 +118,12 @@ def _userinfo(request: Request, db: Session):
         return _bearer_error(None, "a Bearer access token is required")  # header only: never a query parameter
     bearer = auth[7:].strip()
     if bearer.startswith(tokens.OPAQUE_PREFIX):
-        claims = intro.opaque_claims(db, bearer, audience=settings.OIDC_ISSUER)
+        claims = intro.opaque_claims(db, bearer, audience=tenant_issuer())
         if claims is None:
             return _bearer_error("invalid_token", "the access token is invalid or expired")
     else:
         try:
-            claims = keys.verify_jwt(db, bearer, issuer=settings.OIDC_ISSUER, audience=settings.OIDC_ISSUER, typ="at+jwt")
+            claims = keys.verify_jwt(db, bearer, issuer=tenant_issuer(), audience=tenant_issuer(), typ="at+jwt")
         except keys.TokenError:
             return _bearer_error("invalid_token", "the access token is invalid or expired")
         except keys.KeyConfigError:
@@ -139,13 +140,13 @@ def _userinfo(request: Request, db: Session):
 
 @router.get("/.well-known/openid-configuration")
 def discovery(db: Session = Depends(get_db)):
-    iss = settings.OIDC_ISSUER.rstrip("/")
+    iss = tenant_issuer().rstrip("/")
     try:
         algs = keys.advertised_algs(db)
     except keys.KeyConfigError:  # signing not configured yet: say what we would use rather than failing discovery
         algs = [settings.OIDC_SIGNING_ALG]
     return JSONResponse({
-        "issuer": settings.OIDC_ISSUER,
+        "issuer": tenant_issuer(),
         "authorization_endpoint": f"{iss}/oauth/authorize",
         "token_endpoint": f"{iss}/oauth/token",
         "userinfo_endpoint": f"{iss}/oauth/userinfo",

@@ -15,6 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.app.applications import entitlement as ent
+from backend.app.tenancy import issuer as tenant_issuer
 from backend.app.applications.models import Application, ApplicationAssignment, ApplicationIcon, SIGN_ON_MODES
 from backend.app.audit.model import AuditAction
 from backend.app.audit.service import record
@@ -447,7 +448,7 @@ def _launch_target(a: Application, initiate: Optional[str]) -> str:
 
         return f"{ui_base()}/swa/continue?app={a.id}"
     if a.sign_on_mode == "oidc" and initiate:
-        q = {"iss": settings.OIDC_ISSUER}
+        q = {"iss": tenant_issuer()}
         if a.launch_url:
             q["target_link_uri"] = a.launch_url
         return initiate + ("&" if "?" in initiate else "?") + urlencode(q)

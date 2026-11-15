@@ -12,6 +12,7 @@ from email_validator import EmailNotValidError, validate_email
 from sqlalchemy.orm import Session
 
 from backend.app.config import settings
+from backend.app.tenancy import issuer as tenant_issuer
 from backend.app.profiles import catalog as profile_catalog
 from backend.app.scim.errors import invalid_value
 from backend.app.scim.patch import AttrDef, PatchSchema
@@ -35,7 +36,7 @@ _USERNAME = re.compile(r"^[a-z0-9][a-z0-9._@+\-]{1,99}$")
 
 
 def base_url() -> str:
-    return settings.OIDC_ISSUER.rstrip("/") + "/scim/v2"
+    return tenant_issuer().rstrip("/") + "/scim/v2"
 
 
 def etag(*parts: Any) -> str:
