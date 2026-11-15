@@ -164,6 +164,10 @@ asyncpg==0.32.0 \
     # via
     #   -c requirements.txt
     #   -r requirements.in
+authlib==1.9.6 \
+    --hash=sha256:1caa0791c0ea6bde6b4ef91b1731f720a97a0f00d3955878d4a493b4ce673247 \
+    --hash=sha256:96564699a43281b9e3473717a135407a1170bdc850ebe21313539d672c2a6682
+    # via -r requirements-dev.in
 bandit==1.8.0 \
     --hash=sha256:b1a61d829c0968aed625381e426aa378904b996529d048f8d908fa28f6b13e38 \
     --hash=sha256:b5bfe55a095abd9fe20099178a7c6c060f844bfd4fe4c76d28e35e4c52b9d31e
@@ -608,6 +612,7 @@ cryptography==50.0.2 \
     --hash=sha256:fdd28f912fccfec1846a94e2e1e8f9b0012f557f0c46fe4f3eb0d7a87afcf90b
     # via
     #   -c requirements.txt
+    #   authlib
     #   joserfc
     #   pyopenssl
     #   signxml
@@ -909,6 +914,7 @@ joserfc==1.8.0 \
     # via
     #   -c requirements.txt
     #   -r requirements.in
+    #   authlib
 license-expression==30.4.4 \
     --hash=sha256:421788fdcadb41f049d2dc934ce666626265aeccefddd25e162a26f23bcbf8a4 \
     --hash=sha256:73448f0aacd8d0808895bdc4b2c8e01a8d67646e4188f887375398c761f340fd

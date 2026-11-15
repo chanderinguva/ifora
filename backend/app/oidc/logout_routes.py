@@ -14,6 +14,7 @@ from backend.app.auth.deps import clear_session_cookie, get_session_and_user
 from backend.app.config import settings
 from backend.app.db import get_db
 from backend.app.oidc import logout as lo
+from backend.app.oidc import refresh
 
 public_router = APIRouter(tags=["oidc"])
 api_router = APIRouter(prefix="/oidc", tags=["oidc"])
@@ -67,8 +68,13 @@ def logout(body: LogoutBody, request: Request, db: Session = Depends(get_db)):
         if plan.sub is not None and plan.sub != user.public_id:
             redirect = None  # the hint names someone else: still sign out, but do not bounce into the RP as if it matched
         session.revoke()
+        revoked = 0
+        if plan.client is not None and (plan.sub is None or plan.sub == user.public_id):
+            # The user confirmed leaving this application (IFORA-24): its refresh tokens end with the session, so the
+            # application cannot keep minting tokens for someone who signed out. Other applications are untouched.
+            revoked = refresh.revoke_for_user_client(db, user.id, plan.client.id)
         record(db, AuditAction.OIDC_LOGOUT, request, user, user.id, "user",
-               {"client_id": plan.client.client_id if plan.client else None})
+               {"client_id": plan.client.client_id if plan.client else None, "refresh_tokens_revoked": revoked})
         db.commit()
     out = JSONResponse({"redirect_to": redirect}, headers=NO_STORE)
     if ctx is not None:
