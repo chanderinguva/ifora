@@ -149,3 +149,10 @@ def test_an_engine_failure_is_a_500_and_leaves_no_partial_write(db, world, monke
 
 def test_the_evaluate_contract_is_unchanged_for_live_callers(world):
     assert engine.Decision("allow") == engine.Decision("allow", rule="passed")  # `rule` is explanatory, not part of equality
+
+
+def test_a_draft_is_unchanged_when_only_the_deciding_rule_differs(db, world):
+    world["sa"].delete(f"/admin/applications/{world['app']}/policy")  # nothing saved: allowed because there is no policy
+    j = sim(world, policy={"allowed_zone_ids": [world["office"]]}).json()  # draft: allowed because the address is in the zone
+    assert j["stored"]["rule"] == "no_policy" and j["draft"]["rule"] == "passed"
+    assert j["stored"]["decision"] == j["draft"]["decision"] == "allow" and j["changed"] is False
