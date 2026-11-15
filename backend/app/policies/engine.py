@@ -6,7 +6,7 @@ Fails closed: an allow-list whose zones were all deleted, or a client address th
 """
 
 import ipaddress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import List, Optional
 
@@ -21,6 +21,7 @@ ALLOW, DENY, REAUTH = "allow", "deny", "reauth"
 class Decision:
     kind: str
     reason: str = ""
+    rule: str = field(default="", compare=False)  # which rule decided: no_policy, blocked_zone, allowed_zones, require_mfa, reauth_minutes, passed
 
 
 def parse_ip(value: Optional[str]):
@@ -52,23 +53,27 @@ def _zones(db: Session, ids: List[int]) -> List[NetworkZone]:
     return db.query(NetworkZone).filter(NetworkZone.id.in_(ids)).all() if ids else []
 
 
-def evaluate(db: Session, application_id: int, user, session, client_ip: Optional[str]) -> Decision:
-    pol = get_policy(db, application_id)
+_UNSET = object()
+
+
+def evaluate(db: Session, application_id: int, user, session, client_ip: Optional[str], policy=_UNSET) -> Decision:
+    """`policy` lets the admin simulation judge an unsaved draft with this same code; everything else reads the stored policy."""
+    pol = get_policy(db, application_id) if policy is _UNSET else policy
     if pol is None:
-        return Decision(ALLOW)
+        return Decision(ALLOW, rule="no_policy")
     ip = parse_ip(client_ip)
     if any(in_zone(ip, z) for z in _zones(db, pol.blocked_zone_ids or [])):
-        return Decision(DENY, "This application cannot be used from your network")
+        return Decision(DENY, "This application cannot be used from your network", "blocked_zone")
     if pol.allowed_zone_ids:
         if not any(in_zone(ip, z) for z in _zones(db, pol.allowed_zone_ids)):
-            return Decision(DENY, "This application can only be used from approved networks")
+            return Decision(DENY, "This application can only be used from approved networks", "allowed_zones")
     if pol.require_mfa and "mfa" not in (session.amr or []):
         if getattr(user, "has_second_factor", False):
-            return Decision(REAUTH, "mfa")
-        return Decision(DENY, "This application requires multi-factor authentication; set up a second factor in Account settings")
+            return Decision(REAUTH, "mfa", "require_mfa")
+        return Decision(DENY, "This application requires multi-factor authentication; set up a second factor in Account settings", "require_mfa")
     if pol.reauth_minutes and (datetime.now(timezone.utc) - session.auth_time).total_seconds() > pol.reauth_minutes * 60:
-        return Decision(REAUTH, "stale")
-    return Decision(ALLOW)
+        return Decision(REAUTH, "stale", "reauth_minutes")
+    return Decision(ALLOW, rule="passed")
 
 
 def check(db: Session, request, application_id: Optional[int], user, session) -> Decision:

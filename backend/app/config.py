@@ -181,6 +181,10 @@ class Settings(BaseSettings):
     RATE_LIMIT_RESET_EMAIL_CEILING: int = Field(default=30)  # reset requests per email per hour, all addresses together
     RATE_LIMIT_MFA_FAILURES: int = Field(default=10)  # wrong passwords/codes on account-security endpoints per user per window
     RATE_LIMIT_MFA_WINDOW_SECONDS: int = Field(default=900)
+    # Admin step-up (IFORA-33): sensitive admin actions need an MFA proof this recent (a fresh MFA sign-in counts). Applies where
+    # ADMIN_MFA_REQUIRED is on; API tokens are exempt (they never hold a session factor).
+    ADMIN_STEPUP_MINUTES: int = Field(default=10, ge=1, le=240)
+    RATE_LIMIT_POLICY_SIMULATE: int = Field(default=30)  # policy simulations per admin per minute
     RATE_LIMIT_BOOTSTRAP_ATTEMPTS: int = Field(default=5)
     RATE_LIMIT_BOOTSTRAP_WINDOW_SECONDS: int = Field(default=900)
 

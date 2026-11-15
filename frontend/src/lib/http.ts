@@ -2,6 +2,7 @@
 
 import { API_URL } from "./api";
 import { ensureCsrfToken } from "./auth-client";
+import { askStepUp, STEPUP_REQUIRED } from "./stepup";
 
 export class ApiError extends Error {
   constructor(
@@ -28,6 +29,7 @@ function describe(detail: unknown): string {
 export async function http<T = any>(
   path: string,
   opts: { method?: string; body?: unknown } = {},
+  retried = false,
 ): Promise<T> {
   const method = opts.method ?? "GET";
   const headers: Record<string, string> = {};
@@ -48,6 +50,11 @@ export async function http<T = any>(
     /* empty body */
   }
   if (res.status === 401 && endSession()) return new Promise<T>(() => {});   // the page is leaving; never resolve, so nothing flashes "Not authenticated"
+  if (res.status === 403 && data?.detail === STEPUP_REQUIRED && !retried && !path.startsWith("/me/step-up")) {
+    // A sensitive administrator action needs a fresh second factor: ask once, then repeat the same request.
+    if (await askStepUp()) return http<T>(path, opts, true);
+    throw new ApiError(403, "Confirmation with your authenticator was cancelled, so nothing was changed.");
+  }
   if (!res.ok) throw new ApiError(res.status, describe(data?.detail));
   return data as T;
 }

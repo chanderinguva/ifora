@@ -9,6 +9,7 @@ import { fieldClass } from "@/components/bits";
 import { http } from "@/lib/http";
 import { useDirty } from "@/lib/use-dirty";
 import { SaveButton } from "@/components/save-button";
+import { PolicySimulator } from "@/components/policy-simulator";
 
 type Zone = { id: number; name: string };
 type Policy = { configured: boolean; require_mfa: boolean; reauth_minutes: number | null; allowed_zone_ids: number[]; blocked_zone_ids: number[] };
@@ -67,6 +68,7 @@ export function AuthPolicyCard({ appId }: { appId: number }) {
           {checks("blocked_zone_ids", "allowed_zone_ids", "Always block these networks", "Blocking wins over allowing.")}
         </div>
         <div className="flex gap-2"><SaveButton dirty={dirty} onClick={save} data-testid="policy-save">Save policy</SaveButton>{p.configured && <Button variant="outline" onClick={remove}>Remove policy</Button>}</div>
+        <PolicySimulator appId={appId} dirty={dirty} draft={{ require_mfa: p.require_mfa, reauth_minutes: p.reauth_minutes || null, allowed_zone_ids: p.allowed_zone_ids, blocked_zone_ids: p.blocked_zone_ids }} />
       </CardContent>
     </Card>
   );
