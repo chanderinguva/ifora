@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from backend.app.audit.model import AuditAction
 from backend.app.audit.service import record
 from backend.app.auth.deps import require_admin
+from backend.app.auth.stepup import require_stepup
 from backend.app.config import settings
 from backend.app.db import get_db
 from backend.app.groups.model import Group
@@ -173,7 +174,7 @@ def list_apps(db: Session = Depends(get_db), _: User = Depends(require_admin)):
     return {"items": [_dict(db, a) for a in db.query(ProvisioningApp).order_by(ProvisioningApp.name).all()]}
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(require_stepup)])
 def create_app(body: AppBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
     _need_key()
     if not body.secret:
@@ -219,7 +220,7 @@ def get_app(app_id: int, db: Session = Depends(get_db), _: User = Depends(requir
     return _dict(db, _get(db, app_id))
 
 
-@router.put("/{app_id}")
+@router.put("/{app_id}", dependencies=[Depends(require_stepup)])
 def update_app(app_id: int, body: AppBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
     a = _get(db, app_id)
     _need_key()
@@ -260,7 +261,7 @@ def update_app(app_id: int, body: AppBody, request: Request, db: Session = Depen
     return {**_dict(db, a), "queued": queued}
 
 
-@router.delete("/{app_id}")
+@router.delete("/{app_id}", dependencies=[Depends(require_stepup)])
 def delete_app(app_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
     a = _get(db, app_id)
     name = a.name

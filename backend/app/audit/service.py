@@ -36,6 +36,9 @@ def record(
     safe = {k: v for k, v in (metadata or {}).items() if k.lower() not in _FORBIDDEN}
     if request is not None and getattr(action, "value", action) in DEVICE_ACTIONS:
         safe.setdefault("user_agent", device_of(request))
+    method = getattr(getattr(request, "state", None), "stepup_method", None) if request is not None else None
+    if method:  # a sensitive admin action carries how the admin proved themselves again (IFORA-33)
+        safe["stepup"] = method
     db.add(
         AuditEvent(
             action=action,

@@ -60,6 +60,9 @@ class Session(TenantOwned, Base):
     # When and how the user actually authenticated (not when the session was last used).
     auth_time = Column(DateTime(timezone=True), default=_now, nullable=False)
     amr = Column(JSONB, nullable=False, default=lambda: ["pwd"])
+    # Admin step-up (IFORA-33): the last time this session proved a second factor again, and how. Server-side only.
+    stepup_at = Column(DateTime(timezone=True), nullable=True)
+    stepup_method = Column(String(16), nullable=True)
 
     def __init__(
         self,

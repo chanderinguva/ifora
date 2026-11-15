@@ -12,6 +12,7 @@ from backend.app.admin_roles.models import AdminRoleAssignment, GroupAdminRole
 from backend.app.audit.model import AuditAction
 from backend.app.audit.service import record
 from backend.app.auth.deps import get_current_user, require_admin
+from backend.app.auth.stepup import require_stepup
 from backend.app.db import get_db
 from backend.app.users.model import User
 
@@ -68,7 +69,7 @@ def get_user_roles(user_id: int, db: Session = Depends(get_db), actor: User = De
             "super_admin": u.is_super_admin, "is_admin": u.is_admin}
 
 
-@router.put("/users/{user_id}")
+@router.put("/users/{user_id}", dependencies=[Depends(require_stepup)])
 def set_user_roles(user_id: int, body: RolesBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
     _super(actor)
     u = _target(db, user_id)
@@ -128,7 +129,7 @@ def get_group_roles(group_id: int, db: Session = Depends(get_db), actor: User = 
     return {"group_id": g.id, "type": g.type, "roles": _group_roles(db, g.id), "can_carry_roles": _can_carry(g)}
 
 
-@router.put("/groups/{group_id}")
+@router.put("/groups/{group_id}", dependencies=[Depends(require_stepup)])
 def set_group_roles(group_id: int, body: RolesBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
     """Every member of the group gets these roles. Only team and role based groups may carry roles; changing them takes effect on members' next request."""
     _super(actor)

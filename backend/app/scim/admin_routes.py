@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from backend.app.audit.model import AuditAction
 from backend.app.audit.service import record
 from backend.app.auth.deps import require_admin
+from backend.app.auth.stepup import require_stepup
 from backend.app.db import get_db
 from backend.app.scim import auth as scim_auth
 from backend.app.scim.mapping import base_url
@@ -66,7 +67,7 @@ def list_tokens(db: Session = Depends(get_db), _: User = Depends(require_admin))
     return {"items": [t.to_dict() for t in rows], "base_url": base_url()}
 
 
-@router.post("/tokens", status_code=201)
+@router.post("/tokens", status_code=201, dependencies=[Depends(require_stepup)])
 def create_token(body: TokenCreate, request: Request, db: Session = Depends(get_db), actor: User = Depends(_super_admin)):
     name = body.name.strip()
     if not name:
@@ -96,7 +97,7 @@ def create_token(body: TokenCreate, request: Request, db: Session = Depends(get_
     return out
 
 
-@router.put("/tokens/{token_id}/restrictions")
+@router.put("/tokens/{token_id}/restrictions", dependencies=[Depends(require_stepup)])
 def restrict_token(token_id: int, body: Restrictions, request: Request, db: Session = Depends(get_db), actor: User = Depends(_super_admin)):
     """Narrow or widen what a token may do. Super admin only; every change is audited with before and after."""
     t = db.get(ScimToken, token_id)
@@ -127,7 +128,7 @@ def restrict_token(token_id: int, body: Restrictions, request: Request, db: Sess
     return t.to_dict()
 
 
-@router.post("/tokens/{token_id}/rotate", status_code=201)
+@router.post("/tokens/{token_id}/rotate", status_code=201, dependencies=[Depends(require_stepup)])
 def rotate_token(token_id: int, body: Rotate, request: Request, db: Session = Depends(get_db), actor: User = Depends(_super_admin)):
     """Issue a replacement with the same restrictions. The old token keeps working for `overlap_hours` (never longer than
     its own expiry) so the IdP can be switched over without a gap."""
