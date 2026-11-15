@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     SWA_ENCRYPTION_KEY_PREVIOUS: str = Field(default="")  # keep the retired key here while rows are re-encrypted on use
     SWA_FRESH_AUTH_SECONDS: int = Field(default=900)  # a stored credential is only released if the user signed in this recently
     SAML_ENTITY_ID: str = Field(default="")  # IdP entity id; default <OIDC_ISSUER>/saml/idp
+    # Optional dedicated Fernet key for SAML signing-key encryption (IFORA-25). Unset = a subkey derived from
+    # OIDC_KEY_ENCRYPTION_KEY (separate subkey, same master secret). Set it so compromise of the OIDC secret does not expose SAML keys.
+    SAML_KEY_ENCRYPTION_KEY: str = Field(default="")
+    SAML_CERT_VALIDITY_DAYS: int = Field(default=730, ge=30, le=3650)  # lifetime of a newly issued SAML signing certificate
+    SAML_CERT_WARN_DAYS: int = Field(default=60, ge=1, le=365)  # the admin API flags a certificate this close to expiry
     SAML_PENDING_TTL_SECONDS: int = Field(default=600)  # how long a parked AuthnRequest waits for the user to sign in
     # Where /oauth/authorize sends the browser for login / consent (a page of the web UI).
     OIDC_LOGIN_UI_URL: str = Field(default="http://localhost:3000/oauth/authorize")

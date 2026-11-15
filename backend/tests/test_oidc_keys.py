@@ -55,7 +55,10 @@ def test_private_key_is_encrypted_at_rest(db):
     keys.public_jwks(db)
     row = db.query(SigningKey).one()
     assert "PRIVATE KEY" not in row.private_pem_encrypted
-    assert b"PRIVATE KEY" in Fernet(settings.OIDC_KEY_ENCRYPTION_KEY.encode()).decrypt(row.private_pem_encrypted.encode())
+    from backend.app import keywrap
+
+    assert row.private_pem_encrypted.startswith("v2:oidc:")
+    assert b"PRIVATE KEY" in keywrap.unwrap("oidc", row.private_pem_encrypted)
 
 
 def test_jwks_endpoint_is_public_cacheable_and_leaks_no_private_material():
@@ -210,7 +213,9 @@ def test_pending_key_cannot_validate_tokens(db):
     keys.signing_key(db)
     new = keys.rotate(db)
     row = db.query(SigningKey).filter_by(kid=new.kid).one()
-    pem = __import__("cryptography.fernet", fromlist=["Fernet"]).Fernet(settings.OIDC_KEY_ENCRYPTION_KEY.encode()).decrypt(row.private_pem_encrypted.encode())
+    from backend.app import keywrap
+
+    pem = keywrap.unwrap("oidc", row.private_pem_encrypted)
     from joserfc.jwk import RSAKey as K
 
     k = K.import_key(pem, parameters={"kid": new.kid})

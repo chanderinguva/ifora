@@ -43,6 +43,9 @@ def validate_settings(settings, env: Optional[Mapping[str, str]] = None) -> List
         problems.append("OIDC_KEY_ENCRYPTION_KEY must be set in production (a Fernet key different from MFA_ENCRYPTION_KEY)")
     elif settings.OIDC_KEY_ENCRYPTION_KEY == settings.MFA_ENCRYPTION_KEY:
         problems.append("OIDC_KEY_ENCRYPTION_KEY must differ from MFA_ENCRYPTION_KEY")
+    saml_key = getattr(settings, "SAML_KEY_ENCRYPTION_KEY", "")
+    if saml_key and saml_key in (settings.OIDC_KEY_ENCRYPTION_KEY, settings.MFA_ENCRYPTION_KEY):
+        problems.append("SAML_KEY_ENCRYPTION_KEY must differ from OIDC_KEY_ENCRYPTION_KEY and MFA_ENCRYPTION_KEY (or be unset)")
     if any(o.strip() == "*" for o in settings.CORS_ORIGINS):
         problems.append("CORS_ORIGINS must not contain '*' in production")
     if settings.DEBUG:

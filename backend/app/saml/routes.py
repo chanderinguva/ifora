@@ -413,13 +413,14 @@ def _cert_checked(pem: Optional[str]) -> Optional[str]:
 
 
 def provider_dict(db: Session, p: SamlProvider) -> dict:
-    cert = keys.active(db).cert_pem
+    active_row = keys.active(db)
+    cert = active_row.cert_pem
     return {
         "sp_entity_id": p.sp_entity_id, "acs_url": p.acs_url, "audience": p.audience, "name_id_format": p.name_id_format, "name_id_attribute": p.name_id_attribute, "signing": p.signing,
         "attribute_mappings": p.attribute_mappings, "has_sp_cert": bool(p.sp_cert), "sp_cert": p.sp_cert,
         "require_signed_requests": p.require_signed_requests, "default_relay_state": p.default_relay_state, "validity_seconds": p.validity_seconds,
         "idp": {"entity_id": P.idp_entity_id(), "sso_url": P.sso_url(), "metadata_url": tenant_issuer().rstrip("/") + "/saml/metadata",
-                "certificate_fingerprint_sha256": keys.fingerprint(cert), "certificate_pem": cert},
+                "certificate_fingerprint_sha256": keys.fingerprint(cert), "certificate_pem": cert, "certificate_days_to_expiry": keys.days_to_expiry(active_row)},
     }
 
 
@@ -543,3 +544,37 @@ def rotate_key(request: Request, db: Session = Depends(get_db), actor: User = De
     record(db, AuditAction.SAML_KEY_ROTATED, request, actor, k.id, "saml_signing_key", {"fingerprint": keys.fingerprint(k.cert_pem)})
     db.commit()
     return {"fingerprint": keys.fingerprint(k.cert_pem), "note": "Service providers must import the new certificate; the previous one stays in the metadata until removed."}
+
+
+def _super_only(actor: User) -> None:
+    if not actor.is_super_admin:
+        raise HTTPException(status_code=403, detail="Only a super administrator can manage the SAML signing certificate")
+
+
+@admin_router.get("/saml/keys")
+def list_keys(db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    """Every signing certificate with its status and days to expiry. Fingerprints only, never key material."""
+    return {"keys": keys.describe(db), "validity_days": settings.SAML_CERT_VALIDITY_DAYS, "warn_days": settings.SAML_CERT_WARN_DAYS}
+
+
+@admin_router.post("/saml/stage-key")
+def stage_key(request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    """Publish the next certificate in metadata without signing with it, so SPs can import it before the cutover."""
+    _super_only(actor)
+    k = keys.stage(db)
+    record(db, AuditAction.SAML_KEY_STAGED, request, actor, k.id, "saml_signing_key", {"fingerprint": keys.fingerprint(k.cert_pem)})
+    db.commit()
+    return {"fingerprint": keys.fingerprint(k.cert_pem), "days_to_expiry": keys.days_to_expiry(k),
+            "note": "The staged certificate is now in the metadata. Promote it once service providers have imported it."}
+
+
+@admin_router.post("/saml/promote-key")
+def promote_key(request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
+    _super_only(actor)
+    try:
+        k = keys.promote(db)
+    except keys.NoStagedKey:
+        raise HTTPException(status_code=409, detail="There is no staged certificate; stage one first")
+    record(db, AuditAction.SAML_KEY_PROMOTED, request, actor, k.id, "saml_signing_key", {"fingerprint": keys.fingerprint(k.cert_pem)})
+    db.commit()
+    return {"fingerprint": keys.fingerprint(k.cert_pem), "note": "Signing now uses this certificate; the previous one stays in the metadata until it expires or is removed."}
