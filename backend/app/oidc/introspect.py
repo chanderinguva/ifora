@@ -15,6 +15,7 @@ from typing import Dict
 from sqlalchemy.orm import Session
 
 from backend.app.applications.entitlement import sign_on_denied
+from backend.app.tenancy import issuer as tenant_issuer
 from backend.app.config import settings
 from backend.app.oidc import keys, refresh
 from backend.app.oidc.authorize import get_consent, now
@@ -35,12 +36,12 @@ def _refresh(db: Session, caller: OIDCClient, raw: str) -> Dict:
     if user is None or user.status != "active" or sign_on_denied(db, caller, user.id):
         return INACTIVE
     return {"active": True, "scope": " ".join(row.scopes), "client_id": caller.client_id, "token_type": "refresh_token",
-            "sub": user.public_id, "iss": settings.OIDC_ISSUER, "iat": int(row.created_at.timestamp()), "exp": int(row.expires_at.timestamp())}
+            "sub": user.public_id, "iss": tenant_issuer(), "iat": int(row.created_at.timestamp()), "exp": int(row.expires_at.timestamp())}
 
 
 def _access(db: Session, caller: OIDCClient, raw: str) -> Dict:
     try:
-        c = keys.verify_jwt(db, raw, issuer=settings.OIDC_ISSUER, audience=None, typ="at+jwt")
+        c = keys.verify_jwt(db, raw, issuer=tenant_issuer(), audience=None, typ="at+jwt")
     except keys.TokenError:
         return INACTIVE
     aud = c.get("aud")
@@ -96,7 +97,7 @@ def _opaque(db: Session, caller: OIDCClient, raw: str) -> Dict:
     if issued_to.id != caller.id and row.audience not in (caller.allowed_audiences or []):
         return INACTIVE
     return {"active": True, "token_type": "Bearer", "scope": " ".join(row.scopes), "client_id": issued_to.client_id, "sub": row.sub,
-            "aud": row.audience, "iss": settings.OIDC_ISSUER, "iat": int(row.created_at.timestamp()), "exp": int(row.expires_at.timestamp())}
+            "aud": row.audience, "iss": tenant_issuer(), "iat": int(row.created_at.timestamp()), "exp": int(row.expires_at.timestamp())}
 
 
 def introspect(db: Session, caller: OIDCClient, raw: str, hint: str | None) -> Dict:

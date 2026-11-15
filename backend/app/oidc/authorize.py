@@ -17,6 +17,7 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from backend.app.config import settings
+from backend.app.tenancy import issuer as tenant_issuer
 from backend.app.oidc.clients import SUPPORTED_SCOPES
 from backend.app.oidc.models import AuthorizationCode, OIDCClient, OIDCConsent, PendingAuthRequest
 
@@ -68,7 +69,7 @@ def redirect_with(redirect_uri: str, params: Dict[str, Optional[str]]) -> str:
     """Append response parameters to the registered URI (keeping any query it already has). Always carries `iss`."""
     parts = urlsplit(redirect_uri)
     q = parse_qsl(parts.query, keep_blank_values=True)
-    q += [(k, v) for k, v in {**params, "iss": settings.OIDC_ISSUER}.items() if v is not None]
+    q += [(k, v) for k, v in {**params, "iss": tenant_issuer()}.items() if v is not None]
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(q), ""))
 
 

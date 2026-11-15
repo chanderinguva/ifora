@@ -13,6 +13,7 @@ Rules enforced here (fail closed):
 """
 
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Table, event
@@ -47,6 +48,22 @@ class Tenant(Base):
     slug = Column(String(63), nullable=False, unique=True)
     name = Column(String(255), nullable=False)
     status = Column(String(20), nullable=False, default="active", server_default="active")
+    # OIDC issuer / SAML base URL for this tenant (IFORA-19). Null: derived from the slug and TENANT_BASE_DOMAIN.
+    issuer_url = Column(String(500), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
+class TenantDomain(Base):
+    """A host name a tenant claims. Global registry (resolved before any tenant is known), so not TenantOwned.
+    A domain only resolves once verified_at is set, so nobody can capture another tenant's traffic by claiming its name."""
+
+    __tablename__ = "tenant_domains"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    domain = Column(String(253), nullable=False, unique=True)
+    verification_token = Column(String(64), nullable=False)
+    verified_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
 
 
@@ -104,10 +121,15 @@ def reset_tenant_cache() -> None:
     _default_tenant_id = None
 
 
-def tenant_session(tenant_id: int | None = None) -> OrmSession:
-    """New session bound to a tenant (default tenant while single-tenant)."""
+def tenant_session(tenant_id: int | None = None, *, strict: bool = False) -> OrmSession:
+    """New session bound to a tenant (default tenant while single-tenant).
+
+    strict=True (background jobs, IFORA-19): a missing tenant id raises TenantContextMissing instead of falling back to
+    the default tenant, so a job that lost its tenant fails closed rather than running as another one."""
     from backend.app.db import SessionLocal
 
+    if tenant_id is None and strict:
+        raise TenantContextMissing("a background job needs an explicit tenant id")
     s = SessionLocal()
     return use_tenant(s, tenant_id if tenant_id is not None else default_tenant_id())
 
@@ -219,30 +241,125 @@ class TenantNotResolved(RuntimeError):
     """Multi-tenant mode and the request does not name a known, active tenant."""
 
 
-def resolve_tenant_id(host: str | None) -> int:
-    """Tenant for a request. Only the Host header is used (set by the edge); no client-supplied tenant header is read.
+_RESOLVE_TTL = 30.0
+_resolved: dict = {}  # host -> (tenant_id, issuer, expires_monotonic); only successes are cached
+_issuer_var: ContextVar = ContextVar("ifora_issuer", default=None)
 
-    single: the default tenant. host: `<slug>.<TENANT_BASE_DOMAIN>`; anything else raises TenantNotResolved.
+
+def clear_resolution_cache() -> None:
+    _resolved.clear()
+
+
+def _derive_issuer(slug: str, issuer_url: str | None) -> str:
+    from backend.app.config import settings
+
+    if issuer_url:
+        return issuer_url.rstrip("/")
+    scheme = settings.OIDC_ISSUER.split("://", 1)[0] if "://" in settings.OIDC_ISSUER else "https"
+    return f"{scheme}://{slug}.{settings.TENANT_BASE_DOMAIN.strip().lower().strip('.')}"
+
+
+def resolve_tenant(host: str | None) -> tuple:
+    """(tenant_id, issuer) for a request. Only the Host header is used (set by the edge); no client-supplied tenant or
+    forwarded-host header is read. The issuer comes from the tenant record, never from the Host alone.
+
+    single: the default tenant and OIDC_ISSUER. host: a verified claimed domain, else `<slug>.<TENANT_BASE_DOMAIN>`;
+    anything else raises TenantNotResolved.
     """
+    import time
+
     from backend.app.config import settings
 
     if settings.TENANT_RESOLUTION == "single":
-        return default_tenant_id()
-    base = settings.TENANT_BASE_DOMAIN.strip().lower().strip(".")
+        return default_tenant_id(), settings.OIDC_ISSUER
     name = (host or "").split(":")[0].strip().lower().rstrip(".")
-    if not base or not name.endswith("." + base):
+    if not name:
         raise TenantNotResolved("host does not name a tenant")
-    slug = name[: -len(base) - 1]
-    if not slug or "." in slug:
-        raise TenantNotResolved("host does not name a tenant")
+    hit = _resolved.get(name)
+    if hit and hit[2] > time.monotonic():
+        return hit[0], hit[1]
+    base = settings.TENANT_BASE_DOMAIN.strip().lower().strip(".")
     from backend.app.db import SessionLocal
 
     s = SessionLocal()
     try:
         with unscoped(s):
-            row = s.query(Tenant.id).filter(Tenant.slug == slug, Tenant.status == "active").first()
+            row = (
+                s.query(Tenant.id, Tenant.slug, Tenant.issuer_url)
+                .join(TenantDomain, TenantDomain.tenant_id == Tenant.id)
+                .filter(TenantDomain.domain == name, TenantDomain.verified_at.isnot(None), Tenant.status == "active")
+                .first()
+            )
+            if row is None and base and name.endswith("." + base):
+                slug = name[: -len(base) - 1]
+                if slug and "." not in slug:
+                    row = s.query(Tenant.id, Tenant.slug, Tenant.issuer_url).filter(Tenant.slug == slug, Tenant.status == "active").first()
     finally:
         s.close()
     if row is None:
         raise TenantNotResolved("unknown tenant")
-    return row[0]
+    out = (row[0], _derive_issuer(row[1], row[2]))
+    _resolved[name] = (out[0], out[1], time.monotonic() + _RESOLVE_TTL)
+    return out
+
+
+def resolve_tenant_id(host: str | None) -> int:
+    return resolve_tenant(host)[0]
+
+
+def set_request_issuer(issuer: str | None):
+    """Bind the issuer for the current request (called by the edge middleware). Returns a reset token."""
+    return _issuer_var.set(issuer)
+
+
+def reset_request_issuer(token) -> None:
+    _issuer_var.reset(token)
+
+
+def issuer() -> str:
+    """The OIDC issuer / base URL for the current tenant. Single-tenant mode: OIDC_ISSUER. Multi-tenant mode: the value
+    the request middleware resolved; with none bound this fails closed rather than answering as another tenant."""
+    from backend.app.config import settings
+
+    if settings.TENANT_RESOLUTION == "single":
+        return settings.OIDC_ISSUER
+    v = _issuer_var.get()
+    if v is None:
+        raise TenantContextMissing("no tenant issuer is bound to this request")
+    return v
+
+
+def new_verification_token() -> str:
+    import secrets
+
+    return secrets.token_urlsafe(32)
+
+
+def claim_domain(db: OrmSession, tenant_id: int, domain: str) -> TenantDomain:
+    """Register a domain claim (unverified). The caller must show the token at the domain before verify_domain()."""
+    d = domain.strip().lower().rstrip(".")
+    if not d or len(d) > 253 or "/" in d or ":" in d or " " in d or "." not in d:
+        raise ValueError("not a valid host name")
+    with unscoped(db):
+        if db.query(TenantDomain).filter(TenantDomain.domain == d).first() is not None:
+            raise ValueError("domain is already claimed")
+        row = TenantDomain(tenant_id=tenant_id, domain=d, verification_token=new_verification_token())
+        db.add(row)
+        db.flush()
+    return row
+
+
+def verify_domain(db: OrmSession, domain: str, proof: str) -> bool:
+    """Mark a claim verified when `proof` equals its token (constant-time). The proof is obtained out of band: it is
+    the value an operator published at the domain. Returns False, changing nothing, otherwise."""
+    import hmac
+
+    d = domain.strip().lower().rstrip(".")
+    with unscoped(db):
+        row = db.query(TenantDomain).filter(TenantDomain.domain == d).first()
+        if row is None or row.verified_at is not None or not hmac.compare_digest(row.verification_token, proof or ""):
+            return False
+        row.verified_at = datetime.now(timezone.utc)
+        db.flush()
+    clear_resolution_cache()
+    return True

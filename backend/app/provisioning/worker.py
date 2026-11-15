@@ -147,7 +147,7 @@ def process_once(at: Optional[datetime] = None) -> Dict[str, int]:
     finally:
         s.close()
     for tid in tenant_ids:
-        db = tenant_session(tid)
+        db = tenant_session(tid, strict=True)
         try:
             for k, v in process_tenant(db, at).items():
                 total[k] += v

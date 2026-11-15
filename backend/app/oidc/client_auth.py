@@ -21,6 +21,7 @@ from joserfc.jwt import JWTClaimsRegistry
 from sqlalchemy.orm import Session
 
 from backend.app import ratelimit
+from backend.app.tenancy import issuer as tenant_issuer
 from backend.app.config import settings
 from backend.app.oidc.models import OIDCClient
 
@@ -59,7 +60,7 @@ def authenticate_assertion(db: Session, form: Dict[str, str], endpoint: str) -> 
     if (client is None or client.status != "active" or client.client_type not in ("confidential", "service")
             or client.token_endpoint_auth_method != "private_key_jwt" or not client.jwks):
         return None
-    iss = settings.OIDC_ISSUER
+    iss = tenant_issuer()
     auds = list({iss, iss.rstrip("/"), f"{iss.rstrip('/')}/oauth/{endpoint}"})
     try:
         decoded = jwt.decode(assertion, KeySet.import_key_set(client.jwks), algorithms=ALGS)

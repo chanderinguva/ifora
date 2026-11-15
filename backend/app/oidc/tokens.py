@@ -19,6 +19,7 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from backend.app.auth.authn import acr_for
+from backend.app.tenancy import issuer as tenant_issuer
 from backend.app.config import settings
 from backend.app.oidc import keys
 from backend.app.oidc.authorize import _h, now
@@ -161,7 +162,7 @@ def mint_access(db: Session, client: OIDCClient, *, sub: str, user_id: Optional[
         return raw
     ts = int(datetime.now(timezone.utc).timestamp())
     jwt_ = keys.sign_jwt(db, {
-        "iss": settings.OIDC_ISSUER, "sub": sub, "aud": aud, "client_id": client.client_id, "scope": " ".join(scopes),
+        "iss": tenant_issuer(), "sub": sub, "aud": aud, "client_id": client.client_id, "scope": " ".join(scopes),
         "iat": ts, "exp": ts + settings.OIDC_ACCESS_TOKEN_TTL_SECONDS, "jti": str(uuid.uuid4()), **claims,
     }, typ="at+jwt")
     return (jwt_, lambda: None) if defer else jwt_
@@ -171,12 +172,12 @@ def build_tokens(db: Session, client: OIDCClient, user: User, *, scopes, auth_ti
     t = int(datetime.now(timezone.utc).timestamp())
     tenant = db.get(Tenant, user.tenant_id)
     auth_ts = int(auth_time.timestamp())
-    access, store_access = mint_access(db, client, sub=user.public_id, user_id=user.id, aud=settings.OIDC_ISSUER,  # no resource registry yet
+    access, store_access = mint_access(db, client, sub=user.public_id, user_id=user.id, aud=tenant_issuer(),  # no resource registry yet
                                        scopes=scopes, auth_time=auth_time, claims={"auth_time": auth_ts, "tenant": tenant.slug if tenant else None},
                                        defer=True)
     idc = {
         **user_claims(db, user, list(scopes)),
-        "iss": settings.OIDC_ISSUER, "aud": client.client_id, "iat": t, "exp": t + settings.OIDC_ID_TOKEN_TTL_SECONDS,
+        "iss": tenant_issuer(), "aud": client.client_id, "iat": t, "exp": t + settings.OIDC_ID_TOKEN_TTL_SECONDS,
         "auth_time": auth_ts, "amr": list(amr), "acr": acr_for(list(amr)), "at_hash": _at_hash(access),
     }
     if nonce:

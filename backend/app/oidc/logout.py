@@ -15,6 +15,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from sqlalchemy.orm import Session
 
 from backend.app.config import settings
+from backend.app.tenancy import issuer as tenant_issuer
 from backend.app.oidc import keys
 from backend.app.oidc.models import OIDCClient
 
@@ -53,7 +54,7 @@ def resolve(db: Session, p: dict) -> Plan:
         candidate = db.query(OIDCClient).filter(OIDCClient.client_id == aud).first() if aud else None
         if candidate is not None and candidate.status == "active":
             try:
-                claims = keys.verify_jwt(db, hint, issuer=settings.OIDC_ISSUER, audience=candidate.client_id, allow_expired=True)
+                claims = keys.verify_jwt(db, hint, issuer=tenant_issuer(), audience=candidate.client_id, allow_expired=True)
                 client, sub = candidate, claims.get("sub")
             except (keys.TokenError, keys.KeyConfigError):
                 client = None

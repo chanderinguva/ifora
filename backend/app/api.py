@@ -2,6 +2,8 @@
 
 import logging
 
+from starlette.concurrency import run_in_threadpool
+
 from fastapi import FastAPI
 from starlette.exceptions import HTTPException   # the base class, so unknown routes and 405s are covered too
 
@@ -28,6 +30,38 @@ class _AppCORS(CORSMiddleware):
         if scope["type"] == "http" and scope["path"].startswith(OIDC_PUBLIC_PREFIXES):
             return await self.app(scope, receive, send)
         return await super().__call__(scope, receive, send)
+
+
+class TenantIssuerMiddleware:
+    """Multi-tenant mode: resolve the tenant from the Host header once per request, bind its issuer for the handlers
+    (tenancy.issuer()) and answer 404 for an unknown host before any route runs. Single-tenant mode: a no-op. Only the
+    Host header is read; X-Forwarded-Host and friends are ignored."""
+
+    OPEN_PATHS = ("/health",)  # probes carry arbitrary Host headers
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or settings.TENANT_RESOLUTION != "host" or scope["path"] in self.OPEN_PATHS:
+            return await self.app(scope, receive, send)
+        from starlette.responses import JSONResponse as _J
+
+        from backend.app.tenancy import TenantNotResolved, reset_request_issuer, resolve_tenant, set_request_issuer
+
+        host = next((v.decode("latin-1") for k, v in scope["headers"] if k == b"host"), None)
+        try:
+            _, iss = await run_in_threadpool(resolve_tenant, host)
+        except TenantNotResolved:
+            return await _J({"detail": "Not found"}, status_code=404)(scope, receive, send)
+        except Exception:  # noqa: BLE001 - a resolver fault must never fall back to another tenant
+            logging.getLogger(__name__).exception("tenant resolution failed")
+            return await _J({"detail": "Service temporarily unavailable"}, status_code=503)(scope, receive, send)
+        token = set_request_issuer(iss)
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            reset_request_issuer(token)
 
 
 def create_app() -> FastAPI:
@@ -78,6 +112,8 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Content-Type", "Authorization", "X-CSRF-Token"],
     )
+
+    app.add_middleware(TenantIssuerMiddleware)  # outermost: every handler sees the tenant's issuer, unknown hosts end here
 
     # Health check endpoint
     from backend.app.metrics import router as metrics_router

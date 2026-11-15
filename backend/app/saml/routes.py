@@ -23,6 +23,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.app import ratelimit
+from backend.app.tenancy import issuer as tenant_issuer
 from backend.app.applications.entitlement import application_denied
 from backend.app.applications.models import Application
 from backend.app.audit.model import AuditAction
@@ -417,7 +418,7 @@ def provider_dict(db: Session, p: SamlProvider) -> dict:
         "sp_entity_id": p.sp_entity_id, "acs_url": p.acs_url, "audience": p.audience, "name_id_format": p.name_id_format, "name_id_attribute": p.name_id_attribute, "signing": p.signing,
         "attribute_mappings": p.attribute_mappings, "has_sp_cert": bool(p.sp_cert), "sp_cert": p.sp_cert,
         "require_signed_requests": p.require_signed_requests, "default_relay_state": p.default_relay_state, "validity_seconds": p.validity_seconds,
-        "idp": {"entity_id": P.idp_entity_id(), "sso_url": P.sso_url(), "metadata_url": settings.OIDC_ISSUER.rstrip("/") + "/saml/metadata",
+        "idp": {"entity_id": P.idp_entity_id(), "sso_url": P.sso_url(), "metadata_url": tenant_issuer().rstrip("/") + "/saml/metadata",
                 "certificate_fingerprint_sha256": keys.fingerprint(cert), "certificate_pem": cert},
     }
 
@@ -434,7 +435,7 @@ def get_saml(app_id: int, db: Session = Depends(get_db), _: User = Depends(requi
     _app(db, app_id)
     p = db.query(SamlProvider).filter(SamlProvider.application_id == app_id).first()
     out = {"configured": p is not None, "provider": provider_dict(db, p) if p else None,
-           "idp": {"entity_id": P.idp_entity_id(), "sso_url": P.sso_url(), "metadata_url": settings.OIDC_ISSUER.rstrip("/") + "/saml/metadata"}}
+           "idp": {"entity_id": P.idp_entity_id(), "sso_url": P.sso_url(), "metadata_url": tenant_issuer().rstrip("/") + "/saml/metadata"}}
     db.commit()
     return out
 
