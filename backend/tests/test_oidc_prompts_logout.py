@@ -230,10 +230,32 @@ def test_logout_requires_csrf_when_a_session_exists(db, super_admin, user_api):
     assert user_api.get("/me").status_code == 200                                   # a forged cross-site POST cannot sign anyone out
 
 
-def test_refresh_tokens_survive_logout_by_design(db, super_admin, user_api):
+def test_logout_revokes_that_clients_refresh_tokens(db, super_admin, user_api):
+    """IFORA-24 AC3: after RP-initiated logout the refresh token answers invalid_grant."""
     c = mk(super_admin)
     t = exchange(user_api, c, get_code(user_api, c, scope="openid offline_access")).json()
-    user_api.post("/oidc/logout", body(id_token_hint=t["id_token"]))
+    r = user_api.post("/oidc/logout", body(id_token_hint=t["id_token"]))
+    assert r.status_code == 200
+    out = refresh(Api(), c, t["refresh_token"])
+    assert out.status_code == 400 and out.json()["error"] == "invalid_grant"
+    ev = db.query(AuditEvent).filter(AuditEvent.action == "OIDC_LOGOUT").one()
+    assert ev.event_metadata["refresh_tokens_revoked"] == 1
+
+
+def test_logout_leaves_another_clients_refresh_tokens_alone(db, super_admin, user_api):
+    c1 = mk(super_admin)
+    c2 = mk(super_admin, name="Other")
+    t1 = exchange(user_api, c1, get_code(user_api, c1, scope="openid offline_access")).json()
+    t2 = exchange(user_api, c2, get_code(user_api, c2, scope="openid offline_access")).json()
+    user_api.post("/oidc/logout", body(id_token_hint=t1["id_token"]))
+    assert refresh(Api(), c1, t1["refresh_token"]).status_code == 400
+    assert refresh(Api(), c2, t2["refresh_token"]).status_code == 200
+
+
+def test_logout_without_an_identified_client_revokes_no_refresh_tokens(db, super_admin, user_api):
+    c = mk(super_admin)
+    t = exchange(user_api, c, get_code(user_api, c, scope="openid offline_access")).json()
+    user_api.post("/oidc/logout", body())  # signs the browser out, names no application
     assert refresh(Api(), c, t["refresh_token"]).status_code == 200
 
 
@@ -241,3 +263,4 @@ def test_discovery_advertises_logout_and_prompts(anon):
     d = anon.c.get("/.well-known/openid-configuration").json()
     assert d["end_session_endpoint"].endswith("/oauth/logout") and "login" in d["prompt_values_supported"]
     assert "urn:identityforge:acr:2" in d["acr_values_supported"]
+    assert d["revocation_endpoint"].endswith("/oauth/revoke")

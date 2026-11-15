@@ -163,6 +163,8 @@ def discovery(db: Session = Depends(get_db)):
         "claims_supported": ["sub", "iss", "aud", "exp", "iat", "auth_time", "nonce", "amr", "acr", "at_hash", "name", "given_name",
                              "family_name", "preferred_username", "zoneinfo", "locale", "updated_at", "email", "groups"],
         "authorization_response_iss_parameter_supported": True,
+        "revocation_endpoint": f"{iss}/oauth/revoke",
+        "revocation_endpoint_auth_methods_supported": ["client_secret_basic", "private_key_jwt", "none"],
         "introspection_endpoint": f"{iss}/oauth/introspect",
         "introspection_endpoint_auth_methods_supported": ["client_secret_basic", "private_key_jwt"],
         "end_session_endpoint": f"{iss}/oauth/logout",

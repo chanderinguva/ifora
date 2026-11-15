@@ -2,8 +2,9 @@
 
 A relying party may only send the user's browser back to a post-logout URI it registered (exact match), and may only
 identify itself with an ID token WE signed (expired is fine) or its client_id. The user is always asked to confirm on
-our own page, so a hostile site cannot silently sign people out. Refresh tokens (offline access) survive logout by
-design; withdrawing access is the Connected applications page.
+our own page, so a hostile site cannot silently sign people out. When the client is identified (valid ID token hint,
+or client_id) and the hint names the signed-in user, that client's refresh tokens are revoked with the session
+(IFORA-24). Other applications' tokens are untouched; withdrawing those is the Connected applications page.
 """
 
 import base64
