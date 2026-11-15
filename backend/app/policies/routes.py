@@ -243,5 +243,5 @@ def simulate_policy(app_id: int, body: SimulateBody, db: Session = Depends(get_d
         d = engine.evaluate(db, app_id, user, session, body.source_ip, policy=draft)
         out["draft_policy"] = {"configured": True, **{k: getattr(draft, k) for k in ("require_mfa", "reauth_minutes", "allowed_zone_ids", "blocked_zone_ids")}}
         out["draft"] = _decision_dict(d)
-        out["changed"] = (d.kind, d.rule) != (stored_decision.kind, stored_decision.rule)
+        out["changed"] = d.kind != stored_decision.kind  # the outcome (allow / deny / reauth), not which rule produced it
     return out
