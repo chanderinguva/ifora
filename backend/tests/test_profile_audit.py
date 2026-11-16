@@ -96,7 +96,7 @@ def test_legacy_free_text_timezone_does_not_block_other_edits(db, member):
 def test_my_activity_shows_only_my_events(db, member, admin):
     r = member.get("/me/activity").json()["items"]
     assert r and r[0]["action"] == "LOGIN_SUCCESS" and r[0]["method"] == "password"
-    assert set(r[0]) == {"timestamp", "action", "ip_address", "method"}
+    assert set(r[0]) == {"timestamp", "action", "result", "ip_address", "device", "method"}
     mine = len(r)
     assert len(admin.get("/me/activity").json()["items"]) >= 1
     assert len(member.get("/me/activity").json()["items"]) == mine  # admin's events never appear

@@ -9,7 +9,7 @@ import { AppIcon } from "@/components/app-icon";
 import { http } from "@/lib/http";
 
 type Item = { id: number; name: string; description: string | null; has_icon: boolean; pending: boolean; reason_required: boolean };
-type Req = { id: number; application_name: string; reason: string | null; status: string; decision_note: string | null; created_at: string };
+type Req = { id: number; application_id: number; application_name: string; reason: string | null; status: string; decision_note: string | null; created_at: string; decided_at: string | null };
 const TONE: Record<string, "neutral" | "good" | "bad" | "info"> = { pending: "info", approved: "good", denied: "bad", canceled: "neutral" };
 
 /** Okta-style "add apps": things I could ask for, and where my requests stand. */
@@ -43,6 +43,15 @@ export default function RequestAccess() {
     catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not cancel" }); }
   }
 
+  // A denied or canceled request can be sent again with the same reason, if the app can still be requested.
+  function again(r: Req) {
+    setMsg(null);
+    setOpen(r.application_id);
+    setReason(r.reason ?? "");
+    requestAnimationFrame(() => document.getElementById(`why-${r.application_id}`)?.scrollIntoView({ block: "center" }));
+  }
+  const requestable = (id: number) => items?.some((a) => a.id === id && !a.pending) ?? false;
+
   return (
     <div className="max-w-4xl">
       <PageHeader title="Request access" />
@@ -73,8 +82,12 @@ export default function RequestAccess() {
             <ul className="divide-y text-sm" data-testid="my-requests">
               {reqs.map((r) => (
                 <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-                  <span><strong>{r.application_name}</strong> <Badge tone={TONE[r.status] ?? "neutral"}>{r.status}</Badge>{r.decision_note && <span className="ml-2 text-muted-foreground">“{r.decision_note}”</span>}</span>
-                  <span className="flex items-center gap-2 text-muted-foreground">{fmt(r.created_at)}{r.status === "pending" && <Button size="sm" variant="ghost" aria-label={`Cancel request for ${r.application_name}`} onClick={() => cancel(r)}>Cancel</Button>}</span>
+                  <span><strong>{r.application_name}</strong> <Badge tone={TONE[r.status] ?? "neutral"}>{r.status}</Badge>{r.decision_note ? <span className="ml-2 text-muted-foreground">“{r.decision_note}”</span> : r.status === "denied" ? <span className="ml-2 text-muted-foreground">No reason was given.</span> : null}</span>
+                  <span className="flex items-center gap-2 text-muted-foreground">
+                    {r.status === "pending" ? `Sent ${fmt(r.created_at)}` : r.decided_at ? `${r.status === "approved" ? "Approved" : r.status === "denied" ? "Denied" : "Closed"} ${fmt(r.decided_at)}` : fmt(r.created_at)}
+                    {r.status === "pending" && <Button size="sm" variant="ghost" aria-label={`Cancel request for ${r.application_name}`} onClick={() => cancel(r)}>Cancel</Button>}
+                    {(r.status === "denied" || r.status === "canceled") && requestable(r.application_id) && <Button size="sm" variant="outline" aria-label={`Request ${r.application_name} again`} onClick={() => again(r)}>Request again</Button>}
+                  </span>
                 </li>
               ))}
             </ul>

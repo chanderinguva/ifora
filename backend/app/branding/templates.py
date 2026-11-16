@@ -61,7 +61,7 @@ DEFAULTS: Dict[str, dict] = {
         "body": "Hello {{first_name}},\n\nYour account password was changed. If this was you, no action is needed.\n\nIf you did not make this change, contact your administrator immediately.\n",
     },
     "security_alert": {
-        "label": "Security activity alert", "category": "Security", "live": False,
+        "label": "Security activity alert", "category": "Security", "live": True,
         "required": (), "cta": "",
         "subject": "Security activity on your {{org_name}} account",
         "body": "Hello {{first_name}},\n\nA security event was recorded on your account: {{action}}\n\nTime: {{timestamp}}\nIP address: {{ip_address}}\n\nIf this was not you, contact your administrator immediately.\n",

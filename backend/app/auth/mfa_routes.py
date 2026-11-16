@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from backend.app import mailer, ratelimit
 from backend.app.audit.model import AuditAction
 from backend.app.audit.service import record
-from backend.app.auth import mfa, mfa_service
+from backend.app.auth import mfa, mfa_service, notify
 from backend.app.auth.deps import check_origin, get_session_and_user, require_admin
 from backend.app.auth.mfa_model import UserMFA
 from backend.app.auth.routes import complete_login
@@ -178,6 +178,7 @@ def mfa_enable(body: CodeOnly, request: Request, ctx=Depends(get_session_and_use
     revoked = revoke_user_sessions(db, user.id, except_id=session.id)
     record(db, AuditAction.MFA_ENABLED, request, user, user.id, "user", {"other_sessions_revoked": revoked})
     db.commit()
+    notify.notify(db, user, "Authenticator app turned on", request.client.host if request.client else "")
     return {"enabled": True, "recovery_codes": codes}
 
 
@@ -189,6 +190,9 @@ def mfa_disable(
     _reauth(user, body.password, request)
     if user.mfa is None or not user.mfa.enabled:
         raise HTTPException(status_code=409, detail="MFA is not enabled")
+    if settings.ADMIN_MFA_REQUIRED and user.is_admin and not user.passkeys:
+        # the policy needs one factor; removing the last would lock this admin out of everything but their own account
+        raise HTTPException(status_code=409, detail="Your organisation requires a second factor for administrators. Add a passkey before removing the authenticator app.")
     if mfa_service.verify_second_factor(db, user, body.code) is None:
         db.rollback()
         mfa_failed(request, user)
@@ -197,6 +201,7 @@ def mfa_disable(
     revoked = revoke_user_sessions(db, user.id, except_id=session.id)
     record(db, AuditAction.MFA_DISABLED, request, user, user.id, "user", {"other_sessions_revoked": revoked})
     db.commit()
+    notify.notify(db, user, "Authenticator app turned off", request.client.host if request.client else "")
     return {"enabled": False}
 
 
@@ -216,6 +221,7 @@ def mfa_regenerate(
     revoked = revoke_user_sessions(db, user.id, except_id=session.id)  # a stolen cookie must not outlive the rotation
     record(db, AuditAction.MFA_RECOVERY_REGENERATED, request, user, user.id, "user", {"other_sessions_revoked": revoked})
     db.commit()
+    notify.notify(db, user, "Recovery codes regenerated", request.client.host if request.client else "")
     return {"recovery_codes": codes}
 
 

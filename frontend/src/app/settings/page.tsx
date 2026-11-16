@@ -14,6 +14,7 @@ import { Badge, PageHeader, fmt } from "@/components/bits";
 import { MfaCard } from "@/components/mfa-card";
 import { ConnectedAppsCard } from "@/components/connected-apps-card";
 import { PasskeyCard } from "@/components/passkey-card";
+import { SessionsCard } from "@/components/sessions-card";
 import { LocaleSelect, TimezoneSelect } from "@/components/pref-selects";
 import { setDisplayPrefs } from "@/lib/display";
 import { useCurrentUser } from "@/components/auth-guard";
@@ -23,15 +24,14 @@ import { compact, useDirty } from "@/lib/use-dirty";
 import { SaveButton } from "@/components/save-button";
 import type { User } from "@/lib/types";
 
-type SessionRow = { id: number; created_at: string; expires_at: string; current: boolean; ip_address: string | null; user_agent: string | null };
-
-
-type ActivityRow = { timestamp: string; action: string; ip_address: string | null; method: string | null };
+type ActivityRow = { timestamp: string; action: string; result: "success" | "failure"; ip_address: string | null; device: string | null; method: string | null };
 const ACTIVITY_LABEL: Record<string, string> = {
   LOGIN_SUCCESS: "Signed in", LOGIN_FAILURE: "Failed sign-in", LOGOUT: "Signed out", USER_PASSWORD_CHANGED: "Password changed",
   MFA_ENABLED: "Authenticator app added", MFA_DISABLED: "Authenticator app removed", MFA_RESET: "Sign-in factors reset",
   MFA_RECOVERY_USED: "Recovery code used", MFA_CHALLENGE_FAILED: "Failed second factor", PASSKEY_REGISTERED: "Passkey added",
   PASSKEY_REMOVED: "Passkey removed", PASSKEY_LOGIN_FAILED: "Failed passkey sign-in", ROLE_SWITCHED: "Switched role view",
+  MFA_RECOVERY_REGENERATED: "Recovery codes regenerated", PASSKEY_POLICY_CHANGED: "Passkey requirement changed",
+  SESSION_REVOKED: "Signed out another session", SESSIONS_REVOKED: "Signed out all other sessions",
 };
 
 export default function AccountSettings() {
@@ -39,7 +39,7 @@ export default function AccountSettings() {
   const [me, setMe] = useState<User | null>(null);
   const [names, setNames] = useState({ first_name: "", last_name: "" });
   const [attrs, setAttrs] = useState<Record<string, string>>({});
-  const [sessions, setSessions] = useState<SessionRow[]>([]);
+  const [sessionsKey, setSessionsKey] = useState(0);
   const [activity, setActivity] = useState<ActivityRow[]>([]);
   const [pw, setPw] = useState({ current_password: "", new_password: "" });
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -52,16 +52,20 @@ export default function AccountSettings() {
     setNames({ first_name: u.first_name, last_name: u.last_name });
     setAttrs(Object.fromEntries((u.editable_attributes ?? []).map((k) => [k, fromApi(u.profile_attributes?.[k])])));
   };
-  const loadSessions = () => http<{ items: SessionRow[] }>("/me/sessions").then((r) => setSessions(r.items)).catch(() => {});
+  const loadSessions = () => setSessionsKey((k) => k + 1);
+  const loadActivity = () => http<{ items: ActivityRow[] }>("/me/activity").then((r) => setActivity(r.items)).catch(() => {});
 
   useEffect(() => {
     http<User>("/me/profile").then(apply).catch((e) => setMsg({ ok: false, text: e.message }));
-    loadSessions();
-    http<{ items: ActivityRow[] }>("/me/activity").then((r) => setActivity(r.items)).catch(() => {});
+    loadActivity();
+    window.addEventListener("activity-changed", loadActivity);
     // the factor cards announce changes so the "setup required" banner clears right after enrolling
     const refresh = () => http<User>("/me/profile").then((u) => setMe((m) => (m ? { ...m, mfa_setup_required: u.mfa_setup_required, enrollment_code_by_email: u.enrollment_code_by_email, mfa_enabled: u.mfa_enabled, passkey_count: u.passkey_count } : u))).catch(() => {});
     window.addEventListener("factors-changed", refresh);
-    return () => window.removeEventListener("factors-changed", refresh);
+    return () => {
+      window.removeEventListener("factors-changed", refresh);
+      window.removeEventListener("activity-changed", loadActivity);
+    };
   }, []);
 
   async function run(fn: () => Promise<unknown>, ok: string) {
@@ -206,9 +210,9 @@ export default function AccountSettings() {
             <ul className="space-y-2 text-sm" data-testid="activity">
               {activity.map((a, i) => (
                 <li key={i} className="flex flex-wrap items-center gap-2">
-                  <Badge tone={a.action.endsWith("FAILURE") || a.action.endsWith("FAILED") ? "bad" : "neutral"}>{ACTIVITY_LABEL[a.action] ?? a.action}</Badge>
+                  <Badge tone={a.result === "failure" ? "bad" : "neutral"}>{ACTIVITY_LABEL[a.action] ?? a.action}</Badge>
                   <span>{fmt(a.timestamp)}</span>
-                  <span className="text-muted-foreground">· {a.ip_address ?? "unknown IP"}{a.method ? ` · ${a.method}` : ""}</span>
+                  <span className="text-muted-foreground">· {a.device ? `${a.device} · ` : ""}{a.ip_address ?? "unknown IP"}{a.method ? ` · ${a.method}` : ""}</span>
                 </li>
               ))}
             </ul>
@@ -217,20 +221,7 @@ export default function AccountSettings() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader><CardTitle>Active sessions</CardTitle></CardHeader>
-        <CardContent>
-          <ul className="space-y-2 text-sm" data-testid="sessions">
-            {sessions.map((s) => (
-              <li key={s.id} className="flex flex-wrap items-center gap-2">
-                {s.current && <Badge tone="good">this device</Badge>}
-                <span>Signed in {fmt(s.created_at)}</span>
-                <span className="text-muted-foreground">· {s.ip_address ?? "unknown IP"} · expires {fmt(s.expires_at)}</span>
-              </li>
-            ))}
-          </ul>
-        </CardContent>
-      </Card>
+      <SessionsCard reloadKey={sessionsKey} />
     </div>
   );
 }

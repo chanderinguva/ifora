@@ -76,7 +76,8 @@ def test_new_catalog_does_not_claim_unwired_events(admin):
     assert items["invite"]["live"]
     assert items["reset"]["live"]
     assert items["mfa_enrollment"]["live"]
-    for key in ("email_verification", "account_unlock", "password_changed", "security_alert", "account_deactivated"):
+    assert items["security_alert"]["live"]  # IFORA-43: new-device and factor-change notices
+    for key in ("email_verification", "account_unlock", "password_changed", "account_deactivated"):
         assert not items[key]["live"]
     assert "code" in items["mfa_enrollment"]["required"]
     assert T.validate("Hi", "No {{code}}", "mfa_enrollment") is None

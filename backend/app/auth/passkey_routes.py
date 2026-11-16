@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from backend.app import ratelimit
 from backend.app.audit.model import AuditAction
 from backend.app.audit.service import record
-from backend.app.auth import mfa_service
+from backend.app.auth import mfa_service, notify
 from backend.app.auth import passkey_service as svc
 from backend.app.auth.deps import check_origin, get_session_and_user
 from backend.app.auth.mfa_routes import EnrolStart, _reauth, require_enrollment_code
@@ -147,6 +147,7 @@ def register_verify(
     mfa_service.clear_enrollment_code(user)
     record(db, AuditAction.PASSKEY_REGISTERED, request, user, user.id, "user", {"passkey_id": passkey.id, "name": passkey.name})
     db.commit()
+    notify.notify(db, user, "Passkey added", request.client.host if request.client else "")
     db.refresh(passkey)
     return passkey.to_dict()
 
@@ -175,10 +176,13 @@ def remove_passkey(
             status_code=409,
             detail=f"Turn off 'require a passkey' first: at least {MIN_PASSKEYS_FOR_POLICY} passkeys are needed while it is on",
         )
+    if settings.ADMIN_MFA_REQUIRED and user.is_admin and len(user.passkeys) <= 1 and not (user.mfa and user.mfa.enabled):
+        raise HTTPException(status_code=409, detail="Your organisation requires a second factor for administrators. Turn on the authenticator app before removing your last passkey.")
     db.delete(p)
     revoked = revoke_user_sessions(db, user.id, except_id=session.id)  # a factor was taken away: other sessions re-prove
     record(db, AuditAction.PASSKEY_REMOVED, request, user, user.id, "user", {"passkey_id": passkey_id, "other_sessions_revoked": revoked})
     db.commit()
+    notify.notify(db, user, "Passkey removed", request.client.host if request.client else "")
     return {"success": True}
 
 
