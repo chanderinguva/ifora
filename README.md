@@ -243,6 +243,22 @@ docker exec -w /app/backend ifora-api python -m pytest -q
 ```
 Tests use a separate `ifora_test` database.
 
+### Frontend unit tests (Vitest)
+```bash
+make test-web                   # or: cd frontend && npm run test:coverage
+cd frontend && npm run test:unit  # tests only, no coverage gate
+```
+Vitest and React Testing Library run in jsdom; specs are in `frontend/tests/unit`, with a small `fetch` route table in `helpers.ts` so no test touches a network. The coverage gate is **70% of lines across a named list of critical-flow files** (sign-in, session and CSRF handling in `http.ts`/`auth-client.ts`, the auth guard, step-up, navigation, the command palette, the first-run checklist, the sessions card, the roles page and the admin dashboard), set in `frontend/vitest.config.mts`. It is not a whole-app percentage: add a file to that list when it joins a critical flow. CI runs both commands in the `check-frontend` step.
+
+### Load tests (k6)
+```bash
+BASE_URL=http://localhost:8310 ADMIN_EMAIL=... ADMIN_PASSWORD=... make test-load
+# options: SCRIPTS="auth_flow userinfo"  USERS=20  VUS=20  RAMP=30s  DURATION=2m  P95_MS=...  MAX_ERROR_RATE=0.01
+```
+`scripts/load_test.sh` builds k6 from a digest-pinned image (`docker/load/k6.Dockerfile`; only Docker is needed), creates synthetic users and a public first-party OIDC client through the admin API (`tests/load/seed.py`), runs the scripts in `tests/load`, prints p95 per step and always removes what it created. `auth_flow.js` is login, `/oauth/authorize` with PKCE and the code exchange; `refresh.js` chains refresh-token rotations; `userinfo.js` calls `/oauth/userinfo`. The script refuses any `BASE_URL` that is not localhost unless `ALLOW_REMOTE=1`, and it never prints a token, code or password.
+
+Run it against a **disposable local stack**, not the demo or a live one: the administrator must not need MFA (`ADMIN_MFA_REQUIRED=false`), and the per-IP `RATE_LIMIT_AUTHORIZE_REQUESTS` has to be raised (k6 sends everything from one address). The thresholds are a regression guard measured on one local, one-worker container (userinfo p95 < 200 ms; error rate < 1%), not a capacity claim. This harness does not demonstrate any number of concurrent sessions on production hardware.
+
 ### Browser tests (Playwright)
 Specs live in `frontend/e2e`. They need the stack running and an existing super admin configured in `.env`; some specs are opt-in and need extra variables. See `docs/project/status.md` for the details.
 ```bash

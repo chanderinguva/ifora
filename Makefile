@@ -25,7 +25,7 @@ TRIVY ?= trivy
 GATES_ALL := lint-py lint-sh types-py secrets sast-bandit sast-semgrep deps-py test-backend lint-web types-web deps-web no-workflows image-pins
 GATES_FAST := lint-py lint-sh types-py secrets lint-web types-web no-workflows image-pins
 
-.PHONY: check check-fast hooks tools e2e images-scan lock $(GATES_ALL)
+.PHONY: check check-fast hooks tools e2e images-scan lock test-web test-load $(GATES_ALL)
 
 check:
 	@failed=""; \
@@ -133,6 +133,15 @@ types-web:
 deps-web:
 	@scripts/need.sh npm "brew install node"
 	cd $(FRONTEND) && npm audit --omit=dev --audit-level=high
+
+# Unit tests with coverage. Gate: 70% of lines across the named critical-flow files (frontend/vitest.config.mts).
+test-web:
+	@scripts/need.sh npm "brew install node"
+	cd $(FRONTEND) && npm run test:coverage
+
+# Load tests (k6 from a pinned image) against a LOCAL disposable stack. See README "Load tests".
+test-load:
+	scripts/load_test.sh
 
 # ---- Policy: no hosted CI ---------------------------------------------------------------------------------------
 no-workflows:
