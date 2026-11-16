@@ -72,7 +72,7 @@ export function SessionsCard({ reloadKey = 0 }: { reloadKey?: number }) {
       </CardHeader>
       <CardContent>
         {msg && (
-          <Alert variant={msg.ok ? "success" : "destructive"} className="mb-3" role="status">
+          <Alert variant={msg.ok ? "success" : "destructive"} className="mb-3" role="status" data-testid="sessions-msg">
             <AlertDescription>{msg.text}</AlertDescription>
           </Alert>
         )}

@@ -26,14 +26,14 @@ test("sign out another device from account settings", async ({ page, browser }) 
     await page.getByRole("button", { name: /^Sign out Firefox/ }).first().click();
     await page.getByLabel(/Confirm your password/).fill("definitely-not-the-password");
     await page.getByTestId("session-reauth").getByRole("button", { name: "Sign out", exact: true }).click();
-    await expect(page.getByRole("status")).toContainText(/password/i);
+    await expect(page.getByTestId("sessions-msg")).toContainText(/password/i);
     await expect(rows).toHaveCount(count);
 
     // the right one signs that device out
     const pw = process.env.ADMIN_PASSWORD ?? "";
     await page.getByLabel(/Confirm your password/).fill(pw);
     await page.getByTestId("session-reauth").getByRole("button", { name: "Sign out", exact: true }).click();
-    await expect(page.getByRole("status")).toContainText("signed out");
+    await expect(page.getByTestId("sessions-msg")).toContainText("signed out");
     await expect(rows).toHaveCount(count - 1);
 
     // the other device really lost its session
