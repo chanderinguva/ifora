@@ -169,6 +169,7 @@ def create_app() -> FastAPI:
     app.include_router(recovery_router, prefix="/api/v1")
 
     from backend.app.dashboard import router as dashboard_router
+    from backend.app.setup_checklist.routes import router as setup_checklist_router
     from backend.app.audit.routes import router as audit_router
     from backend.app.auth.mfa_routes import router as mfa_router
     from backend.app.auth.stepup import router as stepup_router
@@ -279,7 +280,7 @@ def create_app() -> FastAPI:
 
     app.include_router(search_router, prefix="/api/v1")
     app.include_router(slack_idea_router, prefix="/api/v1")
-    for r in (users_csv_router, users_router, groups_router, profiles_router, avatar_router, audit_router, dashboard_router, mfa_router, passkey_router, role_router, stepup_router):
+    for r in (users_csv_router, users_router, groups_router, profiles_router, avatar_router, audit_router, dashboard_router, setup_checklist_router, mfa_router, passkey_router, role_router, stepup_router):
         app.include_router(r, prefix="/api/v1")
 
     return app

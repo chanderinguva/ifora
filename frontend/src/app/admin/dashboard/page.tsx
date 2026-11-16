@@ -7,6 +7,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { PageHeader, fmt, mono, td, th } from "@/components/bits";
 import { http } from "@/lib/http";
 import { Badge } from "@/components/bits";
+import { SetupChecklist } from "@/components/setup-checklist";
+import { ADMIN_TASKS } from "@/lib/admin-tasks";
 import type { Stats } from "@/lib/types";
 
 type Task = { id: string; severity: "high" | "medium" | "info"; title: string; count: number; href: string };
@@ -110,6 +112,21 @@ export default function AdminDashboard() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
+
+      <SetupChecklist />
+
+      <section aria-label="Common tasks" className="mb-6" data-testid="quick-tasks">
+        <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {ADMIN_TASKS.map((t) => (
+            <li key={t.id}>
+              <Link href={t.href} className="block h-full rounded-xl border bg-card p-4 shadow-sm transition-colors hover:bg-accent/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" data-testid={`quick-${t.id}`}>
+                <span className="font-medium">{t.title}</span>
+                <span className="mt-1 block text-xs text-muted-foreground">{t.hint}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </section>
 
       <Card className="mb-6" data-testid="tasks">
         <CardHeader><CardTitle>Tasks</CardTitle></CardHeader>

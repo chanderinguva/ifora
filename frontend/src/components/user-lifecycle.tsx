@@ -55,7 +55,7 @@ export function UserLifecycle({ onPick, current }: { onPick: (status: string) =>
       {open && (
         <div id="lifecycle-body" className="border-t px-4 pb-4 pt-2">
           <div className="overflow-x-auto">
-            <svg viewBox="0 0 1040 420" role="img" aria-label="User status lifecycle" className="min-w-[840px] w-full text-muted-foreground" data-testid="lifecycle-chart">
+            <svg viewBox="0 0 1040 420" role="group" aria-label="User status lifecycle" className="min-w-[840px] w-full text-muted-foreground" data-testid="lifecycle-chart">
               <defs>
                 <marker id="lc-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
                   <path d="M0 0 L10 5 L0 10 z" fill="currentColor" />
@@ -76,12 +76,15 @@ export function UserLifecycle({ onPick, current }: { onPick: (status: string) =>
                 const w = n.w;
                 const on = current === n.s;
                 return (
-                  <g key={n.s} role="button" tabIndex={0} aria-pressed={on} aria-label={`${i.label}: ${i.hint}. Show these users`} data-testid={`lc-${n.s}`}
-                    className="cursor-pointer outline-none focus-visible:[&>rect]:stroke-[3]"
-                    onClick={() => onPick(on ? "" : n.s)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(on ? "" : n.s); } }}>
-                    <rect x={n.x} y={n.y} width={w} height={H} rx="10" strokeWidth={on ? 3 : 1.5} className={TONE[n.tone]} />
-                    <text x={n.x + w / 2} y={n.y + 22} textAnchor="middle" className="fill-foreground text-[13px] font-semibold">{i.label}</text>
-                    <text x={n.x + w / 2} y={n.y + 40} textAnchor="middle" className="fill-muted-foreground text-[10px]">{n.hint}</text>
+                  <g key={n.s}>
+                    <g role="button" tabIndex={0} aria-pressed={on} aria-label={`${i.label}: ${i.hint}. Show these users`} data-testid={`lc-${n.s}`}
+                      className="cursor-pointer outline-none focus-visible:[&>rect]:stroke-[3]"
+                      onClick={() => onPick(on ? "" : n.s)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(on ? "" : n.s); } }}>
+                      <rect x={n.x} y={n.y} width={w} height={H} rx="10" strokeWidth={on ? 3 : 1.5} className={TONE[n.tone]} />
+                    </g>
+                    {/* drawn over the button but not part of it: the button's name is its aria-label, and clicks go through to the rect */}
+                    <text aria-hidden="true" pointerEvents="none" x={n.x + w / 2} y={n.y + 22} textAnchor="middle" className="fill-foreground text-[13px] font-semibold">{i.label}</text>
+                    <text aria-hidden="true" pointerEvents="none" x={n.x + w / 2} y={n.y + 40} textAnchor="middle" className="fill-muted-foreground text-[10px]">{n.hint}</text>
                   </g>
                 );
               })}

@@ -212,11 +212,11 @@ export function AppShell({ title, nav, children, personal = false }: { title: st
             {user.is_admin && !user.acting_as_user && !personal && (
               <button
                 className={cn(iconButton, "w-9 gap-2 bg-background text-sm sm:w-64 sm:justify-start sm:px-3 lg:w-96 xl:w-[28rem]")}
-                aria-label="Search" data-testid="open-search"
+                data-testid="open-search"
                 onClick={() => window.dispatchEvent(new Event("open-command-palette"))}>
                 <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
-                <span className="hidden truncate sm:inline">Search users, groups, apps</span>
-                <kbd className="ml-auto hidden rounded border bg-card px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground sm:inline">⌘K</kbd>
+                <span className="sr-only sm:not-sr-only sm:truncate">Search users, groups, apps</span>
+                <kbd aria-hidden="true" className="ml-auto hidden rounded border bg-card px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground sm:inline">⌘K</kbd>
               </button>
             )}
             <ThemeToggle />
