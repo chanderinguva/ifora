@@ -102,3 +102,10 @@ docs/
 docker/drone/.env.drone
 
 .ci/
+
+# unit-test coverage output (IFORA-59)
+frontend/coverage/
+
+# load harness (IFORA-59): synthetic fixture and run output
+tests/load/.fixture/
+tests/load/results/
