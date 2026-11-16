@@ -60,6 +60,7 @@ export default function UsersPage() {
   useEffect(() => {
     const st = new URLSearchParams(window.location.search).get("status");
     if (st) setStatus(st);
+    if (new URLSearchParams(window.location.search).get("new") === "1") setCreating(true); // the "Onboard a user" task opens the form
   }, []);
 
   useEffect(() => {

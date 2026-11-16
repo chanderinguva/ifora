@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 import { http } from "@/lib/http";
+import { matchTasks } from "@/lib/admin-tasks";
 import type { NavGroup } from "./sidebar-nav";
 
 type Hit = { kind: string; id?: number; title: string; subtitle?: string; href: string };
@@ -16,6 +17,7 @@ export function CommandPalette({ nav }: { nav: NavGroup[] }) {
   const [found, setFound] = useState<Hit[]>([]);
   const [active, setActive] = useState(0);
   const input = useRef<HTMLInputElement>(null);
+  const opener = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -28,7 +30,15 @@ export function CommandPalette({ nav }: { nav: NavGroup[] }) {
     return () => { window.removeEventListener("keydown", onKey); window.removeEventListener("open-command-palette", onOpen); };
   }, []);
 
-  useEffect(() => { if (open) { setQ(""); setFound([]); setActive(0); setTimeout(() => input.current?.focus(), 0); } }, [open]);
+  useEffect(() => {
+    if (open) {
+      opener.current = document.activeElement as HTMLElement | null; // give focus back to whatever opened the palette
+      setQ(""); setFound([]); setActive(0); setTimeout(() => input.current?.focus(), 0);
+    } else if (opener.current) {
+      opener.current.focus?.();
+      opener.current = null;
+    }
+  }, [open]);
 
   useEffect(() => {
     const term = q.trim();
@@ -44,7 +54,8 @@ export function CommandPalette({ nav }: { nav: NavGroup[] }) {
     () => nav.flatMap((g) => g.items).filter((i) => !q.trim() || i.label.toLowerCase().includes(q.trim().toLowerCase())).map((i) => ({ kind: "page", title: i.label, href: i.href })),
     [nav, q],
   );
-  const all = [...pages, ...found];
+  const tasks: Hit[] = useMemo(() => matchTasks(q).map((t) => ({ kind: "task", id: undefined, title: t.title, subtitle: t.hint, href: t.href })), [q]);
+  const all = [...tasks, ...pages, ...found];
   useEffect(() => setActive(0), [q, found.length]);
 
   const go = (h?: Hit) => { if (h) { setOpen(false); router.push(h.href); } };
@@ -57,17 +68,18 @@ export function CommandPalette({ nav }: { nav: NavGroup[] }) {
           <Search className="h-4 w-4 text-muted-foreground" />
           <input
             ref={input} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search users, groups, applications, recipes… or jump to a page"
-            className="h-12 w-full bg-transparent text-sm outline-none" aria-label="Search"
+            className="h-12 w-full bg-transparent text-sm outline-none" aria-label="Search" role="combobox" aria-expanded="true" aria-controls="palette-results" aria-activedescendant={all.length ? `palette-opt-${active}` : undefined} aria-autocomplete="list"
             onKeyDown={(e) => {
               if (e.key === "ArrowDown") { e.preventDefault(); setActive((a) => Math.min(a + 1, all.length - 1)); }
               else if (e.key === "ArrowUp") { e.preventDefault(); setActive((a) => Math.max(a - 1, 0)); }
               else if (e.key === "Enter") go(all[active]);
+              else if (e.key === "Tab") e.preventDefault(); // the dialog has one tab stop; the arrow keys move through the results
             }}
           />
         </div>
-        <ul className="max-h-80 overflow-y-auto py-1" role="listbox">
+        <ul id="palette-results" className="max-h-80 overflow-y-auto py-1" role="listbox" aria-label="Results">
           {all.map((h, i) => (
-            <li key={`${h.kind}-${h.id ?? h.href}-${i}`} role="option" aria-selected={i === active}
+            <li key={`${h.kind}-${h.id ?? h.href}-${i}`} id={`palette-opt-${i}`} role="option" aria-selected={i === active}
               className={"flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm " + (i === active ? "bg-accent" : "")}
               onMouseEnter={() => setActive(i)} onClick={() => go(h)}>
               <span className="truncate">{h.title}{h.subtitle && <span className="ml-2 text-xs text-muted-foreground">{h.subtitle}</span>}</span>

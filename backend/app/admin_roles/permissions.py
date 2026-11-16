@@ -23,6 +23,7 @@ _AREAS = [
     ("/admin/audit", "reports"),
     ("/admin/stats", "overview"),
     ("/admin/dashboard", "overview"),
+    ("/admin/setup-checklist", "overview"),
     ("/admin/search", "overview"),
     ("/admin/features", "overview"),
     ("/admin/network-zones", "security"),
