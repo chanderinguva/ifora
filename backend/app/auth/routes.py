@@ -26,6 +26,7 @@ from backend.app.auth.deps import (
     get_session_and_user,
     set_session_cookie,
 )
+from backend.app.audit.service import DEVICE_ACTIONS, device_of
 from backend.app.audit.model import AuditEvent, AuditAction
 
 logger = structlog.get_logger(__name__)
@@ -74,6 +75,8 @@ async def log_audit(
     request: Optional[Request] = None,
 ) -> None:
     """Log audit event to database."""
+    if request is not None and getattr(action, "value", action) in DEVICE_ACTIONS:
+        metadata = {**(metadata or {}), "user_agent": device_of(request)}
     audit_event = AuditEvent(
         action=action,
         actor_id=actor_id,
@@ -141,6 +144,11 @@ async def complete_login(db: Session, request: Request, response: Response, user
     )
     db.add(session)
     db.commit()
+
+    from backend.app.auth import device, notify
+
+    if device.seen_before(user.id, session.user_agent) is False:
+        notify.notify(db, user, f"New sign-in from {device.label(session.user_agent)}", session.ip_address or "")
 
     set_session_cookie(response, session.raw_token, lifetime)
 

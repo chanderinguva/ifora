@@ -2,7 +2,7 @@
 
 from typing import Any, Dict
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
@@ -100,6 +100,9 @@ def change_password(
     revoked = revoke_user_sessions(db, user.id, except_id=session.id)
     record(db, AuditAction.USER_PASSWORD_CHANGED, request, user, user.id, "user", {"by": "self", "sessions_revoked": revoked})
     db.commit()
+    from backend.app.auth import notify
+
+    notify.notify(db, user, "Password changed", request.client.host if request.client else "")
     return {"success": True, "other_sessions_revoked": revoked}
 
 
@@ -107,15 +110,22 @@ def change_password(
 # rows, only these actions, and only fields that are safe to show them.
 _ACTIVITY = (
     "LOGIN_SUCCESS", "LOGIN_FAILURE", "LOGOUT", "USER_PASSWORD_CHANGED", "MFA_ENABLED", "MFA_DISABLED",
-    "MFA_RESET", "MFA_RECOVERY_USED", "MFA_CHALLENGE_FAILED", "PASSKEY_REGISTERED", "PASSKEY_REMOVED",
-    "PASSKEY_LOGIN_FAILED", "ROLE_SWITCHED",
+    "MFA_RESET", "MFA_RECOVERY_USED", "MFA_CHALLENGE_FAILED", "MFA_RECOVERY_REGENERATED", "PASSKEY_REGISTERED", "PASSKEY_REMOVED",
+    "PASSKEY_LOGIN_FAILED", "PASSKEY_POLICY_CHANGED", "SESSION_REVOKED", "SESSIONS_REVOKED", "ROLE_SWITCHED",
 )
+_FAILURES = {"LOGIN_FAILURE", "MFA_CHALLENGE_FAILED", "PASSKEY_LOGIN_FAILED"}
+
+
+def _no_store(response: Response) -> None:
+    response.headers["Cache-Control"] = "no-store"
 
 
 @router.get("/activity")
-def my_activity(limit: int = 20, ctx=Depends(get_session_and_user), db: Session = Depends(get_db)):
+def my_activity(response: Response, limit: int = 20, ctx=Depends(get_session_and_user), db: Session = Depends(get_db)):
     from backend.app.audit.model import AuditEvent
+    from backend.app.auth import device
 
+    _no_store(response)
     _, user, _ = ctx
     rows = (
         db.query(AuditEvent)
@@ -129,7 +139,9 @@ def my_activity(limit: int = 20, ctx=Depends(get_session_and_user), db: Session 
             {
                 "timestamp": r.timestamp.isoformat(),
                 "action": r.action,
+                "result": "failure" if r.action in _FAILURES else "success",
                 "ip_address": r.actor_ip_address,
+                "device": device.label((r.event_metadata or {}).get("user_agent")) if (r.event_metadata or {}).get("user_agent") else None,
                 "method": (r.event_metadata or {}).get("method"),
             }
             for r in rows
@@ -137,19 +149,64 @@ def my_activity(limit: int = 20, ctx=Depends(get_session_and_user), db: Session 
     }
 
 
+# ---- my sessions and devices -----------------------------------------------------------------------------------------
+
+
+class ReauthBody(BaseModel):
+    password: str = Field(..., max_length=128)
+
+
+def _own_active_sessions(db: Session, user: User):
+    return [s for s in db.query(AuthSession).filter(AuthSession.user_id == user.id, AuthSession.status == SessionStatus.ACTIVE.value)
+            .order_by(AuthSession.created_at.desc()).all() if not s.is_expired]
+
+
 @router.get("/sessions")
-def my_sessions(ctx=Depends(get_session_and_user), db: Session = Depends(get_db)):
+def my_sessions(response: Response, ctx=Depends(get_session_and_user), db: Session = Depends(get_db)):
+    """The caller's own live sessions. Each carries an opaque handle, never the database id; the current one is marked."""
+    from backend.app.auth import device
+
+    _no_store(response)
     session, user, _ = ctx
-    rows = (
-        db.query(AuthSession)
-        .filter(AuthSession.user_id == user.id, AuthSession.status == SessionStatus.ACTIVE.value)
-        .order_by(AuthSession.created_at.desc())
-        .all()
-    )
     return {
         "items": [
-            {**s.to_dict(), "current": s.id == session.id, "ip_address": s.ip_address, "user_agent": s.user_agent}
-            for s in rows
-            if not s.is_expired
+            {"handle": device.handle(user.id, s.id), "current": s.id == session.id, "device": device.label(s.user_agent),
+             "ip_address": s.ip_address, "created_at": s.created_at.isoformat(), "last_activity_at": s.last_activity_at.isoformat() if s.last_activity_at else None,
+             "expires_at": s.expires_at.isoformat()}
+            for s in _own_active_sessions(db, user)
         ]
     }
+
+
+@router.post("/sessions/revoke-others")
+def revoke_other_sessions(body: ReauthBody, request: Request, response: Response, ctx=Depends(get_session_and_user), db: Session = Depends(get_db)):
+    """Sign this account out everywhere except here. Needs the password again (throttled like the other account-security actions)."""
+    from backend.app.auth.mfa_routes import _reauth
+
+    _no_store(response)
+    session, user, _ = ctx
+    _reauth(user, body.password, request)
+    revoked = revoke_user_sessions(db, user.id, except_id=session.id)
+    record(db, AuditAction.SESSIONS_REVOKED, request, user, user.id, "user", {"count": revoked})
+    db.commit()
+    return {"revoked": revoked}
+
+
+@router.post("/sessions/{handle}/revoke")
+def revoke_session(handle: str, body: ReauthBody, request: Request, response: Response, ctx=Depends(get_session_and_user), db: Session = Depends(get_db)):
+    """Sign out one other session. A handle that is not this caller's live session is a 404, whoever it belongs to."""
+    from backend.app.auth import device
+    from backend.app.auth.mfa_routes import _reauth
+
+    _no_store(response)
+    session, user, _ = ctx
+    _reauth(user, body.password, request)
+    target = next((s for s in _own_active_sessions(db, user) if device.matches(handle, user.id, s.id)), None)
+    if target is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if target.id == session.id:
+        raise HTTPException(status_code=400, detail="This is the session you are using; sign out instead")
+    target.status = SessionStatus.REVOKED.value
+    record(db, AuditAction.SESSION_REVOKED, request, user, user.id, "user", {"device": device.label(target.user_agent), "ip": target.ip_address})
+    db.commit()
+    return {"revoked": 1}

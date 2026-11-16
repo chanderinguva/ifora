@@ -11,6 +11,18 @@ from backend.app.users.model import User
 _FORBIDDEN = {"password", "new_password", "current_password", "token", "secret"}
 
 
+# Actions shown in a person's own activity list: keep which browser did it (IFORA-43).
+DEVICE_ACTIONS = frozenset({
+    "LOGIN_SUCCESS", "LOGIN_FAILURE", "LOGOUT", "USER_PASSWORD_CHANGED", "MFA_ENABLED", "MFA_DISABLED", "MFA_RESET",
+    "MFA_RECOVERY_USED", "MFA_CHALLENGE_FAILED", "MFA_RECOVERY_REGENERATED", "PASSKEY_REGISTERED", "PASSKEY_REMOVED",
+    "PASSKEY_LOGIN_FAILED", "PASSKEY_POLICY_CHANGED", "SESSION_REVOKED", "SESSIONS_REVOKED",
+})
+
+
+def device_of(request) -> str:
+    return (request.headers.get("user-agent") or "")[:300]
+
+
 def record(
     db: Session,
     action: AuditAction,
@@ -22,6 +34,8 @@ def record(
 ) -> None:
     """Stage an audit event (no commit). Secrets in metadata are dropped."""
     safe = {k: v for k, v in (metadata or {}).items() if k.lower() not in _FORBIDDEN}
+    if request is not None and getattr(action, "value", action) in DEVICE_ACTIONS:
+        safe.setdefault("user_agent", device_of(request))
     db.add(
         AuditEvent(
             action=action,

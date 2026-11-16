@@ -62,11 +62,20 @@ def test_a_passkey_also_satisfies_the_policy(db, admin):
     assert admin.get("/admin/users").status_code == 200
 
 
-def test_disabling_mfa_regates_the_admin(db, admin):
+def test_an_admin_cannot_remove_their_last_required_factor(db, admin):
+    """IFORA-43: self-service refuses to drop the only factor the policy needs (it used to silently re-gate the admin)."""
     codes = enrol(admin, db, admin.user.email, give_code(db, admin.user))
     assert admin.get("/admin/users").status_code == 200
     r = admin.post("/me/mfa/disable", {"password": STRONG, "code": codes[0]})
-    assert r.status_code == 200, r.text
+    assert r.status_code == 409 and "second factor" in r.json()["detail"]
+    assert admin.get("/admin/users").status_code == 200  # nothing changed
+
+
+def test_losing_the_factor_regates_the_admin(db, admin):
+    """An operator or super admin resetting the factors still re-gates the admin until they re-enrol."""
+    enrol(admin, db, admin.user.email, give_code(db, admin.user))
+    mfa_service.remove_mfa(db, db.get(User, admin.user.id))
+    db.commit()
     assert admin.get("/admin/users").status_code == 403
 
 
@@ -109,8 +118,10 @@ def test_code_format_is_forgiving_but_wrong_password_still_fails(db, admin):
 def test_code_is_single_use(db, admin):
     code = give_code(db, admin.user)
     codes = enrol(admin, db, admin.user.email, code)
-    # lose the factor again: the old code must not work any more
-    admin.post("/me/mfa/disable", {"password": STRONG, "code": codes[0]})
+    # lose the factor again (an operator reset): the old code must not work any more
+    del codes
+    mfa_service.remove_mfa(db, db.get(User, admin.user.id))
+    db.commit()
     assert admin.post("/me/mfa/setup", {"password": STRONG, "enrollment_code": code}).status_code == 403
 
 
