@@ -129,6 +129,12 @@ def recipes_worker(interval: float = 2.0, once: bool = False, out=print) -> int:
             provisioning_worker.process_once()  # outbound provisioning to apps (ADR 009)
         except Exception:  # noqa: BLE001
             pass
+        try:
+            from backend.app.access_requests import worker as access_request_worker
+
+            access_request_worker.process_once()  # expire time-boxed grants, one reminder for stale requests (IFORA-37)
+        except Exception:  # noqa: BLE001
+            pass
         if not once and time.monotonic() - last_purge > 3600:  # housekeeping rides on the worker: SCIM retention, hourly
             last_purge = time.monotonic()
             try:

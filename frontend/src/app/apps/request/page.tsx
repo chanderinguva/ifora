@@ -8,9 +8,10 @@ import { Badge, PageHeader, fmt } from "@/components/bits";
 import { AppIcon } from "@/components/app-icon";
 import { http } from "@/lib/http";
 
-type Item = { id: number; name: string; description: string | null; has_icon: boolean; pending: boolean; reason_required: boolean };
-type Req = { id: number; application_id: number; application_name: string; reason: string | null; status: string; decision_note: string | null; created_at: string; decided_at: string | null };
-const TONE: Record<string, "neutral" | "good" | "bad" | "info"> = { pending: "info", approved: "good", denied: "bad", canceled: "neutral" };
+type Item = { id: number; name: string; description: string | null; has_icon: boolean; pending: boolean; reason_required: boolean; durations: number[] };
+type Req = { id: number; application_id: number; application_name: string; reason: string | null; status: string; decision_note: string | null; created_at: string; decided_at: string | null;
+  stage: number; stages_total: number; expires_at: string | null };
+const TONE: Record<string, "neutral" | "good" | "bad" | "info"> = { pending: "info", approved: "good", denied: "bad", canceled: "neutral", expired: "neutral" };
 
 /** Okta-style "add apps": things I could ask for, and where my requests stand. */
 export default function RequestAccess() {
@@ -18,6 +19,7 @@ export default function RequestAccess() {
   const [reqs, setReqs] = useState<Req[]>([]);
   const [open, setOpen] = useState<number | null>(null);
   const [reason, setReason] = useState("");
+  const [days, setDays] = useState("");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const started = useRef(false);
 
@@ -32,8 +34,8 @@ export default function RequestAccess() {
   async function submit(a: Item) {
     setMsg(null);
     try {
-      await http("/me/access/requests", { method: "POST", body: { application_id: a.id, reason } });
-      setOpen(null); setReason(""); setMsg({ ok: true, text: `Request for ${a.name} sent. You will see it under My apps once it is approved.` });
+      await http("/me/access/requests", { method: "POST", body: { application_id: a.id, reason, duration_days: a.durations.length ? Number(days) : null } });
+      setOpen(null); setReason(""); setDays(""); setMsg({ ok: true, text: `Request for ${a.name} sent. You will see it under My apps once it is approved.` });
       await load();
     } catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not send the request" }); }
   }
@@ -63,12 +65,18 @@ export default function RequestAccess() {
             <div className="flex items-center gap-3">
               <AppIcon path={`/me/access/catalog/${a.id}/icon`} name={a.name} hasIcon={a.has_icon} size={40} />
               <div className="min-w-0 flex-1"><div className="truncate font-medium">{a.name}</div>{a.description && <div className="line-clamp-2 text-xs text-muted-foreground">{a.description}</div>}</div>
-              {a.pending ? <Badge tone="info">Requested</Badge> : <Button size="sm" variant="outline" aria-label={`Request ${a.name}`} onClick={() => { setOpen(open === a.id ? null : a.id); setReason(""); }}>Request</Button>}
+              {a.pending ? <Badge tone="info">Requested</Badge> : <Button size="sm" variant="outline" aria-label={`Request ${a.name}`} onClick={() => { setOpen(open === a.id ? null : a.id); setReason(""); setDays(a.durations[0] ? String(a.durations[0]) : ""); }}>Request</Button>}
             </div>
             {open === a.id && (
               <form className="mt-3 space-y-2" onSubmit={(e) => { e.preventDefault(); submit(a); }}>
                 <label className="text-xs text-muted-foreground" htmlFor={`why-${a.id}`}>Why do you need it?{a.reason_required ? " (required)" : " (optional)"}</label>
                 <textarea id={`why-${a.id}`} className="w-full rounded-md border bg-background p-2 text-sm" rows={2} maxLength={500} required={a.reason_required} value={reason} onChange={(e) => setReason(e.target.value)} />
+                {a.durations.length > 0 && (<>
+                  <label className="block text-xs text-muted-foreground" htmlFor={`days-${a.id}`}>How long do you need it?</label>
+                  <select id={`days-${a.id}`} className="w-full rounded-md border bg-background p-2 text-sm" value={days} onChange={(e) => setDays(e.target.value)}>
+                    {a.durations.map((d) => <option key={d} value={d}>{d} days</option>)}
+                  </select>
+                </>)}
                 <Button type="submit" size="sm" data-testid="send-request">Send request</Button>
               </form>
             )}
@@ -84,7 +92,7 @@ export default function RequestAccess() {
                 <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
                   <span><strong>{r.application_name}</strong> <Badge tone={TONE[r.status] ?? "neutral"}>{r.status}</Badge>{r.decision_note ? <span className="ml-2 text-muted-foreground">“{r.decision_note}”</span> : r.status === "denied" ? <span className="ml-2 text-muted-foreground">No reason was given.</span> : null}</span>
                   <span className="flex items-center gap-2 text-muted-foreground">
-                    {r.status === "pending" ? `Sent ${fmt(r.created_at)}` : r.decided_at ? `${r.status === "approved" ? "Approved" : r.status === "denied" ? "Denied" : "Closed"} ${fmt(r.decided_at)}` : fmt(r.created_at)}
+                    {r.status === "pending" ? `Sent ${fmt(r.created_at)}${r.stages_total > 1 ? ` · step ${r.stage} of ${r.stages_total}` : ""}` : r.status === "approved" && r.expires_at ? `Approved, until ${fmt(r.expires_at)}` : r.decided_at ? `${r.status === "approved" ? "Approved" : r.status === "denied" ? "Denied" : "Closed"} ${fmt(r.decided_at)}` : fmt(r.created_at)}
                     {r.status === "pending" && <Button size="sm" variant="ghost" aria-label={`Cancel request for ${r.application_name}`} onClick={() => cancel(r)}>Cancel</Button>}
                     {(r.status === "denied" || r.status === "canceled") && requestable(r.application_id) && <Button size="sm" variant="outline" aria-label={`Request ${r.application_name} again`} onClick={() => again(r)}>Request again</Button>}
                   </span>
