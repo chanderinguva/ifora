@@ -32,6 +32,8 @@ class Policy:
     idle_timeout_minutes: int = 30
     email_otp_members: str = "off"  # off | allowed
     email_otp_admins: str = "off"  # off | allowed | required
+    push_members: str = "off"  # off | allowed
+    push_admins: str = "off"  # off | allowed | required
 
     def as_dict(self) -> dict:
         return asdict(self)

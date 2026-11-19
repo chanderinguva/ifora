@@ -34,6 +34,8 @@ class PolicyBody(BaseModel):
     idle_timeout_minutes: int = Field(..., ge=5, le=1440)
     email_otp_members: Optional[str] = Field(None, pattern="^(off|allowed)$")  # omitted = keep the current value
     email_otp_admins: Optional[str] = Field(None, pattern="^(off|allowed|required)$")
+    push_members: Optional[str] = Field(None, pattern="^(off|allowed)$")
+    push_admins: Optional[str] = Field(None, pattern="^(off|allowed|required)$")
 
 
 def _would_expire(db: Session, p: svc.Policy) -> int:
@@ -62,6 +64,11 @@ def write_policy(body: PolicyBody, request: Request, db: Session = Depends(get_d
 
         if not mailer.configured():
             raise HTTPException(status_code=422, detail="Set up outgoing email before requiring email codes")
+    if body.push_admins == "required":
+        from backend.app.auth import push_mfa
+
+        if not push_mfa.configured():
+            raise HTTPException(status_code=422, detail="Set up push notifications (VAPID keys) before requiring them")
     before = svc.get(db)
     values = {k: v for k, v in body.model_dump().items() if v is not None}
     values = {**before.as_dict(), **values}

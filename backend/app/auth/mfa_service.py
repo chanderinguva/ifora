@@ -115,6 +115,8 @@ def remove_mfa(db: Session, user: User) -> None:
         db.delete(user.mfa)
     if user.email_otp is not None:
         db.delete(user.email_otp)  # an admin reset (lost device) removes every extra factor
+    for d in list(user.push_devices):
+        db.delete(d)
 
 
 def reset_all_factors(db: Session, user) -> dict:

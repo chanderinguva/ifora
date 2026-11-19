@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import backref, relationship
 
 from backend.app.db import Base
@@ -50,6 +50,41 @@ class UserEmailOTP(TenantOwned, Base):
     created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
 
     user = relationship("User", backref=backref("email_otp", uselist=False, cascade="all, delete-orphan"))
+
+
+class PushDevice(TenantOwned, Base):
+    """A browser that can approve sign-ins (IFORA-77). `endpoint` is the Web Push URL the server wakes it through;
+    `secret_hash` authenticates the device itself when it answers (the secret is shown to the device once, never stored)."""
+
+    __tablename__ = "push_devices"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(80), nullable=False)
+    endpoint = Column(Text, nullable=False)
+    endpoint_hash = Column(String(64), nullable=False, unique=True)
+    secret_hash = Column(String(64), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+
+    user = relationship("User", backref=backref("push_devices", cascade="all, delete-orphan"))
+
+
+class PushChallenge(TenantOwned, Base):
+    """One push approval request, bound to one login (MFA) challenge; deleted with it. The number shown on the login screen is
+    `number`; the device is offered `choices` (the number and two decoys, shuffled) and must pick the matching one."""
+
+    __tablename__ = "push_challenges"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    mfa_challenge_id = Column(Integer, ForeignKey("mfa_challenges.id", ondelete="CASCADE"), nullable=False, unique=True)
+    number = Column(String(2), nullable=False)
+    choices = Column(JSON, nullable=False)
+    status = Column(String(10), nullable=False, default="pending")  # pending | approved | denied
+    requested_ip = Column(String(64), nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
 
 
 class MFARecoveryCode(TenantOwned, Base):
