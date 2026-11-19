@@ -16,6 +16,7 @@ import { SamlCard } from "@/components/saml-card";
 import { SwaCard } from "@/components/swa-card";
 import { AuthPolicyCard } from "@/components/auth-policy-card";
 import { SelfServiceCard } from "@/components/self-service-card";
+import { ApprovalPolicyCard } from "@/components/approval-policy-card";
 import { http, qs, type Page } from "@/lib/http";
 import { useDirty } from "@/lib/use-dirty";
 import { SaveButton } from "@/components/save-button";
@@ -131,6 +132,7 @@ export default function ApplicationDetail() {
       </Card>
 
       {app.sign_on_mode !== "none" && <SelfServiceCard appId={app.id} />}
+      {app.sign_on_mode !== "none" && <ApprovalPolicyCard appId={app.id} />}
 
       </>)}
 

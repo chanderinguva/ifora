@@ -245,7 +245,7 @@ def create_app() -> FastAPI:
     from backend.app.dashboard_prefs.routes import router as dashboard_prefs_router
 
     app.include_router(dashboard_prefs_router, prefix="/api/v1")
-    from backend.app.access_requests.routes import admin_router as access_admin, me_router as access_me, settings_router as access_settings
+    from backend.app.access_requests.routes import admin_router as access_admin, me_router as access_me, settings_router as access_settings, approvals_router as access_approvals
 
     app.include_router(access_admin, prefix="/api/v1")
     from backend.app.security_policy.routes import public_router as sec_public, router as sec_admin
@@ -254,6 +254,7 @@ def create_app() -> FastAPI:
     app.include_router(sec_public, prefix="/api/v1")
     app.include_router(access_settings, prefix="/api/v1")
     app.include_router(access_me, prefix="/api/v1")
+    app.include_router(access_approvals, prefix="/api/v1")
     app.include_router(admin_access_router, prefix="/api/v1")
 
     app.include_router(zones_router, prefix="/api/v1")

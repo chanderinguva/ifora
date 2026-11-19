@@ -48,7 +48,7 @@ export const ADMIN_NAV: NavGroup[] = [
 ];
 
 export const USER_NAV: NavGroup[] = [
-  { items: [{ href: "/dashboard", label: "Home", icon: Home }, { href: "/apps", label: "My apps", icon: LayoutGrid }, { href: "/apps/request", label: "Request access", icon: KeyRound }] },
+  { items: [{ href: "/dashboard", label: "Home", icon: Home }, { href: "/apps", label: "My apps", icon: LayoutGrid }, { href: "/apps/request", label: "Request access", icon: KeyRound }, { href: "/apps/approvals", label: "Approvals", icon: Inbox }] },
   { label: "Account", items: [{ href: "/settings", label: "Account settings", icon: Settings }] },
 ];
 

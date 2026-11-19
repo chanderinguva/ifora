@@ -66,3 +66,53 @@ test("a user requests an app, an administrator approves it, and it appears under
     if (user?.id) await api(page, "DELETE", `/admin/users/${user.id}`);
   }
 });
+
+test("a two-stage policy: the owner then a group member approve, and only then does the app appear", async ({ page }) => {
+  const tag = Date.now();
+  const name = `Staged app ${tag}`;
+  const email = (who: string) => `${who}.${tag}@example.com`;
+  await loginAsAdmin(page);
+  const mk = async (who: string) => (await api(page, "POST", "/admin/users", { email: email(who), first_name: who, last_name: `T${tag}`, password: USER_PASSWORD })).json;
+  const [requester, owner, second] = [await mk("req"), await mk("own"), await mk("sec")];
+  const group = (await api(page, "POST", "/admin/groups", { name: `Approvers ${tag}` })).json;
+  await api(page, "POST", `/admin/groups/${group.id}/members`, { user_id: second.id });
+  const app = (await api(page, "POST", "/admin/applications", { name, sign_on_mode: "bookmark", launch_url: "https://example.com/e2e", owner_user_id: owner.id })).json;
+  await api(page, "PUT", `/admin/applications/${app.id}/self-service`, { enabled: true, reason_required: false });
+  expect((await api(page, "PUT", `/admin/applications/${app.id}/approval-policy`, { stages: [{ kind: "owner" }, { kind: "group", group_id: group.id }], durations: [7], timeout_hours: 24 })).status).toBe(200);
+  await logout(page);
+
+  await login(page, email("req"), USER_PASSWORD);
+  await expect(page).toHaveURL(/\/dashboard/);
+  await page.goto("/apps/request");
+  await page.getByRole("button", { name: `Request ${name}` }).click();
+  await page.getByLabel("How long do you need it?").selectOption("7");
+  await page.getByTestId("send-request").click();
+  await expect(page.getByTestId("my-requests")).toContainText("step 1 of 2");
+  await logout(page);
+
+  await login(page, email("own"), USER_PASSWORD);
+  await expect(page).toHaveURL(/\/dashboard/);
+  await page.goto("/apps/approvals");
+  await page.getByRole("button", { name: new RegExp(`Approve ${name} for`) }).click();
+  await expect(page.getByTestId("no-approvals")).toBeVisible();
+  await logout(page);
+
+  await login(page, email("sec"), USER_PASSWORD);
+  await expect(page).toHaveURL(/\/dashboard/);
+  await page.goto("/apps/approvals");
+  await expect(page.getByTestId("approvals")).toContainText("Stage 2 of 2");
+  await page.getByRole("button", { name: new RegExp(`Approve ${name} for`) }).click();
+  await expect(page.getByTestId("no-approvals")).toBeVisible();
+  await logout(page);
+
+  await login(page, email("req"), USER_PASSWORD);
+  await expect(page).toHaveURL(/\/dashboard/);
+  await page.goto("/apps");
+  await expect(page.getByRole("button", { name: `Open ${name}` })).toBeVisible();
+  await logout(page);
+
+  await loginAsAdmin(page);
+  for (const u of [requester, owner, second]) await api(page, "DELETE", `/admin/users/${u.id}`);
+  await api(page, "DELETE", `/admin/applications/${app.id}`);
+  await api(page, "DELETE", `/admin/groups/${group.id}`);
+});
