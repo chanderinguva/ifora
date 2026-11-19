@@ -1,0 +1,14 @@
+key: pagerduty
+name: PagerDuty
+category: operations
+description: Provision PagerDuty users through SCIM, and use the PagerDuty connector in recipes.
+connector: pagerduty
+sign_on: none
+provisioning: {preset: scim-bearer}
+fields:
+  - {key: base_url, label: SCIM base URL, help: "An https URL from PagerDuty's SSO and SCIM settings.", placeholder: "https://scim.example.com/v2"}
+  - {key: secret, label: SCIM API token, secret: true}
+checklist:
+  - Use Test connection on the provisioning tab.
+  - Assign users or groups, then enable provisioning.
+  - Optionally add a PagerDuty connection under Automation for recipe actions.

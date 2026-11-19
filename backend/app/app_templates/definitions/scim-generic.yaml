@@ -1,0 +1,12 @@
+key: scim-generic
+name: SCIM 2.0 application
+category: generic
+description: Push users to any application with a SCIM 2.0 endpoint that accepts an API token. No single sign-on.
+sign_on: none
+provisioning: {preset: scim-bearer}
+fields:
+  - {key: base_url, label: SCIM base URL, help: "An https URL from the application's SCIM settings.", placeholder: "https://app.example.com/scim/v2"}
+  - {key: secret, label: SCIM API token, secret: true}
+checklist:
+  - Use Test connection on the provisioning tab.
+  - Review the attribute mapping, assign users or groups, then enable provisioning.

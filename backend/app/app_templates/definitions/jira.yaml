@@ -1,0 +1,14 @@
+key: jira
+name: Jira
+category: project-management
+description: Provision Atlassian accounts through SCIM, and use the Jira connector in recipes.
+connector: jira
+sign_on: none
+provisioning: {preset: scim-bearer}
+fields:
+  - {key: base_url, label: SCIM base URL, help: "An https URL from Atlassian's user provisioning settings.", placeholder: "https://api.atlassian.com/scim/directory/your-directory-id"}
+  - {key: secret, label: SCIM API token, secret: true}
+checklist:
+  - Use Test connection on the provisioning tab.
+  - Assign users or groups, then enable provisioning.
+  - Optionally add a Jira connection under Automation for recipe actions.

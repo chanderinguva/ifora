@@ -39,4 +39,6 @@ export function appBody(a: Pick<AppSummary, "name" | "description" | "sign_on_mo
   };
 }
 
+export type AppTemplate = { key: string; name: string; category: string; description: string; connector: string | null; sign_on: "oidc" | "saml" | "none"; oidc_type: string | null; provisioning: boolean;
+  fields: { key: string; label: string; help: string; placeholder: string; secret: boolean }[]; checklist: string[] };
 export type Template = { id: string; label: string; description: string; client_type: string; needs_redirects: boolean; has_secret: boolean };

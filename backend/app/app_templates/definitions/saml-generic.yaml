@@ -1,0 +1,13 @@
+key: saml-generic
+name: SAML 2.0 application
+category: generic
+description: Any application that supports SAML single sign-on. Assertions are signed and audience-restricted to the entity ID you enter.
+sign_on: saml
+saml: {name_id_format: email, signing: both}
+fields:
+  - {key: sp_entity_id, label: Service provider entity ID, help: "From the application's SAML settings.", placeholder: "https://app.example.com/saml/metadata"}
+  - {key: acs_url, label: ACS URL, help: "Where the application receives the SAML response. Exact match only.", placeholder: "https://app.example.com/saml/acs"}
+checklist:
+  - Give the application Ifora's metadata URL or certificate (see the SAML tab).
+  - Upload the application's certificate if it signs requests.
+  - Assign users or groups, then enable the application.

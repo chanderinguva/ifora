@@ -1,0 +1,14 @@
+key: github
+name: GitHub
+category: devtools
+description: Manage GitHub Enterprise membership through SCIM, and use the GitHub connector in recipes.
+connector: github
+sign_on: none
+provisioning: {preset: scim-bearer}
+fields:
+  - {key: base_url, label: SCIM base URL, help: "An https URL from GitHub's enterprise SCIM settings.", placeholder: "https://api.github.com/scim/v2/enterprises/your-enterprise"}
+  - {key: secret, label: SCIM API token, secret: true}
+checklist:
+  - Use Test connection on the provisioning tab.
+  - Assign users or groups, then enable provisioning.
+  - Optionally add a GitHub connection under Automation for recipe actions.

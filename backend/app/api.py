@@ -264,6 +264,9 @@ def create_app() -> FastAPI:
     app.include_router(my_apps_router, prefix="/api/v1")
 
     app.include_router(provisioning_router, prefix="/api/v1")
+    from backend.app.app_templates.routes import router as app_templates_router
+
+    app.include_router(app_templates_router, prefix="/api/v1")
     from backend.app.scim.admin_routes import router as scim_admin_router
     from backend.app.scim.app import create_scim_app
 
