@@ -13,7 +13,8 @@ import { SaveButton } from "@/components/save-button";
 
 type Policy = { min_length: number; require_mixed_case: boolean; require_digit: boolean; require_symbol: boolean; no_user_info: boolean; history_count: number;
   max_age_days: number; max_failed_attempts: number; lockout_minutes: number; session_lifetime_hours: number; idle_timeout_minutes: number;
-  email_otp_members: "off" | "allowed"; email_otp_admins: "off" | "allowed" | "required" };
+  email_otp_members: "off" | "allowed"; email_otp_admins: "off" | "allowed" | "required";
+  push_members: "off" | "allowed"; push_admins: "off" | "allowed" | "required" };
 type Resp = { policy: Policy; defaults: Policy; rules: string[]; users_past_max_age: number };
 
 function Num({ id, label, hint, value, min, max, onChange }: { id: string; label: string; hint?: string; value: number; min: number; max: number; onChange: (n: number) => void }) {
@@ -112,6 +113,24 @@ export default function SecurityPolicyPage() {
               </select>
             </div>
             <p className="text-xs text-muted-foreground sm:col-span-2">A 6-digit code emailed to the person&apos;s own address, valid 5 minutes, locked for 15 minutes after 3 wrong tries. It is a convenience factor: it never counts as an administrator step-up or as multi-factor level 2 for apps that ask. Needs outgoing email to be set up.</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle>Push sign-in approval</CardTitle></CardHeader>
+          <CardContent className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1">
+              <label htmlFor="sp-push-members" className="text-sm font-medium">People</label>
+              <select id="sp-push-members" data-testid="sp-push-members" className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={p.push_members} onChange={(e) => set({ push_members: e.target.value as Policy["push_members"] })}>
+                <option value="off">Off</option><option value="allowed">Allowed — people may register a browser</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label htmlFor="sp-push-admins" className="text-sm font-medium">Administrators</label>
+              <select id="sp-push-admins" data-testid="sp-push-admins" className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={p.push_admins} onChange={(e) => set({ push_admins: e.target.value as Policy["push_admins"] })}>
+                <option value="off">Off</option><option value="allowed">Allowed</option><option value="required">Required — admin functions stay off until a device is registered</option>
+              </select>
+            </div>
+            <p className="text-xs text-muted-foreground sm:col-span-2">After the password, the sign-in screen shows a two-digit number and the person taps the same number on a browser they registered. Needs web push keys on the server (VAPID_PRIVATE_KEY and VAPID_SUBJECT). It is a convenience factor: it never counts as an administrator step-up or as multi-factor level 2 for apps that ask.</p>
           </CardContent>
         </Card>
         <div className="flex gap-2">

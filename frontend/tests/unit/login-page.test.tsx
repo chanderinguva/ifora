@@ -18,6 +18,8 @@ const auth = vi.hoisted(() => ({
   login: vi.fn(),
   loginMfa: vi.fn(),
   sendEmailCode: vi.fn(),
+  pushStart: vi.fn(),
+  pushStatus: vi.fn(),
   loginWithAccess: vi.fn(),
   loginWithPasskey: vi.fn(),
 }));
@@ -152,6 +154,46 @@ describe("second step", () => {
     await u.type(await screen.findByLabelText("Code from your email"), "654321");
     await u.click(screen.getByRole("button", { name: "Verify" }));
     await waitFor(() => expect(auth.loginMfa).toHaveBeenCalledWith("challenge", "654321", "email"));
+  });
+
+  it("push-only account: shows the number, waits for the tap, then signs in", async () => {
+    auth.login.mockResolvedValue({ mfaToken: "challenge", factors: ["push"] });
+    auth.pushStart.mockResolvedValue({ number: "47", expires_in: 90 });
+    auth.pushStatus.mockResolvedValueOnce("pending").mockResolvedValue("approved");
+    auth.loginMfa.mockResolvedValue(undefined);
+    await ready();
+    await fill("a@example.com", "pw");
+    await screen.findByText("Two-step verification");
+    expect(screen.queryByLabelText(/Verification code/)).toBeNull(); // nothing to type for a push-only account
+    expect(screen.queryByRole("button", { name: "Verify" })).toBeNull();
+    await userEvent.setup().click(screen.getByTestId("push-start"));
+    expect(await screen.findByTestId("push-number")).toHaveTextContent("47");
+    await waitFor(() => expect(auth.loginMfa).toHaveBeenCalledWith("challenge", "", "push"), { timeout: 8000 });
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/admin/dashboard"));
+  }, 12000);
+
+  it("a declined push request says so and offers another try", async () => {
+    auth.login.mockResolvedValue({ mfaToken: "challenge", factors: ["totp", "push"] });
+    auth.pushStart.mockResolvedValue({ number: "12", expires_in: 90 });
+    auth.pushStatus.mockResolvedValue("denied");
+    await ready();
+    await fill("a@example.com", "pw");
+    await screen.findByText("Two-step verification");
+    expect(screen.getByLabelText("Verification code")).toBeInTheDocument(); // the authenticator code stays available
+    await userEvent.setup().click(screen.getByTestId("push-start"));
+    expect(await screen.findByText("The sign-in was declined on your device.", {}, { timeout: 8000 })).toBeInTheDocument();
+    expect(auth.loginMfa).not.toHaveBeenCalled();
+    expect(screen.getByTestId("push-start")).toBeInTheDocument();
+  }, 12000);
+
+  it("tells the person when their devices cannot be reached", async () => {
+    auth.login.mockResolvedValue({ mfaToken: "challenge", factors: ["push"] });
+    auth.pushStart.mockRejectedValue(new Error("Could not reach your devices"));
+    await ready();
+    await fill("a@example.com", "pw");
+    await screen.findByText("Two-step verification");
+    await userEvent.setup().click(screen.getByTestId("push-start"));
+    expect(await screen.findByText("Could not reach your devices")).toBeInTheDocument();
   });
 
   it("does not offer email codes to an authenticator-only account", async () => {

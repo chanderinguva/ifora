@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { accessSsoEnabled, accessSsoSuppressed, clearAccessSsoSuppression, getCurrentUser, login, loginMfa, sendEmailCode, loginWithAccess, loginWithPasskey } from "@/lib/auth-client";
+import { accessSsoEnabled, accessSsoSuppressed, clearAccessSsoSuppression, getCurrentUser, login, loginMfa, pushStart, pushStatus, sendEmailCode, loginWithAccess, loginWithPasskey } from "@/lib/auth-client";
 import Link from "next/link";
 import { KeyRound } from "lucide-react";
 import { ExpiredPasswordForm } from "@/components/password-form";
@@ -49,6 +49,7 @@ export default function LoginPage() {
   const [mfaToken, setMfaToken] = useState<string | null>(null);
   const [factors, setFactors] = useState<string[]>([]);
   const [emailSent, setEmailSent] = useState(false);
+  const [pushNumber, setPushNumber] = useState<string | null>(null);
   const [code, setCode] = useState("");
   const [expired, setExpired] = useState<{ email: string; password: string } | null>(null);
   // Invitation sign-in (Cloudflare Access): "checking" until we know, "offer" shows a button, "off" is the plain form.
@@ -139,6 +140,50 @@ export default function LoginPage() {
     }
   };
 
+  const onPushStart = async () => {
+    if (!mfaToken) return;
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      setPushNumber((await pushStart(mfaToken)).number);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not reach your devices");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // While a push request is out, ask for the answer every 2 seconds; an approval is exchanged for the session right here.
+  useEffect(() => {
+    if (!mfaToken || !pushNumber) return;
+    let stopped = false;
+    const timer = setInterval(async () => {
+      try {
+        const state = await pushStatus(mfaToken);
+        if (stopped || state === "pending") return;
+        stopped = true;
+        clearInterval(timer);
+        if (state === "approved") {
+          await loginMfa(mfaToken, "", "push");
+          await finish();
+        } else {
+          setPushNumber(null);
+          setError(state === "denied" ? "The sign-in was declined on your device." : "The request expired. Try again.");
+        }
+      } catch (err) {
+        stopped = true;
+        clearInterval(timer);
+        setPushNumber(null);
+        setError(err instanceof Error ? err.message : "Verification failed");
+      }
+    }, 2000);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mfaToken, pushNumber]);
+
   const onSubmit = async (data: LoginFormData) => {
     setIsSubmitting(true);
     setError(null);
@@ -199,6 +244,22 @@ export default function LoginPage() {
         {mfaToken && !expired && (
           <CardContent>
             <form method="post" onSubmit={onMfaSubmit} className="space-y-4">
+              {factors.includes("push") && (
+                <div className="space-y-2" data-testid="push-section">
+                  {pushNumber ? (
+                    <div role="status" className="rounded-md border p-4 text-center">
+                      <p className="text-sm text-muted-foreground">Open the notification on your device and tap</p>
+                      <p className="my-2 text-5xl font-semibold tabular-nums" data-testid="push-number">{pushNumber}</p>
+                      <p className="flex items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Waiting for approval…</p>
+                    </div>
+                  ) : (
+                    <Button type="button" variant={factors.length > 1 ? "outline" : "default"} className="w-full" data-testid="push-start" disabled={isSubmitting} onClick={onPushStart}>
+                      Approve on my device
+                    </Button>
+                  )}
+                </div>
+              )}
+              {!(factors.length === 1 && factors[0] === "push") && (
               <div className="space-y-2">
                 <Label htmlFor="mfa-code">{emailSent ? "Code from your email" : factors.includes("totp") ? "Verification code" : "Verification code (we email it to you)"}</Label>
                 <Input
@@ -211,9 +272,12 @@ export default function LoginPage() {
                   disabled={isSubmitting}
                 />
               </div>
+              )}
+              {!(factors.length === 1 && factors[0] === "push") && (
               <Button type="submit" className="w-full" disabled={isSubmitting || !hydrated || !code.trim()}>
                 {isSubmitting ? "Verifying..." : "Verify"}
               </Button>
+              )}
               {factors.includes("email") && (
                 <button type="button" data-testid="email-code-send" disabled={isSubmitting} onClick={onEmailCode} className="w-full text-sm underline-offset-4 hover:underline">
                   {emailSent ? "Send a new code" : factors.includes("totp") ? "Email me a code instead" : "Email me a code"}
@@ -225,6 +289,7 @@ export default function LoginPage() {
                 onClick={() => {
                   setMfaToken(null);
                   setEmailSent(false);
+                  setPushNumber(null);
                   setCode("");
                   setError(null);
                 }}

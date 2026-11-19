@@ -20,6 +20,8 @@ class OrgSecurityPolicy(TenantOwned, Base):
         UniqueConstraint("tenant_id", name="uq_org_security_policy_tenant"),
         CheckConstraint("email_otp_members IN ('off','allowed')", name="ck_org_policy_email_otp_members"),
         CheckConstraint("email_otp_admins IN ('off','allowed','required')", name="ck_org_policy_email_otp_admins"),
+        CheckConstraint("push_members IN ('off','allowed')", name="ck_org_policy_push_members"),
+        CheckConstraint("push_admins IN ('off','allowed','required')", name="ck_org_policy_push_admins"),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -37,6 +39,8 @@ class OrgSecurityPolicy(TenantOwned, Base):
     # Email one-time code factor (IFORA-60), per audience: off | allowed | required (required applies to administrators only)
     email_otp_members = Column(String(10), nullable=False, default="off", server_default="off")
     email_otp_admins = Column(String(10), nullable=False, default="off", server_default="off")
+    push_members = Column(String(10), nullable=False, default="off", server_default="off")
+    push_admins = Column(String(10), nullable=False, default="off", server_default="off")
     updated_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=_now)
 

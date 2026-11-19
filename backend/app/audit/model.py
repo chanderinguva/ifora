@@ -65,6 +65,11 @@ class AuditAction(str, Enum):
     EMAIL_OTP_ENABLED = "EMAIL_OTP_ENABLED"
     EMAIL_OTP_DISABLED = "EMAIL_OTP_DISABLED"
     EMAIL_OTP_LOCKED = "EMAIL_OTP_LOCKED"
+    PUSH_DEVICE_ADDED = "PUSH_DEVICE_ADDED"
+    PUSH_DEVICE_REMOVED = "PUSH_DEVICE_REMOVED"
+    PUSH_APPROVED = "PUSH_APPROVED"
+    PUSH_DENIED = "PUSH_DENIED"
+    PUSH_LOCKED = "PUSH_LOCKED"
     PASSKEY_REGISTERED = "PASSKEY_REGISTERED"
     PASSKEY_REMOVED = "PASSKEY_REMOVED"
     PASSKEY_RENAMED = "PASSKEY_RENAMED"
@@ -274,6 +279,11 @@ class AuditEvent(TenantOwned, Base):
             AuditAction.EMAIL_OTP_ENABLED,
             AuditAction.EMAIL_OTP_DISABLED,
             AuditAction.EMAIL_OTP_LOCKED,
+            AuditAction.PUSH_DEVICE_ADDED,
+            AuditAction.PUSH_DEVICE_REMOVED,
+            AuditAction.PUSH_APPROVED,
+            AuditAction.PUSH_DENIED,
+            AuditAction.PUSH_LOCKED,
             AuditAction.PASSKEY_REGISTERED,
             AuditAction.PASSKEY_REMOVED,
             AuditAction.PASSKEY_RENAMED,

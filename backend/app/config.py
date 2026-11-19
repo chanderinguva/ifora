@@ -123,6 +123,13 @@ class Settings(BaseSettings):
     MFA_CHALLENGE_MINUTES: int = Field(default=5)
     MFA_CHALLENGE_MAX_ATTEMPTS: int = Field(default=5)
 
+    # Push sign-in approval (IFORA-77): Web Push signed with VAPID (RFC 8292). The private key is the raw 32-byte P-256 scalar,
+    # base64url without padding. Unset = the push factor is unavailable. Generate: python -m backend.app.auth.push_mfa
+    VAPID_PRIVATE_KEY: str = Field(default="")
+    VAPID_SUBJECT: str = Field(default="")  # mailto:you@example.com or an https URL; the push service uses it to contact the sender
+    # A device registers an endpoint URL that the server will POST to, so only the browser vendors' push services are accepted.
+    PUSH_ALLOWED_HOST_SUFFIXES: list = Field(default=["fcm.googleapis.com", "push.services.mozilla.com", "push.apple.com", "notify.windows.com"])
+
     # WebAuthn / passkeys. RP ID must be the registrable domain of the *frontend* origin the
     # browser sees (e.g. "localhost", or "example.com" for https://app.example.com);
     # origins must match exactly (scheme + host + port).

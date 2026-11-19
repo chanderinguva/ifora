@@ -110,7 +110,7 @@ export async function loginWithPasskey(): Promise<void> {
 }
 
 /** Step 2: authenticator code or recovery code. */
-export async function loginMfa(mfaToken: string, code: string, factor?: "email"): Promise<void> {
+export async function loginMfa(mfaToken: string, code: string, factor?: "email" | "push"): Promise<void> {
   const response = await fetch(`${API_URL}/api/v1/login/mfa`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -123,6 +123,33 @@ export async function loginMfa(mfaToken: string, code: string, factor?: "email")
   }
   const data = await response.json();
   csrfToken = data.csrf_token ?? null;
+}
+
+/** Show-the-number step of push approval: wakes the person's devices and returns the number to display on the login screen. */
+export async function pushStart(mfaToken: string): Promise<{ number: string; expires_in: number }> {
+  const response = await fetch(`${API_URL}/api/v1/login/mfa/push/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ mfa_token: mfaToken }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail || "Could not reach your devices");
+  }
+  return response.json();
+}
+
+/** Poll the answer to a push request: pending | approved | denied | expired | none. */
+export async function pushStatus(mfaToken: string): Promise<string> {
+  const response = await fetch(`${API_URL}/api/v1/login/mfa/push/status`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ mfa_token: mfaToken }),
+  });
+  if (!response.ok) throw new Error("This sign-in has expired. Start over.");
+  return (await response.json()).state;
 }
 
 /** Ask for an emailed sign-in code (at most 3 a minute); resolves once the mail is on its way. */

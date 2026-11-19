@@ -117,12 +117,12 @@ def require_admin(request: Request, ctx=Depends(get_session_and_user), db: Sessi
     if user.needs_mfa_setup:
         # Still signed in (so they can reach Account settings and enrol), but no admin power yet.
         raise HTTPException(status_code=403, detail="Multi-factor authentication setup required")
-    from backend.app.auth import email_otp
+    from backend.app.auth import email_otp, push_mfa
 
     route = request.scope.get("route")
     exempt = (getattr(route, "path", "") or request.url.path).startswith(("/api/v1/admin/security-policy", "/admin/security-policy"))  # an admin can always undo the policy
-    if not exempt and email_otp.required_but_missing(db, user):
-        # The organisation requires administrators to enrol email codes: manage your own account until you have.
+    if not exempt and (email_otp.required_but_missing(db, user) or push_mfa.required_but_missing(db, user)):
+        # The organisation requires administrators to enrol email codes or a push device: manage your own account until you have.
         raise HTTPException(status_code=403, detail="Multi-factor authentication setup required")
     token = getattr(session, "api_token", None)
     if token is not None and token.read_only and request.method not in SAFE_METHODS:
