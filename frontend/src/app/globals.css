@@ -66,10 +66,131 @@
     --ifora-3: #A78BFA;
   }
 
+  /* Extra colour themes (IFORA-76). Light-style: sand, ocean. Dark-style: midnight, forest. Names must match src/lib/themes.ts. */
+  .sand {
+    --background: 40 30% 95%;
+    --foreground: 30 20% 12%;
+    --card: 40 40% 98%;
+    --card-foreground: 30 20% 12%;
+    --popover: 40 40% 98%;
+    --popover-foreground: 30 20% 12%;
+    --primary: 24 80% 36%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 38 22% 90%;
+    --secondary-foreground: 30 20% 14%;
+    --muted: 38 22% 90%;
+    --muted-foreground: 30 12% 32%;
+    --accent: 38 22% 90%;
+    --accent-foreground: 30 20% 14%;
+    --selected: 30 70% 90%;
+    --selected-foreground: 24 70% 26%;
+    --destructive: 0 62% 44%;
+    --destructive-foreground: 0 0% 100%;
+    --good: 152 45% 26%;
+    --warn: 32 75% 30%;
+    --bad: 0 62% 44%;
+    --border: 38 18% 84%;
+    --input: 38 14% 66%;
+    --ring: 24 80% 36%;
+    --ifora-1: #B45309;
+    --ifora-2: #C2410C;
+    --ifora-3: #A16207;
+  }
+
+  .ocean {
+    --background: 200 30% 96%;
+    --foreground: 205 40% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 205 40% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 205 40% 12%;
+    --primary: 199 90% 29%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 200 22% 91%;
+    --secondary-foreground: 205 40% 14%;
+    --muted: 200 22% 91%;
+    --muted-foreground: 205 15% 32%;
+    --accent: 200 22% 91%;
+    --accent-foreground: 205 40% 14%;
+    --selected: 199 80% 91%;
+    --selected-foreground: 199 80% 22%;
+    --destructive: 0 62% 44%;
+    --destructive-foreground: 0 0% 100%;
+    --good: 152 45% 26%;
+    --warn: 32 75% 30%;
+    --bad: 0 62% 44%;
+    --border: 200 20% 86%;
+    --input: 200 16% 68%;
+    --ring: 199 90% 29%;
+    --ifora-1: #0369A1;
+    --ifora-2: #0891B2;
+    --ifora-3: #2563EB;
+  }
+
+  .midnight {
+    --background: 230 35% 8%;
+    --foreground: 225 25% 93%;
+    --card: 230 30% 12%;
+    --card-foreground: 225 25% 93%;
+    --popover: 230 30% 13%;
+    --popover-foreground: 225 25% 93%;
+    --primary: 217 91% 70%;
+    --primary-foreground: 230 35% 8%;
+    --secondary: 230 25% 17%;
+    --secondary-foreground: 225 25% 93%;
+    --muted: 230 25% 17%;
+    --muted-foreground: 225 15% 68%;
+    --accent: 230 25% 17%;
+    --accent-foreground: 225 25% 93%;
+    --selected: 217 50% 22%;
+    --selected-foreground: 217 91% 86%;
+    --destructive: 0 65% 62%;
+    --destructive-foreground: 230 35% 8%;
+    --good: 152 40% 62%;
+    --warn: 36 70% 64%;
+    --bad: 0 65% 66%;
+    --border: 230 20% 20%;
+    --input: 230 18% 30%;
+    --ring: 217 91% 70%;
+    --ifora-1: #60A5FA;
+    --ifora-2: #818CF8;
+    --ifora-3: #A78BFA;
+  }
+
+  .forest {
+    --background: 150 20% 7%;
+    --foreground: 140 15% 93%;
+    --card: 150 18% 10%;
+    --card-foreground: 140 15% 93%;
+    --popover: 150 18% 11%;
+    --popover-foreground: 140 15% 93%;
+    --primary: 152 55% 55%;
+    --primary-foreground: 150 20% 7%;
+    --secondary: 150 14% 15%;
+    --secondary-foreground: 140 15% 93%;
+    --muted: 150 14% 15%;
+    --muted-foreground: 145 10% 66%;
+    --accent: 150 14% 15%;
+    --accent-foreground: 140 15% 93%;
+    --selected: 152 35% 18%;
+    --selected-foreground: 152 60% 85%;
+    --destructive: 0 65% 62%;
+    --destructive-foreground: 150 20% 7%;
+    --good: 152 40% 62%;
+    --warn: 36 70% 64%;
+    --bad: 0 65% 66%;
+    --border: 150 12% 19%;
+    --input: 150 10% 28%;
+    --ring: 152 55% 55%;
+    --ifora-1: #34D399;
+    --ifora-2: #2DD4BF;
+    --ifora-3: #A3E635;
+  }
+
   :root {
     color-scheme: light;
   }
-  .dark {
+  .dark, .midnight, .forest {
     color-scheme: dark;
   }
 

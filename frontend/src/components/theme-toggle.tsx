@@ -4,14 +4,11 @@ import { useEffect, useState } from "react";
 import { Monitor, Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
+import { THEME_OPTIONS } from "@/lib/themes";
 
-const OPTIONS = [
-  { value: "light", label: "Light", Icon: Sun },
-  { value: "system", label: "System", Icon: Monitor },
-  { value: "dark", label: "Dark", Icon: Moon },
-] as const;
+const ICONS: Record<string, typeof Sun | undefined> = { light: Sun, system: Monitor, dark: Moon };
 
-/** Three-way Light / System / Dark switch. Remembered by next-themes in localStorage. */
+/** Light / System / Dark plus the extra colour themes (shown as swatches). Remembered by next-themes in localStorage. */
 export function ThemeToggle({ className }: { className?: string }) {
   const { theme, setTheme } = useTheme();
   // Rendering the active state only after mount avoids a server/client hydration mismatch.
@@ -19,8 +16,9 @@ export function ThemeToggle({ className }: { className?: string }) {
   useEffect(() => setMounted(true), []);
 
   return (
-    <div role="radiogroup" aria-label="Colour theme" data-testid="theme-toggle" className={cn("inline-flex rounded-md border p-0.5", className)}>
-      {OPTIONS.map(({ value, label, Icon }) => {
+    <div role="radiogroup" aria-label="Colour theme" data-testid="theme-toggle" className={cn("inline-flex flex-wrap rounded-md border p-0.5", className)}>
+      {THEME_OPTIONS.map(({ value, label, swatch }) => {
+        const Icon = ICONS[value];
         const active = mounted && theme === value;
         return (
           <button
@@ -36,7 +34,15 @@ export function ThemeToggle({ className }: { className?: string }) {
               active && "bg-accent text-accent-foreground",
             )}
           >
-            <Icon className="h-4 w-4" aria-hidden="true" />
+            {Icon ? (
+              <Icon className="h-4 w-4" aria-hidden="true" />
+            ) : (
+              <span
+                aria-hidden="true"
+                className="h-4 w-4 rounded-full border border-foreground/30"
+                style={{ background: `linear-gradient(135deg, ${swatch?.[0]} 50%, ${swatch?.[1]} 50%)` }}
+              />
+            )}
           </button>
         );
       })}

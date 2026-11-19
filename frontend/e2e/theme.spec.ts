@@ -37,3 +37,24 @@ test("dark theme: toggle, persistence, and following the system setting", async 
   await page.emulateMedia({ colorScheme: "dark" });
   await expect(html).toHaveClass(/dark/);
 });
+
+for (const [name, cls, dark] of [["Sand", "sand", false], ["Ocean", "ocean", false], ["Midnight", "midnight", true], ["Forest", "forest", true]] as const) {
+  test(`${name} theme applies, differs from light/dark, and persists across reloads`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.goto("/login");
+    const toggle = page.getByTestId("theme-toggle");
+    await toggle.getByRole("radio", { name: "Light theme" }).click();
+    const light = await bg(page);
+    await toggle.getByRole("radio", { name: `${name} theme` }).click();
+    await expect(page.locator("html")).toHaveClass(new RegExp(`\\b${cls}\\b`));
+    await expect(toggle.getByRole("radio", { name: `${name} theme` })).toHaveAttribute("aria-checked", "true");
+    const themed = await bg(page);
+    expect(themed).not.toBe(light);
+    const [r, g, b] = themed.match(/\d+/g)!.map(Number);
+    if (dark) expect(r + g + b).toBeLessThan(120);
+    else expect(r + g + b).toBeGreaterThan(600);
+    await page.reload();
+    await expect(page.locator("html")).toHaveClass(new RegExp(`\\b${cls}\\b`));
+    expect(await bg(page)).toBe(themed);
+  });
+}

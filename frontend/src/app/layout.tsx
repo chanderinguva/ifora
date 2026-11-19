@@ -4,6 +4,7 @@ import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
+import { THEME_NAMES } from "@/lib/themes";
 import { BrandingProvider } from "@/lib/branding";
 import { deploymentTitle } from "@/lib/deployment-title";
 
@@ -55,6 +56,7 @@ export default function RootLayout({
           attribute="class"
           defaultTheme="system"
           enableSystem
+          themes={THEME_NAMES}
           disableTransitionOnChange
         >
           <BrandingProvider>{children}</BrandingProvider>

@@ -1,7 +1,8 @@
 import type { Config } from "tailwindcss";
 
 export default {
-  darkMode: ["class"],
+  // every dark-style theme (src/lib/themes.ts) counts as dark for the `dark:` variant
+  darkMode: ["variant", "&:is(.dark *, .midnight *, .forest *)"],
   content: ["./src/**/*.{ts,tsx}", "./pages/**/*.{ts,tsx}", "./src/components/**/*.{ts,tsx}"],
   plugins: [],
   theme: {
