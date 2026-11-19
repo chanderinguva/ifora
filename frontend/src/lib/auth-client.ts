@@ -14,7 +14,7 @@ export async function ensureCsrfToken(): Promise<string> {
 }
 
 /** Step 1. Returns an MFA challenge token when a second factor is required, otherwise null (logged in). */
-export async function login(email: string, password: string): Promise<{ mfaToken: string } | { passwordChange: true } | null> {
+export async function login(email: string, password: string): Promise<{ mfaToken: string; factors: string[] } | { passwordChange: true } | null> {
   const response = await fetch(`${API_URL}/api/v1/login`, {
     method: "POST",
     headers: {
@@ -34,7 +34,7 @@ export async function login(email: string, password: string): Promise<{ mfaToken
     return { passwordChange: true };
   }
   if (data.mfa_required) {
-    return { mfaToken: data.mfa_token };
+    return { mfaToken: data.mfa_token, factors: Array.isArray(data.factors) ? data.factors : ["totp"] };
   }
   csrfToken = data.csrf_token ?? null;
   return null;
@@ -110,12 +110,12 @@ export async function loginWithPasskey(): Promise<void> {
 }
 
 /** Step 2: authenticator code or recovery code. */
-export async function loginMfa(mfaToken: string, code: string): Promise<void> {
+export async function loginMfa(mfaToken: string, code: string, factor?: "email"): Promise<void> {
   const response = await fetch(`${API_URL}/api/v1/login/mfa`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
-    body: JSON.stringify({ mfa_token: mfaToken, code }),
+    body: JSON.stringify({ mfa_token: mfaToken, code, ...(factor ? { factor } : {}) }),
   });
   if (!response.ok) {
     const error = await response.json();
@@ -123,6 +123,20 @@ export async function loginMfa(mfaToken: string, code: string): Promise<void> {
   }
   const data = await response.json();
   csrfToken = data.csrf_token ?? null;
+}
+
+/** Ask for an emailed sign-in code (at most 3 a minute); resolves once the mail is on its way. */
+export async function sendEmailCode(mfaToken: string): Promise<void> {
+  const response = await fetch(`${API_URL}/api/v1/login/mfa/email/send`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ mfa_token: mfaToken }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail || "Could not send the code");
+  }
 }
 
 export async function logout(): Promise<void> {

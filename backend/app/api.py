@@ -255,6 +255,9 @@ def create_app() -> FastAPI:
     app.include_router(access_settings, prefix="/api/v1")
     app.include_router(access_me, prefix="/api/v1")
     app.include_router(access_approvals, prefix="/api/v1")
+    from backend.app.auth.email_otp_routes import router as email_otp_router
+
+    app.include_router(email_otp_router, prefix="/api/v1")
     app.include_router(admin_access_router, prefix="/api/v1")
 
     app.include_router(zones_router, prefix="/api/v1")

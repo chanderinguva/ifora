@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge, PageHeader, fmt } from "@/components/bits";
 import { MfaCard } from "@/components/mfa-card";
+import { EmailOtpCard } from "@/components/email-otp-card";
 import { ConnectedAppsCard } from "@/components/connected-apps-card";
 import { PasskeyCard } from "@/components/passkey-card";
 import { SessionsCard } from "@/components/sessions-card";
@@ -177,6 +178,7 @@ export default function AccountSettings() {
       <h2 className="mb-3 mt-8 text-lg font-semibold" id="security">Security</h2>
       <PasskeyCard needsCode={!!me.mfa_setup_required} emailCode={!!me.enrollment_code_by_email} />
       <MfaCard needsCode={!!me.mfa_setup_required} emailCode={!!me.enrollment_code_by_email} />
+      <EmailOtpCard />
 
       <Card className="mb-6">
         <CardHeader><CardTitle>Change password</CardTitle></CardHeader>

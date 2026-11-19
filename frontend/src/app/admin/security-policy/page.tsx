@@ -12,7 +12,8 @@ import { useDirty } from "@/lib/use-dirty";
 import { SaveButton } from "@/components/save-button";
 
 type Policy = { min_length: number; require_mixed_case: boolean; require_digit: boolean; require_symbol: boolean; no_user_info: boolean; history_count: number;
-  max_age_days: number; max_failed_attempts: number; lockout_minutes: number; session_lifetime_hours: number; idle_timeout_minutes: number };
+  max_age_days: number; max_failed_attempts: number; lockout_minutes: number; session_lifetime_hours: number; idle_timeout_minutes: number;
+  email_otp_members: "off" | "allowed"; email_otp_admins: "off" | "allowed" | "required" };
 type Resp = { policy: Policy; defaults: Policy; rules: string[]; users_past_max_age: number };
 
 function Num({ id, label, hint, value, min, max, onChange }: { id: string; label: string; hint?: string; value: number; min: number; max: number; onChange: (n: number) => void }) {
@@ -93,6 +94,24 @@ export default function SecurityPolicyPage() {
             <Num id="sp-life" label="Maximum session length (hours)" min={1} max={168} value={p.session_lifetime_hours} onChange={(n) => set({ session_lifetime_hours: n })} />
             <Num id="sp-idle" label="Sign out after idle (minutes)" hint="Cannot be longer than the session length" min={5} max={1440} value={p.idle_timeout_minutes} onChange={(n) => set({ idle_timeout_minutes: n })} />
             <p className="text-xs text-muted-foreground sm:col-span-2">Shorter limits end sessions that are already open the next time they make a request.</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle>Email verification codes</CardTitle></CardHeader>
+          <CardContent className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1">
+              <label htmlFor="sp-email-members" className="text-sm font-medium">People</label>
+              <select id="sp-email-members" data-testid="sp-email-members" className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={p.email_otp_members} onChange={(e) => set({ email_otp_members: e.target.value as Policy["email_otp_members"] })}>
+                <option value="off">Off</option><option value="allowed">Allowed — people may turn it on</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label htmlFor="sp-email-admins" className="text-sm font-medium">Administrators</label>
+              <select id="sp-email-admins" data-testid="sp-email-admins" className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={p.email_otp_admins} onChange={(e) => set({ email_otp_admins: e.target.value as Policy["email_otp_admins"] })}>
+                <option value="off">Off</option><option value="allowed">Allowed</option><option value="required">Required — admin functions stay off until enrolled</option>
+              </select>
+            </div>
+            <p className="text-xs text-muted-foreground sm:col-span-2">A 6-digit code emailed to the person&apos;s own address, valid 5 minutes, locked for 15 minutes after 3 wrong tries. It is a convenience factor: it never counts as an administrator step-up or as multi-factor level 2 for apps that ask. Needs outgoing email to be set up.</p>
           </CardContent>
         </Card>
         <div className="flex gap-2">

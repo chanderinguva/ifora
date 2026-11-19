@@ -19,7 +19,9 @@ describe("sign-in", () => {
   });
   it("reports a second step and an expired password", async () => {
     routes({ "POST /login": { mfa_required: true, mfa_token: "m1" } });
-    expect(await client.login("a@example.com", "pw")).toEqual({ mfaToken: "m1" });
+    expect(await client.login("a@example.com", "pw")).toEqual({ mfaToken: "m1", factors: ["totp"] });  // an older server names no factors
+    routes({ "POST /login": { mfa_required: true, mfa_token: "m2", factors: ["totp", "email"] } });
+    expect(await client.login("a@example.com", "pw")).toEqual({ mfaToken: "m2", factors: ["totp", "email"] });
     routes({ "POST /login": { password_change_required: true } });
     expect(await client.login("a@example.com", "pw")).toEqual({ passwordChange: true });
   });
