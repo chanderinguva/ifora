@@ -14,7 +14,7 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 
 from backend.app import passwords, ratelimit
-from backend.app.auth import mfa_service
+from backend.app.auth import email_otp, mfa_service
 from backend.app.auth.authn import acr_for, amr_for
 from backend.app.config import settings
 from backend.app.db import get_db
@@ -262,13 +262,15 @@ async def login_endpoint(
         logger.info("login.refused_passkey_required", user_id=user.id)
         raise HTTPException(status_code=403, detail="This account requires signing in with a passkey.")
 
-    if user.mfa is not None and user.mfa.enabled:
+    factors = email_otp.login_factors(db, user)
+    if factors:
         # Password was right, but no session until the second factor is proven.
         raw = mfa_service.issue_challenge(db, user)
         return {
             "success": False,
             "mfa_required": True,
             "mfa_token": raw,
+            "factors": factors,
             "expires_in": settings.MFA_CHALLENGE_MINUTES * 60,
         }
 

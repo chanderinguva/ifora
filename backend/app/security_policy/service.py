@@ -30,6 +30,8 @@ class Policy:
     lockout_minutes: int = 15
     session_lifetime_hours: int = 8
     idle_timeout_minutes: int = 30
+    email_otp_members: str = "off"  # off | allowed
+    email_otp_admins: str = "off"  # off | allowed | required
 
     def as_dict(self) -> dict:
         return asdict(self)

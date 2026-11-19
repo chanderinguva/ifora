@@ -1,6 +1,7 @@
 """Organization security policy API: admin read/write, plus the public password rules shown beside password fields."""
 
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
@@ -31,6 +32,8 @@ class PolicyBody(BaseModel):
     lockout_minutes: int = Field(..., ge=1, le=1440)
     session_lifetime_hours: int = Field(..., ge=1, le=168)
     idle_timeout_minutes: int = Field(..., ge=5, le=1440)
+    email_otp_members: Optional[str] = Field(None, pattern="^(off|allowed)$")  # omitted = keep the current value
+    email_otp_admins: Optional[str] = Field(None, pattern="^(off|allowed|required)$")
 
 
 def _would_expire(db: Session, p: svc.Policy) -> int:
@@ -54,16 +57,23 @@ def read_policy(db: Session = Depends(get_db), _: User = Depends(require_admin))
 def write_policy(body: PolicyBody, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_admin)):
     if body.idle_timeout_minutes > body.session_lifetime_hours * 60:
         raise HTTPException(status_code=422, detail="The idle timeout cannot be longer than the session lifetime")
+    if body.email_otp_admins == "required":
+        from backend.app import mailer
+
+        if not mailer.configured():
+            raise HTTPException(status_code=422, detail="Set up outgoing email before requiring email codes")
     before = svc.get(db)
+    values = {k: v for k, v in body.model_dump().items() if v is not None}
+    values = {**before.as_dict(), **values}
     row = db.query(OrgSecurityPolicy).first()
     if row is None:
-        row = OrgSecurityPolicy(**body.model_dump())
+        row = OrgSecurityPolicy(**values)
         db.add(row)
     else:
-        for k, v in body.model_dump().items():
+        for k, v in values.items():
             setattr(row, k, v)
     row.updated_by, row.updated_at = actor.id, datetime.now(timezone.utc)
-    after = svc.Policy(**body.model_dump())
+    after = svc.Policy(**values)
     changed = {k: [v, getattr(after, k)] for k, v in before.as_dict().items() if getattr(after, k) != v}
     record(db, AuditAction.SECURITY_POLICY_CHANGED, request, actor, None, "security_policy", {"changed": changed})
     db.commit()

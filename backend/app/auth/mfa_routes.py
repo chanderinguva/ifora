@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from backend.app import mailer, ratelimit
 from backend.app.audit.model import AuditAction
 from backend.app.audit.service import record
-from backend.app.auth import mfa, mfa_service, notify
+from backend.app.auth import email_otp, mfa, mfa_service, notify
 from backend.app.auth.deps import check_origin, get_session_and_user, require_admin
 from backend.app.auth.mfa_model import UserMFA
 from backend.app.auth.routes import complete_login
@@ -28,6 +28,7 @@ router = APIRouter(tags=["mfa"])
 class MfaLogin(BaseModel):
     mfa_token: str = Field(..., max_length=128)
     code: str = Field(..., max_length=64)
+    factor: Optional[str] = Field(default=None, pattern="^(totp|email)$")  # email = a code sent by /login/mfa/email/send; default = app or recovery code
 
 
 class PasswordOnly(BaseModel):
@@ -99,8 +100,18 @@ async def login_mfa(request: Request, response: Response, body: MfaLogin, db: Se
         ratelimit.hit("login", ip, settings.RATE_LIMIT_LOGIN_WINDOW_SECONDS)
         raise invalid
 
-    method = mfa_service.verify_second_factor(db, user, body.code)
+    locked_now = False
+    if body.factor == "email":
+        if not email_otp.usable_at_login(db, user):
+            method = None
+        else:
+            r = email_otp.verify(db, user, body.code)
+            method, locked_now = ("email" if r is True else None), r is None
+    else:
+        method = mfa_service.verify_second_factor(db, user, body.code)
     if method is None:
+        if locked_now:
+            record(db, AuditAction.EMAIL_OTP_LOCKED, request, user, user.id, "user", {"during": "login"})
         # Every wrong code counts against the challenge, the IP, and the account lockout.
         ch.attempts += 1
         user.failed_login_attempts += 1
@@ -237,7 +248,7 @@ def admin_reset_mfa(
     _guard_target(actor, user)
     if user.id == actor.id:
         raise HTTPException(status_code=400, detail="Use the account security page to manage your own MFA")
-    if user.mfa is None and not user.passkeys and not user.passkey_required:
+    if user.mfa is None and user.email_otp is None and not user.passkeys and not user.passkey_required:
         raise HTTPException(status_code=409, detail="User has no MFA or passkeys configured")
     result = mfa_service.reset_all_factors(db, user)
     record(db, AuditAction.MFA_RESET, request, actor, user.id, "user", result)

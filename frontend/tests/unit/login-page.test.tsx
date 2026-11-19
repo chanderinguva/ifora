@@ -17,6 +17,7 @@ const auth = vi.hoisted(() => ({
   getCurrentUser: vi.fn(async (): Promise<Record<string, unknown>> => ({ is_admin: true, acting_as_user: false, mfa_setup_required: false })),
   login: vi.fn(),
   loginMfa: vi.fn(),
+  sendEmailCode: vi.fn(),
   loginWithAccess: vi.fn(),
   loginWithPasskey: vi.fn(),
 }));
@@ -134,8 +135,31 @@ describe("second step", () => {
     expect(screen.getByRole("button", { name: "Verify" })).toBeDisabled(); // nothing typed yet
     await u.type(screen.getByLabelText("Verification code"), "123456");
     await u.click(screen.getByRole("button", { name: "Verify" }));
-    await waitFor(() => expect(auth.loginMfa).toHaveBeenCalledWith("challenge", "123456"));
+    await waitFor(() => expect(auth.loginMfa).toHaveBeenCalledWith("challenge", "123456", undefined));
     await waitFor(() => expect(push).toHaveBeenCalledWith("/admin/dashboard"));
+  });
+
+  it("offers an emailed code when the account has that factor, and signs in with it", async () => {
+    auth.login.mockResolvedValue({ mfaToken: "challenge", factors: ["email"] });
+    auth.sendEmailCode.mockResolvedValue(undefined);
+    auth.loginMfa.mockResolvedValue(undefined);
+    await ready();
+    await fill("a@example.com", "pw");
+    await screen.findByText("Two-step verification");
+    const u = userEvent.setup();
+    await u.click(screen.getByTestId("email-code-send"));
+    await waitFor(() => expect(auth.sendEmailCode).toHaveBeenCalledWith("challenge"));
+    await u.type(await screen.findByLabelText("Code from your email"), "654321");
+    await u.click(screen.getByRole("button", { name: "Verify" }));
+    await waitFor(() => expect(auth.loginMfa).toHaveBeenCalledWith("challenge", "654321", "email"));
+  });
+
+  it("does not offer email codes to an authenticator-only account", async () => {
+    auth.login.mockResolvedValue({ mfaToken: "challenge", factors: ["totp"] });
+    await ready();
+    await fill("a@example.com", "pw");
+    await screen.findByText("Two-step verification");
+    expect(screen.queryByTestId("email-code-send")).toBeNull();
   });
 
   it("a wrong code shows the error and clears the field", async () => {
