@@ -1,0 +1,12 @@
+key: oidc-web
+name: OIDC web application
+category: generic
+description: A server-side web app that signs in with OpenID Connect (authorization code with PKCE and a client secret kept on the server).
+sign_on: oidc
+oidc: {type: web}
+fields:
+  - {key: redirect_uri, label: Sign-in redirect URI, help: "The exact https URL the app receives the authorization code on. Exact match only.", placeholder: "https://app.example.com/auth/callback"}
+checklist:
+  - Copy the client ID and secret into the application (the secret is shown once).
+  - Confirm the redirect URI matches the one the application registers.
+  - Assign users or groups, then enable the application.

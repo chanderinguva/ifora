@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { PageHeader, fieldClass } from "@/components/bits";
 import { http } from "@/lib/http";
 import { cn } from "@/lib/utils";
-import type { AppSummary, Template } from "@/lib/applications";
+import type { AppSummary, AppTemplate, Template } from "@/lib/applications";
 import { CATALOG, type CatalogEntry } from "@/lib/app-catalog";
 
 type Method = "oidc" | "saml" | "swa" | "api" | "bookmark" | "none";
@@ -49,13 +49,28 @@ export default function NewApplication() {
   const [created, setCreated] = useState<{ id: number; client_id: string; secret?: string } | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [view, setView] = useState<"methods" | "catalog">("methods");
+  const [view, setView] = useState<"methods" | "catalog" | "templates">("methods");
+  const [appTpls, setAppTpls] = useState<AppTemplate[]>([]);
+  const [picked, setPicked] = useState<AppTemplate | null>(null);
+  const [tname, setTname] = useState("");
+  const [tvals, setTvals] = useState<Record<string, string>>({});
+  const [tdone, setTdone] = useState<{ application_id: number; checklist: string[]; client_id?: string; client_secret?: string } | null>(null);
   const [cq, setCq] = useState("");
   const pickCatalog = (c: CatalogEntry) => { setMethod("bookmark"); setF((p) => ({ ...p, name: c.name, launch_url: c.url })); setStep(3); };
   const hits = CATALOG.filter((c) => (c.name + " " + c.category).toLowerCase().includes(cq.toLowerCase()));
   const set = (k: keyof typeof f, v: string) => setF((p) => ({ ...p, [k]: v }));
 
   useEffect(() => { http<{ items: Template[] }>("/admin/applications/templates").then((r) => setTemplates(r.items)).catch(() => {}); }, []);
+  useEffect(() => { http<{ items: AppTemplate[] }>("/admin/application-templates").then((r) => setAppTpls(r.items)).catch(() => {}); }, []);
+
+  async function createFromTemplate() {
+    if (!picked) return;
+    setMsg(null); setBusy(true);
+    try {
+      const r = await http<{ application_id: number; checklist: string[]; client_id?: string; client_secret?: string }>(`/admin/application-templates/${picked.key}/create`, { method: "POST", body: { name: tname, values: tvals } });
+      setTdone(r);
+    } catch (e) { setMsg(e instanceof Error ? e.message : "Failed"); } finally { setBusy(false); }
+  }
   const tplId = method === "api" ? "service" : method === "oidc" ? oidcType : null;
   const tpl = templates.find((t) => t.id === tplId);
   const needsType = method === "oidc";
@@ -96,6 +111,21 @@ export default function NewApplication() {
     } catch (e) { setMsg(e instanceof Error ? e.message : "Failed"); } finally { setBusy(false); }
   }
 
+  if (tdone) {
+    return (
+      <div>
+        <PageHeader title="Application created from template" />
+        <Alert data-testid="template-created"><AlertDescription className="space-y-3">
+          <p>The application is <strong>disabled</strong> until you finish the checklist below.</p>
+          {tdone.client_id && <div>Client ID: <code>{tdone.client_id}</code></div>}
+          {tdone.client_secret && <div>Client secret (shown only once — copy it now): <code className="break-all" data-testid="new-secret">{tdone.client_secret}</code></div>}
+          <ol className="list-decimal space-y-1 pl-5" data-testid="template-checklist">{tdone.checklist.map((c) => <li key={c}>{c}</li>)}</ol>
+          <Button size="sm" onClick={() => router.push(`/admin/applications/${tdone.application_id}`)}>Continue to the application</Button>
+        </AlertDescription></Alert>
+      </div>
+    );
+  }
+
   if (created) {
     return (
       <div>
@@ -123,7 +153,7 @@ export default function NewApplication() {
 
       {step === 1 && (
         <div role="tablist" aria-label="Start from" className="mb-4 flex gap-1 border-b">
-          {([["methods", "Create new app integration"], ["catalog", "Browse App Catalog"]] as const).map(([k, l]) => (
+          {([["methods", "Create new app integration"], ["templates", "Start from a template"], ["catalog", "Browse App Catalog"]] as const).map(([k, l]) => (
             <button key={k} role="tab" type="button" aria-selected={view === k} data-testid={`wizard-view-${k}`} onClick={() => setView(k)}
               className={cn("-mb-px border-b-2 px-4 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", view === k ? "border-primary font-medium" : "border-transparent text-muted-foreground hover:text-foreground")}>{l}</button>
           ))}
@@ -143,6 +173,39 @@ export default function NewApplication() {
             ))}
             {hits.length === 0 && <li className="text-sm text-muted-foreground">No matches.</li>}
           </ul>
+        </div>
+      )}
+
+      {step === 1 && view === "templates" && (
+        <div data-testid="templates">
+          {!picked ? (
+            <>
+              <p className="mb-3 text-sm text-muted-foreground">Templates set the sign-on and provisioning defaults for you. The application stays disabled until you finish a short checklist.</p>
+              <ul className="grid gap-3 sm:grid-cols-2">
+                {appTpls.map((t) => (
+                  <li key={t.key}><button type="button" data-testid={`tpl-${t.key}`} onClick={() => { setPicked(t); setTname(t.name); setTvals({}); setMsg(null); }}
+                    className="flex w-full items-start gap-3 rounded-lg border p-3 text-left hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    <span aria-hidden className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary font-semibold">{t.name[0]}</span>
+                    <span><span className="block font-medium">{t.name}</span><span className="block text-xs text-muted-foreground">{t.description}</span></span>
+                  </button></li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <Card><CardContent className="grid gap-4 pt-6" data-testid="template-form">
+              <div><p className="font-medium">{picked.name}</p><p className="text-sm text-muted-foreground">{picked.description}</p></div>
+              <div className="space-y-1"><Label htmlFor="t-name">App integration name</Label><Input id="t-name" maxLength={100} value={tname} onChange={(e) => setTname(e.target.value)} /></div>
+              {picked.fields.map((fd) => (
+                <div key={fd.key} className="space-y-1"><Label htmlFor={`t-${fd.key}`}>{fd.label}</Label>
+                  <Input id={`t-${fd.key}`} type={fd.secret ? "password" : "text"} autoComplete="off" placeholder={fd.placeholder} value={tvals[fd.key] ?? ""} onChange={(e) => setTvals((p) => ({ ...p, [fd.key]: e.target.value }))} />
+                  {fd.help && <p className="text-xs text-muted-foreground">{fd.help}</p>}</div>
+              ))}
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => { setPicked(null); setMsg(null); }}>Back to templates</Button>
+                <Button disabled={busy || !tname.trim() || picked.fields.some((fd) => fd.key !== "launch_url" && !(tvals[fd.key] ?? "").trim())} onClick={createFromTemplate} data-testid="template-create">Create</Button>
+              </div>
+            </CardContent></Card>
+          )}
         </div>
       )}
 
@@ -200,7 +263,7 @@ export default function NewApplication() {
 
       <div className="mt-6 flex gap-2">
         {step > 1 && <Button variant="outline" onClick={back}>Previous</Button>}
-        {step === 1 && view === "catalog" ? null : step === 1 || (step === 2 && needsType)
+        {step === 1 && (view === "catalog" || view === "templates") ? null : step === 1 || (step === 2 && needsType)
           ? <Button disabled={!method} onClick={next} data-testid="wizard-next">Next</Button>
           : <Button disabled={!valid || busy} onClick={create} data-testid="wizard-create">Done</Button>}
         <Button variant="ghost" onClick={() => router.push("/admin/applications")}>Cancel</Button>

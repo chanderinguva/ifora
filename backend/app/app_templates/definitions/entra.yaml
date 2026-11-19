@@ -1,0 +1,14 @@
+key: entra
+name: Microsoft Entra ID
+category: directory
+description: Push users to Microsoft Entra ID through a SCIM gateway, and use the Entra connector in recipes.
+connector: entra
+sign_on: none
+provisioning: {preset: scim-bearer}
+fields:
+  - {key: base_url, label: SCIM base URL, help: "An https URL of your SCIM endpoint for Entra.", placeholder: "https://scim.example.com/v2"}
+  - {key: secret, label: SCIM API token, secret: true}
+checklist:
+  - Use Test connection on the provisioning tab.
+  - Assign users or groups, then enable provisioning.
+  - Optionally add an Entra connection under Automation for recipe actions.

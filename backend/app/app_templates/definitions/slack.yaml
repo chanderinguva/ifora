@@ -1,0 +1,13 @@
+key: slack
+name: Slack
+category: messaging
+description: Provision users into Slack through its SCIM API (Enterprise Grid), and use the Slack connector in recipes.
+connector: slack
+sign_on: none
+provisioning: {preset: scim-bearer, base_url: "https://api.slack.com/scim/v2"}
+fields:
+  - {key: secret, label: SCIM API token, help: "A Slack app token with the admin scope, from your Enterprise Grid.", secret: true}
+checklist:
+  - Use Test connection on the provisioning tab.
+  - Assign users or groups, then enable provisioning.
+  - Optionally add a Slack connection under Automation for recipe actions.

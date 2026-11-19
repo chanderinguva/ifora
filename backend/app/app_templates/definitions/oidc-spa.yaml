@@ -1,0 +1,11 @@
+key: oidc-spa
+name: OIDC single-page application
+category: generic
+description: A browser app with no back end. Authorization code flow with PKCE; there is no client secret.
+sign_on: oidc
+oidc: {type: spa}
+fields:
+  - {key: redirect_uri, label: Sign-in redirect URI, help: "The exact https URL the app receives the authorization code on.", placeholder: "https://spa.example.com/callback"}
+checklist:
+  - Configure the app with the client ID and the Ifora issuer URL.
+  - Assign users or groups, then enable the application.

@@ -16,6 +16,7 @@ _AREAS = [
     ("/admin/groups", "groups"),
     ("/admin/group-rules", "groups"),
     ("/admin/applications", "applications"),
+    ("/admin/application-templates", "applications"),
     ("/admin/access-requests", "applications"),
     ("/admin/oidc", "applications"),
     ("/admin/provisioning-apps", "applications"),
