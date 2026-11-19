@@ -37,21 +37,30 @@ describe("theme list", () => {
 });
 
 describe("ThemeToggle", () => {
-  it("lists every theme as a radio and selects one with the keyboard", async () => {
+  it("is one button until opened, then lists every theme and selects one with the keyboard", async () => {
     const user = userEvent.setup();
     render(<ThemeToggle />);
-    const radios = await screen.findAllByRole("radio");
-    expect(radios).toHaveLength(THEME_OPTIONS.length);
+    expect(screen.queryAllByRole("radio")).toHaveLength(0);
+    await user.click(await screen.findByRole("button", { name: /^Colour theme/ }));
+    expect(screen.getAllByRole("radio")).toHaveLength(THEME_OPTIONS.length);
     await user.click(screen.getByRole("radio", { name: "Midnight theme" }));
     expect(theme.setTheme).toHaveBeenCalledWith("midnight");
+    expect(screen.queryAllByRole("radio")).toHaveLength(0); // closes after choosing
+
+    await user.click(screen.getByRole("button", { name: /^Colour theme/ }));
     screen.getByRole("radio", { name: "Forest theme" }).focus();
     await user.keyboard("{Enter}");
     expect(theme.setTheme).toHaveBeenLastCalledWith("forest");
   });
 
-  it("marks the active theme", async () => {
+  it("Escape closes and the trigger names and marks the active theme", async () => {
+    const user = userEvent.setup();
     theme.current = "sand";
     render(<ThemeToggle />);
-    expect(await screen.findByRole("radio", { name: "Sand theme", checked: true })).toBeTruthy();
+    const trigger = await screen.findByRole("button", { name: "Colour theme: Sand" });
+    await user.click(trigger);
+    expect(screen.getByRole("radio", { name: "Sand theme", checked: true })).toBeTruthy();
+    await user.keyboard("{Escape}");
+    expect(screen.queryAllByRole("radio")).toHaveLength(0);
   });
 });

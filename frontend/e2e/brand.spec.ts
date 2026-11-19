@@ -17,9 +17,11 @@ test("brand: Ifora gateway mark follows the theme, wordmark stays Lora, UI text 
 
   // theme: the mark uses the Ifora tokens (indigo/blue/violet on light, lighter tints on dark); wordmark is navy / cloud
   const fills = (svg: import("@playwright/test").Locator) => svg.evaluate((el) => [...el.querySelectorAll("path,circle")].map((n) => getComputedStyle(n).fill));
+  await page.getByTestId("theme-toggle").getByRole("button", { name: /^Colour theme/ }).click();
   await page.getByTestId("theme-toggle").getByRole("radio", { name: "Light theme" }).click();
   expect(await fills(mark)).toEqual(["rgb(79, 70, 229)", "rgb(37, 99, 235)", "rgb(139, 92, 246)"]);
   expect(rgb(await color(wordmark))[0]).toBeLessThan(40);
+  await page.getByTestId("theme-toggle").getByRole("button", { name: /^Colour theme/ }).click();
   await page.getByTestId("theme-toggle").getByRole("radio", { name: "Dark theme" }).click();
   await expect(page.locator("html")).toHaveClass(/dark/);
   expect(await fills(mark)).toEqual(["rgb(129, 140, 248)", "rgb(96, 165, 250)", "rgb(167, 139, 250)"]);
