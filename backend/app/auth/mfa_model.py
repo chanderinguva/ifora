@@ -30,6 +30,28 @@ class UserMFA(TenantOwned, Base):
     user = relationship("User", backref=backref("mfa", uselist=False, cascade="all, delete-orphan"))
 
 
+class UserEmailOTP(TenantOwned, Base):
+    """Email one-time code as a second factor (IFORA-60). Always sent to the account's own address, never one a user types in.
+
+    Only a keyed hash of the current code is stored. `enabled` stays False until the first code is confirmed. After
+    EMAIL_OTP_MAX_ATTEMPTS wrong tries the code is destroyed and `locked_until` blocks a new one for a cooldown."""
+
+    __tablename__ = "user_email_otp"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True)
+    enabled = Column(Boolean, nullable=False, default=False)
+    enabled_at = Column(DateTime(timezone=True), nullable=True)
+    code_hash = Column(String(64), nullable=True)
+    code_expires_at = Column(DateTime(timezone=True), nullable=True)
+    attempts = Column(Integer, nullable=False, default=0)
+    locked_until = Column(DateTime(timezone=True), nullable=True)
+    last_sent_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
+
+    user = relationship("User", backref=backref("email_otp", uselist=False, cascade="all, delete-orphan"))
+
+
 class MFARecoveryCode(TenantOwned, Base):
     __tablename__ = "mfa_recovery_codes"
 

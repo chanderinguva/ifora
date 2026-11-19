@@ -15,6 +15,9 @@ _AMR = {
     "passkey": ["hwk", "user", "mfa"],
     "password+mfa_totp": ["pwd", "otp", "mfa"],
     "password+mfa_recovery": ["pwd", "otp", "mfa"],
+    # An emailed code shares its channel with password reset, so it is recorded as a one-time password but NOT as "mfa":
+    # it never counts as an admin step-up proof or as multi-factor (acr 2) for downstream relying parties.
+    "password+mfa_email": ["pwd", "otp"],
 }
 
 ACR_SINGLE_FACTOR = "urn:identityforge:acr:1"

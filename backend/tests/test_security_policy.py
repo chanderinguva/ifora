@@ -10,7 +10,8 @@ from tests.conftest import Api, STRONG, make_user
 
 P = "/admin/security-policy"
 BASE = {"min_length": 12, "require_mixed_case": True, "require_digit": True, "require_symbol": False, "no_user_info": False, "history_count": 0,
-        "max_age_days": 0, "max_failed_attempts": 5, "lockout_minutes": 15, "session_lifetime_hours": 8, "idle_timeout_minutes": 30}
+        "max_age_days": 0, "max_failed_attempts": 5, "lockout_minutes": 15, "session_lifetime_hours": 8, "idle_timeout_minutes": 30,
+        "email_otp_members": "off", "email_otp_admins": "off"}
 
 
 def setp(sa, **over):

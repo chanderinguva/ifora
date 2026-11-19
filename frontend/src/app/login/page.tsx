@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { accessSsoEnabled, accessSsoSuppressed, clearAccessSsoSuppression, getCurrentUser, login, loginMfa, loginWithAccess, loginWithPasskey } from "@/lib/auth-client";
+import { accessSsoEnabled, accessSsoSuppressed, clearAccessSsoSuppression, getCurrentUser, login, loginMfa, sendEmailCode, loginWithAccess, loginWithPasskey } from "@/lib/auth-client";
 import Link from "next/link";
 import { KeyRound } from "lucide-react";
 import { ExpiredPasswordForm } from "@/components/password-form";
@@ -47,6 +47,8 @@ export default function LoginPage() {
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => setHydrated(true), []);
   const [mfaToken, setMfaToken] = useState<string | null>(null);
+  const [factors, setFactors] = useState<string[]>([]);
+  const [emailSent, setEmailSent] = useState(false);
   const [code, setCode] = useState("");
   const [expired, setExpired] = useState<{ email: string; password: string } | null>(null);
   // Invitation sign-in (Cloudflare Access): "checking" until we know, "offer" shows a button, "off" is the plain form.
@@ -112,11 +114,26 @@ export default function LoginPage() {
     setIsSubmitting(true);
     setError(null);
     try {
-      await loginMfa(mfaToken, code);
+      await loginMfa(mfaToken, code, emailSent ? "email" : undefined);
       await finish();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Verification failed");
       setCode("");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const onEmailCode = async () => {
+    if (!mfaToken) return;
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      await sendEmailCode(mfaToken);
+      setEmailSent(true);
+      setCode("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not send the code");
     } finally {
       setIsSubmitting(false);
     }
@@ -134,6 +151,8 @@ export default function LoginPage() {
       }
       if (challenge) {
         setMfaToken(challenge.mfaToken);
+        setFactors(challenge.factors ?? ["totp"]);
+        setEmailSent(false);
         return;
       }
       await finish();
@@ -181,7 +200,7 @@ export default function LoginPage() {
           <CardContent>
             <form method="post" onSubmit={onMfaSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="mfa-code">Verification code</Label>
+                <Label htmlFor="mfa-code">{emailSent ? "Code from your email" : factors.includes("totp") ? "Verification code" : "Verification code (we email it to you)"}</Label>
                 <Input
                   id="mfa-code"
                   inputMode="text"
@@ -195,11 +214,17 @@ export default function LoginPage() {
               <Button type="submit" className="w-full" disabled={isSubmitting || !hydrated || !code.trim()}>
                 {isSubmitting ? "Verifying..." : "Verify"}
               </Button>
+              {factors.includes("email") && (
+                <button type="button" data-testid="email-code-send" disabled={isSubmitting} onClick={onEmailCode} className="w-full text-sm underline-offset-4 hover:underline">
+                  {emailSent ? "Send a new code" : factors.includes("totp") ? "Email me a code instead" : "Email me a code"}
+                </button>
+              )}
               <button
                 type="button"
                 className="w-full text-sm underline-offset-4 hover:underline"
                 onClick={() => {
                   setMfaToken(null);
+                  setEmailSent(false);
                   setCode("");
                   setError(null);
                 }}
